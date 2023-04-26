@@ -9,6 +9,7 @@
 #include <memory>
 #include <set>
 #include <map>
+#include <vector>
 
 class CMMetadataBase {
 public:
@@ -106,14 +107,11 @@ public:
 // base class for a cache array:
 class CacheArrayBase
 {
-public:
   const uint32_t id;                    // a unique id to identify this cache
   const std::string name;               // an optional name to describe this cache
 
-  CacheArrayBase() // anonymous cache
-    : id(CacheID::new_id()), name("") {}
-  CacheArrayBase(std::string name) // named cache
-    : id(CacheID::new_id()), name(name) {}
+public:
+  CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name) {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   // locate a data block for meta and data separate cache, such as MIRAGE
@@ -145,6 +143,11 @@ public:
     init();
   }
 
+  virtual ~CacheArrayNorm() {
+    free(meta);
+    if(!std::is_void<DT>::value) free(data);
+  }
+
   // @jinchi ToDo: implement these functions
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
     for(int i=0; i<nway; i++)
@@ -164,7 +167,6 @@ public:
   // @jinchi remember to check whether DT is void
   virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const;
   virtual CMDataBase * get_data(uint32_t ds, uint32_t dw);
-  
 
 private:
   MT *meta; // meta array
@@ -184,5 +186,39 @@ private:
     }
   }
 };
+
+//////////////// define cache ////////////////////
+
+// base class for a cache
+class CacheBase
+{
+  const std::string name;               // an optional name to describe this cache
+
+  // a vector of cache arrays
+  // set-associative: one CacheArrayNorm objects
+  // with VC: two CacheArrayNorm objects (one fully associative)
+  // skewed: partition number of CacheArrayNorm objects (each as a single cache array)
+  // MIRAGE: parition number of CacheArrayNorm (configured with separate meta and data array)
+  std::vector<CacheArrayBase *> arrays;
+
+public:
+  CacheBase(std::string name = "") : name(name) {}
+
+  virtual bool hit(uint64_t addr,
+                   uint32_t *ai,  // index of the hitting cache array in "arrays"
+                   uint32_t *s, uint32_t *w,
+                   uint32_t *ds, uint32_t *dw // data set and way index when data array is separate as in MIRAGE
+                   ) const = 0;
+
+  virtual const CMMetadataBase *read(uint64_t addr) = 0;  // obtain the cache block for read
+  virtual CMMetadataBase *access(uint64_t addr) = 0;  // obtain the cache block for modification (other than simple write) ? necessary ?
+  virtual CMMetadataBase *write(uint64_t addr) = 0; // obtain the cache block for write
+};
+
+// normal set associate cache
+class CacheNorm : public CacheBase
+{
+};
+
 
 #endif
