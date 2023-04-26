@@ -10,30 +10,75 @@
 #include <set>
 #include <map>
 
-//////////////// define meta block type ////////////////////
+class CMMetadataBase {
+public:
+  virtual bool match(uint64_t addr) const = 0;  // wether an address match with this block
+  virtual void reset() = 0;                     // reset the metadata
+  virtual void to_invalid() = 0;                // change state to invalid
+  virtual void to_shared() = 0;                 // change to shared
+  virtual void to_modified() = 0;               // change to modified
+  virtual void to_owned() = 0;                  // change to owned
+  virtual void to_exclusive() = 0;              // change to exclusive
+  virtual void to_dirty() = 0;                  // change to dirty
+  virtual bool is_valid() const = 0;
+  virtual bool is_shared() const = 0;
+  virtual bool is_modified() const = 0;
+  virtual bool is_owned() const = 0;
+  virtual bool is_exclusive() const = 0;
+  virtual bool is_dirty() const = 0;
+};
 
-struct type_meta_48b_64B_MSI_dirty {
-  uint64_t     tag   : 48-6;
+class CMDataBase {
+public:
+  virtual void reset() = 0; // reset the data block, normally unnecessary
+  virtual uint64_t read(unsigned int index) const = 0; // read a 64b data
+  virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) = 0; // write a 64b data with wmask
+  virtual void write(uint64_t *wdata) = 0; // write the whole cache block
+};
+
+// Note: may be we should move this into another header
+
+// metadata supporting MSI coherency
+// AW    : address width
+// TOfst : tag offset
+template <int AW, int TOfst>
+class MetadataMSI : public CMMetadataBase {
+  uint64_t     tag   : AW-TOfst;
   unsigned int state : 2; // 0: invalid, 1: shared, 2:modify
   unsigned int dirty : 1; // 0: clean, 1: dirty
-  void init() {
-    tag = 0;
-    state = 0;
-    dirty = 0;
-  }
+
+  static const uint64_t mask = (1ull << (AW-TOfst)) - 1;
+
+public:
+  MetadataMSI() : tag(0), state(0), dirty(0) {}
+
+  virtual bool match(uint64_t addr) { return ((addr >> TOfst) & mask) == tag; }
+  virtual void reset() { tag = 0; state = 0; dirty = 0; }
+  virtual void to_invalid() { state = 0; }
+  virtual void to_shared() { state = 1; }
+  virtual void to_modified() { state = 2; }
+  virtual void to_owned() { state = 2; }     // not supported, equal to modified
+  virtual void to_exclusive() { state = 2; } // not supported, equal to modified
+  virtual void to_dirty() { dirty = 1; }
+  virtual bool is_valid() const { return state; }
+  virtual bool is_shared() const { return state == 1; }
+  virtual bool is_modified() const {return state == 2; }
+  virtual bool is_owned() const { return state == 2; } // not supported, equal to modified
+  virtual bool is_exclusive()  { return state == 2; }  // not supported, equal to modified
+  virtual bool is_dirty() const { return dirty; }
+  
 };
 
-// default meta block type
-typedef type_meta_48b_64B_MSI_dirty cm_meta_t;
-
-//////////////// define cache block type ////////////////////
-
-struct type_data_64B {
+// typical 64B data block
+class Data64B : public CMDataBase {
   uint64_t data[8];
-};
 
-// default data block type
-typedef type_data_64B cm_data_t;
+public:
+  Data64B() : data{0} {}
+  virtual uint64_t read(unsigned int index) { return data[index]; }
+  virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) { data[index] = (data[index] & (~wmask)) | (wdata & wmask); }
+  virtual void write(uint64_t *wdata) { for(int i=0; i<8; i++) data[i] = wdata[i]; }
+};
 
 //////////////// define cache array ////////////////////
 
@@ -58,9 +103,7 @@ public:
   }
 };
 
-// the interface base class for a cache array:
-//   metadata and data array
-template<typename MT, typename DT>
+// base class for a cache array:
 class CacheArrayBase
 {
 public:
@@ -72,17 +115,20 @@ public:
   CacheArrayBase(std::string name) // named cache
     : id(CacheID::new_id()), name(name) {}
 
-  virtual MT read_meta(uint32_t s, uint32_t w) = 0;
-  virtual DT read_data(uint32_t s, uint32_t w) = 0;
-  virtual void write_meta(uint32_t s, uint32_t w, MT) = 0;
-  virtual void write_data(uint32_t s, uint32_t w, DT) = 0;
-  virtual void evict_meta(uint32_t s, uint32_t w, MT) = 0;
-  virtual void evict_data(uint32_t s, uint32_t w, DT) = 0;
+  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
+  // locate a data block for meta and data separate cache, such as MIRAGE
+  virtual bool locate_data(uint32_t s, uint32_t w, uint32_t *ds, uint32_t *dw) const = 0;
+
+  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const = 0;
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
+
+  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const = 0;
+  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw) = 0;
 };
 
-// set associative cache array
+// normal set associative cache array
 template<typename MT, typename DT>
-class CacheArrayNorm : public CacheArrayBase<MT,DT>
+class CacheArrayNorm : public CacheArrayBase
 {
 public:
   uint32_t nset, nway;  // number of sets and ways
@@ -99,13 +145,26 @@ public:
     init();
   }
 
-  // toDo: implement these methods
-  virtual MT read_meta(uint32_t s, uint32_t w);
-  virtual DT read_data(uint32_t s, uint32_t w);
-  virtual void write_meta(uint32_t s, uint32_t w, MT);
-  virtual void write_data(uint32_t s, uint32_t w, DT);
-  virtual void evict_meta(uint32_t s, uint32_t w, MT);
-  virtual void evict_data(uint32_t s, uint32_t w, DT);
+  // @jinchi ToDo: implement these functions
+  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
+    for(int i=0; i<nway; i++)
+      if(meta[s*nway + i].match(addr)) {
+        *w = i;
+        return true;
+      }
+
+    return false;
+  }
+
+  virtual bool locate_data(uint32_t s, uint32_t w, uint32_t *ds, uint32_t *dw) const { *ds = s; *dw = w; return true; }
+
+  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const;
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w);
+
+  // @jinchi remember to check whether DT is void
+  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const;
+  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw);
+  
 
 private:
   MT *meta; // meta array
@@ -116,16 +175,14 @@ private:
 
     size_t meta_size = num * sizeof(MT);
     meta = (MT *)malloc(meta_size);
-    for(size_t i=0; i<num; i++) meta[i].init();
+    for(size_t i=0; i<num; i++) meta[i].reset();
 
     if(!std::is_void<DT>::value) {
       size_t data_size = num * sizeof(DT);
       data = (DT *)malloc(data_size);
+      // for(size_t i=0; i<num; i++) data[i].reset();
     }
   }
 };
-
-
-
 
 #endif
