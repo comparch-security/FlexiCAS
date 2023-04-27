@@ -204,9 +204,6 @@ protected:
   // MIRAGE: parition number of CacheArrayNorm (configured with separate meta and data array)
   std::vector<CacheArrayBase *> arrays;
 
-  IndexFuncBase *indexer;    // index function
-  ReplaceFuncBase *replacer; // replace policy
-
 public:
   CacheBase(std::string name = "") : name(name) {}
 
