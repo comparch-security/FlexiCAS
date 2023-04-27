@@ -98,8 +98,8 @@ protected:
 public:
   // generate a new unique id
   uint32_t static new_id() {
-    uint32_t id = get_random_uint32();
-    while(ids.count(id)) id = get_random_uint32();
+    uint32_t id = cm_get_random_uint32();
+    while(ids.count(id)) id = cm_get_random_uint32();
     ids.insert(id);
     return id;
   }
@@ -203,6 +203,9 @@ protected:
   // skewed: partition number of CacheArrayNorm objects (each as a single cache array)
   // MIRAGE: parition number of CacheArrayNorm (configured with separate meta and data array)
   std::vector<CacheArrayBase *> arrays;
+
+  IndexFuncBase *indexer;    // index function
+  ReplaceFuncBase *replacer; // replace policy
 
 public:
   CacheBase(std::string name = "") : name(name) {}

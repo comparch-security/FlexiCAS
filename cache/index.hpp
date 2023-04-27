@@ -1,134 +1,98 @@
 #ifndef CM_INDEX_HPP_
 #define CM_INDEX_HPP_
 
-#include "util/random.hpp"
-#include <cmath>
+#include<functional>
+#include<vector>
 
-#define CLog2(x) (uint32_t)(log2((float)(x)))
+#include "util/random.hpp"
 
 /////////////////////////////////
 // Base class
-
-class IndexFuncBase : public DelaySim
+//   IW: index width
+template<int IW>
+class IndexFuncBase
 {
-protected:
-  const uint32_t imask;
+  const uint32_t mask;
 public:
-  // typing the indexer
-  enum indexer_t {BASE, NORM, RANDOM, SKEW};
-  indexer_t get_type() const { return m_type; }
-
-  IndexFuncBase(uint32_t nset, uint32_t delay, indexer_t t = BASE) : DelaySim(delay), imask(nset-1), m_type(t) {}
-  int32_t virtual index(
-    uint64_t *latency,         // latency estimation
-    uint64_t addr,             // address of the cache line
-    int32_t skew_idx          // index of the skewed cache partition, default = 0
-    ) = 0;
-  int32_t index(uint64_t *latency, uint64_t addr) {
-    return index(latency, addr, 0);
-  }
-
+  IndexFuncBase() : mask((1ul << IW) - 1) {}
   virtual ~IndexFuncBase() {}
-protected:
-  const indexer_t m_type;
+  virtual void index(uint64_t addr, std::vector<uint32_t>& indices) = 0;
 };
 
+typedef std::function<IndexFuncBase *(void)> indexer_creator_t;
+
 /////////////////////////////////
-// Normal
-
-class IndexNorm : public IndexFuncBase
+// Set associative caches
+//   IW: index width, IOfst: index offset
+template<int IW, int IOfst>
+class IndexNorm : public IndexFuncBase<IW>
 {
-public:
-  IndexNorm(uint32_t nset, uint32_t delay) : IndexFuncBase(nset, delay, NORM) {}
-
-  virtual int32_t index(uint64_t *latency, uint64_t addr, int32_t skew_idx) {
-    latency_acc(latency);
-    return (int32_t)((addr >> 6) & imask);
-  }
-
+public:  
   virtual ~IndexNorm() {}
 
-  static IndexFuncBase *factory(uint32_t nset, uint32_t delay) {
-    return (IndexFuncBase *)(new IndexNorm(nset, delay));
+  virtual void index(uint64_t addr, std::vector<uint32_t>& indices) {
+    const uint32_t mask = (1ul << IW) - 1;
+    indices[0] = (addr >> IOfst) & mask;
+  }
+
+  static IndexFuncBase *factory() {
+    return (IndexFuncBase *)(new IndexNorm());
   }
 
   static indexer_creator_t gen(uint32_t delay = 0) {
     using namespace std::placeholders;
-    return std::bind(factory, _1, delay);
+    return std::bind(factory);
   }
 };
 
 /////////////////////////////////
-// Random
-
-class IndexRandom : public IndexFuncBase
+// Skewed cache
+//   IW: index width, IOfst: index offset, P: number of partitions
+template<int IW, int IOfst, int P>
+class IndexSkewed : public IndexFuncBase<IW>
 {
-  const uint32_t iwidth;
-  const uint32_t tmask;
-  uint64_t seed;
+  CMHasher hashers[P];
 public:
-  IndexRandom(uint32_t nset, uint32_t wtag, uint32_t delay)
-    : IndexFuncBase(nset, delay, RANDOM), iwidth(CLog2(nset)), tmask((1 << wtag)-1),
-      seed(get_random_uint64(1ull << 60))
-  {}
-
-  virtual int32_t index(uint64_t *latency, uint64_t addr, int32_t skew_idx) {
-    latency_acc(latency);
-    uint32_t oidx = (uint32_t)((addr >> 6) & imask);
-    uint64_t otag = (uint64_t)((addr >> (6+iwidth)) & tmask);
-    uint32_t hkey = (uint32_t)(hash(seed ^ otag)) & imask;
-    return (int32_t)(hkey ^ oidx);
-  }
-
-  void reseed() { seed = hash(seed); }
-
-  virtual ~IndexRandom() {}
-
-  static IndexFuncBase *factory(uint32_t nset, uint32_t wtag, uint32_t delay) {
-    return (IndexFuncBase *)(new IndexRandom(nset, wtag, delay));
-  }
-
-  static indexer_creator_t gen(uint32_t wtag, uint32_t delay = 0) {
-    using namespace std::placeholders;
-    return std::bind(factory, _1, wtag, delay);
-  }
-};
-
-/////////////////////////////////
-// Skewed Cache Indexer
-class IndexSkewed : public IndexFuncBase
-{
-  const uint32_t iwidth;
-  const uint32_t partition;
-  uint64_t seed;
-public:
-  IndexSkewed(uint32_t nset, uint32_t partition, uint32_t delay)
-    : IndexFuncBase(nset/partition, delay, SKEW), iwidth(CLog2(nset/partition)),
-      partition(partition), seed(get_random_uint64(1ull << 60))
-  {}
-
-  virtual int32_t index(uint64_t *latency, uint64_t addr, int32_t skew_idx) {
-    latency_acc(latency);
-    uint64_t tidx = addr >> 6;
-    uint32_t mask = (1 << iwidth)-1;
-    uint32_t ridx = (uint32_t)(hash(seed ^ tidx ^ skew_idx)) & mask;
-    return (int32_t)((skew_idx << iwidth) + ridx);
-  }
-
-  void reseed() { seed = hash(seed); }
-
   virtual ~IndexSkewed() {}
 
-  static IndexFuncBase *factory(uint32_t nset, uint32_t partition, uint32_t delay) {
-    return (IndexFuncBase *)(new IndexSkewed(nset, partition, delay));
+  virtual void index(uint64_t addr, std::vector<uint32_t>& indices) {
+    uint64_t addr_s = addr >> IOfst;
+    for(int i=0; i<P; i++)
+      indices[i] = hashers[i](addr_s);
   }
 
-  static indexer_creator_t gen(uint32_t partition, uint32_t delay = 0) {
+  void seed(std::vector<uint64_t>& seeds) {
+    for(int i=0; i<P; i++) hashers[i].seed(seeds[i]);
+  }
+
+  static IndexFuncBase *factory() {
+    return (IndexFuncBase *)(new IndexSkewed());
+  }
+
+  static indexer_creator_t gen(uint32_t delay = 0) {
     using namespace std::placeholders;
-    return std::bind(factory, _1, partition, delay);
+    return std::bind(factory);
   }
 };
 
-#undef CLog2
+/////////////////////////////////
+// Set-associative random cache
+//   IW: index width, IOfst: index offset
+template<int IW, int IOfst>
+class IndexRandom : public IndexSkewed<IW,IOfst,1>
+{
+public:
+  virtual ~IndexRandom() {}
+
+  static IndexFuncBase *factory() {
+    return (IndexFuncBase *)(new IndexRandom());
+  }
+
+  static indexer_creator_t gen(uint32_t delay = 0) {
+    using namespace std::placeholders;
+    return std::bind(factory);
+  }
+};
+
 
 #endif
