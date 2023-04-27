@@ -11,7 +11,8 @@
 #include <map>
 #include <vector>
 
-class CMMetadataBase {
+class CMMetadataBase
+{
 public:
   virtual bool match(uint64_t addr) const = 0;  // wether an address match with this block
   virtual void reset() = 0;                     // reset the metadata
@@ -29,7 +30,8 @@ public:
   virtual bool is_dirty() const = 0;
 };
 
-class CMDataBase {
+class CMDataBase
+{
 public:
   virtual void reset() = 0; // reset the data block, normally unnecessary
   virtual uint64_t read(unsigned int index) const = 0; // read a 64b data
@@ -43,7 +45,9 @@ public:
 // AW    : address width
 // TOfst : tag offset
 template <int AW, int TOfst>
-class MetadataMSI : public CMMetadataBase {
+class MetadataMSI : public CMMetadataBase
+{
+protected:
   uint64_t     tag   : AW-TOfst;
   unsigned int state : 2; // 0: invalid, 1: shared, 2:modify
   unsigned int dirty : 1; // 0: clean, 1: dirty
@@ -71,7 +75,9 @@ public:
 };
 
 // typical 64B data block
-class Data64B : public CMDataBase {
+class Data64B : public CMDataBase
+{
+protected:
   uint64_t data[8];
 
 public:
@@ -85,7 +91,9 @@ public:
 
 // record and generate the unique IDs for caches
 // We will need to use these ids in the reporter for fast locating a cache
-class CacheID {
+class CacheID
+{
+protected:
   static std::set<uint32_t> ids;
   static std::default_random_engine gen;
   // use a unique pointer here to handle static member initialization and auto destroy
@@ -107,6 +115,7 @@ public:
 // base class for a cache array:
 class CacheArrayBase
 {
+protected:
   const uint32_t id;                    // a unique id to identify this cache
   const std::string name;               // an optional name to describe this cache
 
@@ -168,7 +177,7 @@ public:
   virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const;
   virtual CMDataBase * get_data(uint32_t ds, uint32_t dw);
 
-private:
+protected:
   MT *meta; // meta array
   DT *data; // data array
 
@@ -192,6 +201,7 @@ private:
 // base class for a cache
 class CacheBase
 {
+protected:
   const std::string name;               // an optional name to describe this cache
 
   // a vector of cache arrays
