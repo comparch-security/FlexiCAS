@@ -8,8 +8,10 @@
 #include <set>
 #include <map>
 #include <vector>
+#include <memory>
 
 #include "util/random.hpp"
+#include "cache/index.hpp"
 
 class CMMetadataBase
 {
@@ -211,22 +213,27 @@ protected:
   // MIRAGE: parition number of CacheArrayNorm (configured with separate meta and data array)
   std::vector<CacheArrayBase *> arrays;
 
-  std::unique_ptr<IndexFuncBase> indexer;
+  std::unique_ptr<IndexFuncBase> indexer; // index resolver
 
 public:
-  CacheBase(std::string name = "") : name(name) {}
+  CacheBase(IndexFuncBase *indexer,
+            std::string name)
+    : name(name),
+      indexer(indexer)
+  {}
+  virtual ~CacheBase() {
+    for(auto a: arrays) delete a;
+  }
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
-                   uint32_t *s, uint32_t *w,
-                   uint32_t *ds, uint32_t *dw // data set and way index when data array is separate as in MIRAGE
+                   uint32_t *s, uint32_t *w
                    ) const = 0;
 
   virtual const CMMetadataBase *read(uint64_t addr) = 0;  // obtain the cache block for read
   virtual CMMetadataBase *access(uint64_t addr) = 0;  // obtain the cache block for modification (other than simple write) ? necessary ?
   virtual CMMetadataBase *write(uint64_t addr) = 0; // obtain the cache block for write
 
-  virtual ~CacheBase() {}
 };
 
 // normal set associate cache
