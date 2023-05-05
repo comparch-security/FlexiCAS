@@ -8,8 +8,10 @@
 #include <set>
 #include <map>
 #include <vector>
+#include <memory>
 
 #include "util/random.hpp"
+#include "cache/index.hpp"
 
 class CMMetadataBase
 {
@@ -145,23 +147,14 @@ public:
 };
 
 // normal set associative cache array
-template<typename MT, typename DT>
+// IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
+template<int IW, int NW, typename MT, typename DT>
 class CacheArrayNorm : public CacheArrayBase
 {
 public:
-  uint32_t nset, nway;  // number of sets and ways
+  const uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(uint32_t nset, uint32_t nway)
-    : CacheArrayBase(), nset(nset), nway(nway)
-  {
-    init();
-  }
-
-  CacheArrayNorm(uint32_t nset, uint32_t nway, std::string name)
-    : CacheArrayBase(name), nset(nset), nway(nway)
-  {
-    init();
-  }
+  CacheArrayNorm(std::string name = "") : CacheArrayBase(name) { init(); }
 
   virtual ~CacheArrayNorm() {
     free(meta);
@@ -170,8 +163,8 @@ public:
 
   // @jinchi ToDo: implement these functions
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
-    for(int i=0; i<nway; i++)
-      if(meta[s*nway + i].match(addr)) {
+    for(int i=0; i<NW; i++)
+      if(meta[s*NW + i].match(addr)) {
         *w = i;
         return true;
       }
@@ -201,7 +194,7 @@ protected:
   DT *data; // data array
 
   void init() {
-    size_t num = nset * nway;
+    size_t num = nset * NW;
 
     size_t meta_size = num * sizeof(MT);
     meta = (MT *)malloc(meta_size);
@@ -230,27 +223,47 @@ protected:
   // MIRAGE: parition number of CacheArrayNorm (configured with separate meta and data array)
   std::vector<CacheArrayBase *> arrays;
 
-  std::unique_ptr<IndexFuncBase> indexer;
+  std::unique_ptr<IndexFuncBase> indexer; // index resolver
 
 public:
-  CacheBase(std::string name = "") : name(name) {}
+  CacheBase(IndexFuncBase *indexer,
+            std::string name)
+    : name(name),
+      indexer(indexer)
+  {}
+  virtual ~CacheBase() {
+    for(auto a: arrays) delete a;
+  }
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
-                   uint32_t *s, uint32_t *w,
-                   uint32_t *ds, uint32_t *dw // data set and way index when data array is separate as in MIRAGE
+                   uint32_t *s, uint32_t *w
                    ) const = 0;
 
   virtual const CMMetadataBase *read(uint64_t addr) = 0;  // obtain the cache block for read
   virtual CMMetadataBase *access(uint64_t addr) = 0;  // obtain the cache block for modification (other than simple write) ? necessary ?
   virtual CMMetadataBase *write(uint64_t addr) = 0; // obtain the cache block for write
 
-  virtual ~CacheBase() {}
 };
 
 // normal set associate cache
+// IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
+template<int IW, int NW, typename MT, typename DT>
 class CacheNorm : public CacheBase
 {
+public:
+  CacheNorm(IndexFuncBase *indexer,
+            std::string name = "")
+    : CacheBase(indexer, name)
+  {
+    arrays.resize(1);
+    arrays[0] = new CacheArrayNorm<IW,NW,MT,DT>();
+  }
+
+  // @jinchi ToDo: implement these functions
+  virtual const CMMetadataBase *read(uint64_t addr);  // obtain the cache block for read
+  virtual CMMetadataBase *access(uint64_t addr);  // obtain the cache block for modification (other than simple write) ? necessary ?
+  virtual CMMetadataBase *write(uint64_t addr); // obtain the cache block for write
 };
 
 
