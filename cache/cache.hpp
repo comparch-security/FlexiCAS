@@ -116,8 +116,18 @@ public:
   CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name) {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
-  // locate a data block for meta and data separate cache, such as MIRAGE
-  virtual bool locate_data(uint32_t s, uint32_t w, uint32_t *ds, uint32_t *dw) const = 0;
+
+  // locate a data block in a meta and data separate cache, such as MIRAGE
+  virtual bool locate_data(uint32_t ms, uint32_t mw, uint32_t *ds, uint32_t *dw) const {
+    *ds = ms; *dw = mw;
+    return true;
+  }
+
+  // locate a data block in a meta and data separate cache, such as MIRAGE
+  virtual bool locate_meta(uint32_t ds, uint32_t dw, uint32_t *ms, uint32_t *mw) const {
+    *ms = ds; *mw = dw;
+    return true;
+  }
 
   virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
@@ -160,8 +170,6 @@ public:
 
     return false;
   }
-
-  virtual bool locate_data(uint32_t s, uint32_t w, uint32_t *ds, uint32_t *dw) const { *ds = s; *dw = w; return true; }
 
   virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w);
