@@ -237,8 +237,23 @@ public:
 };
 
 // normal set associate cache
+// IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
+template<int IW, int NW, typename MT, typename DT>
 class CacheNorm : public CacheBase
 {
+public:
+  CacheNorm(IndexFuncBase *indexer,
+            std::string name = "")
+    : CacheBase(indexer, name)
+  {
+    arrays.resize(1);
+    arrays[0] = new CacheArrayNorm<IW,NW,MT,DT>();
+  }
+
+  // @jinchi ToDo: implement these functions
+  virtual const CMMetadataBase *read(uint64_t addr);  // obtain the cache block for read
+  virtual CMMetadataBase *access(uint64_t addr);  // obtain the cache block for modification (other than simple write) ? necessary ?
+  virtual CMMetadataBase *write(uint64_t addr); // obtain the cache block for write
 };
 
 
