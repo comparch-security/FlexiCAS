@@ -28,6 +28,8 @@ public:
   virtual bool is_owned() const = 0;
   virtual bool is_exclusive() const = 0;
   virtual bool is_dirty() const = 0;
+
+  virtual ~CMMetadataBase() {}
 };
 
 class CMDataBase
@@ -37,6 +39,8 @@ public:
   virtual uint64_t read(unsigned int index) const = 0; // read a 64b data
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) = 0; // write a 64b data with wmask
   virtual void write(uint64_t *wdata) = 0; // write the whole cache block
+
+  virtual ~CMDataBase() {}
 };
 
 // Note: may be we should move this into another header
@@ -56,6 +60,7 @@ protected:
 
 public:
   MetadataMSI() : tag(0), state(0), dirty(0) {}
+  virtual ~MetadataMSI() {}
 
   virtual bool match(uint64_t addr) { return ((addr >> TOfst) & mask) == tag; }
   virtual void reset() { tag = 0; state = 0; dirty = 0; }
@@ -71,7 +76,6 @@ public:
   virtual bool is_owned() const { return state == 2; } // not supported, equal to modified
   virtual bool is_exclusive()  { return state == 2; }  // not supported, equal to modified
   virtual bool is_dirty() const { return dirty; }
-  
 };
 
 // typical 64B data block
@@ -82,6 +86,8 @@ protected:
 
 public:
   Data64B() : data{0} {}
+  virtual ~Data64B() {}
+
   virtual uint64_t read(unsigned int index) { return data[index]; }
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) { data[index] = (data[index] & (~wmask)) | (wdata & wmask); }
   virtual void write(uint64_t *wdata) { for(int i=0; i<8; i++) data[i] = wdata[i]; }
@@ -114,6 +120,8 @@ protected:
 
 public:
   CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name) {}
+
+  virtual ~CacheArrayBase() {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
 
@@ -212,6 +220,8 @@ protected:
   // MIRAGE: parition number of CacheArrayNorm (configured with separate meta and data array)
   std::vector<CacheArrayBase *> arrays;
 
+  std::unique_ptr<IndexFuncBase> indexer;
+
 public:
   CacheBase(std::string name = "") : name(name) {}
 
@@ -224,6 +234,8 @@ public:
   virtual const CMMetadataBase *read(uint64_t addr) = 0;  // obtain the cache block for read
   virtual CMMetadataBase *access(uint64_t addr) = 0;  // obtain the cache block for modification (other than simple write) ? necessary ?
   virtual CMMetadataBase *write(uint64_t addr) = 0; // obtain the cache block for write
+
+  virtual ~CacheBase() {}
 };
 
 // normal set associate cache
