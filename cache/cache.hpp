@@ -145,23 +145,14 @@ public:
 };
 
 // normal set associative cache array
-template<typename MT, typename DT>
+// IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
+template<int IW, int NW, typename MT, typename DT>
 class CacheArrayNorm : public CacheArrayBase
 {
 public:
-  uint32_t nset, nway;  // number of sets and ways
+  const uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(uint32_t nset, uint32_t nway)
-    : CacheArrayBase(), nset(nset), nway(nway)
-  {
-    init();
-  }
-
-  CacheArrayNorm(uint32_t nset, uint32_t nway, std::string name)
-    : CacheArrayBase(name), nset(nset), nway(nway)
-  {
-    init();
-  }
+  CacheArrayNorm(std::string name = "") : CacheArrayBase(name) { init(); }
 
   virtual ~CacheArrayNorm() {
     free(meta);
@@ -170,8 +161,8 @@ public:
 
   // @jinchi ToDo: implement these functions
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
-    for(int i=0; i<nway; i++)
-      if(meta[s*nway + i].match(addr)) {
+    for(int i=0; i<NW; i++)
+      if(meta[s*NW + i].match(addr)) {
         *w = i;
         return true;
       }
@@ -191,7 +182,7 @@ protected:
   DT *data; // data array
 
   void init() {
-    size_t num = nset * nway;
+    size_t num = nset * NW;
 
     size_t meta_size = num * sizeof(MT);
     meta = (MT *)malloc(meta_size);
