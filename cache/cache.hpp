@@ -163,12 +163,22 @@ public:
 
   virtual bool locate_data(uint32_t s, uint32_t w, uint32_t *ds, uint32_t *dw) const { *ds = s; *dw = w; return true; }
 
-  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const;
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w);
+  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const { return &(meta[s*nway + w]); }
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return &(meta[s*nway + w]); }
 
   // @jinchi remember to check whether DT is void
-  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const;
-  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw);
+  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const {
+    if(!std::is_void<DT>::value) 
+      return &(data[ds*nway + dw]); 
+    else
+      return nullptr;
+  }
+  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw) {
+    if(!std::is_void<DT>::value) 
+      return &(data[ds*nway + dw]); 
+    else
+      return nullptr;
+  }
 
 protected:
   MT *meta; // meta array
