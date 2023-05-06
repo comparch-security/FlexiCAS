@@ -119,11 +119,16 @@ class CacheArrayBase
 protected:
   const uint32_t id;                    // a unique id to identify this cache
   const std::string name;               // an optional name to describe this cache
+  CMMetadataBase *meta;                 // meta array
+  CMDataBase *data;                     // data array, could be null
 
 public:
-  CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name) {}
+  CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name), meta(nullptr), data(nullptr) {}
 
-  virtual ~CacheArrayBase() {}
+  virtual ~CacheArrayBase() {
+    delete [] meta;
+    if(data != nullptr) delete [] data;
+  }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
 
@@ -142,7 +147,11 @@ class CacheArrayNorm : public CacheArrayBase
 public:
   const uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(std::string name = "") : CacheArrayBase(name) { init(); }
+  CacheArrayNorm(std::string name = "") : CacheArrayBase(name) {
+    size_t num = nset * NW;
+    meta = new MT[num];
+    if(!std::is_void<DT>::value) data = new DT[num];
+  }
 
   virtual ~CacheArrayNorm() {
     free(meta);
@@ -169,24 +178,6 @@ public:
 
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
     return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]);
-  }
-
-protected:
-  MT *meta; // meta array
-  DT *data; // data array
-
-  void init() {
-    size_t num = nset * NW;
-
-    size_t meta_size = num * sizeof(MT);
-    meta = (MT *)malloc(meta_size);
-    for(size_t i=0; i<num; i++) meta[i].reset();
-
-    if(!std::is_void<DT>::value) {
-      size_t data_size = num * sizeof(DT);
-      data = (DT *)malloc(data_size);
-      // for(size_t i=0; i<num; i++) data[i].reset();
-    }
   }
 };
 
