@@ -216,31 +216,52 @@ public:
                    uint32_t *s, uint32_t *w
                    ) const = 0;
 
-  virtual const CMMetadataBase *read(uint64_t addr) = 0;  // obtain the cache block for read
-  virtual CMMetadataBase *access(uint64_t addr) = 0;  // obtain the cache block for modification (other than simple write) ? necessary ?
-  virtual CMMetadataBase *write(uint64_t addr) = 0; // obtain the cache block for write
+  virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for read
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for modification
+  virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w) = 0; // obtain the cache block for write
+  virtual void invalidate(uint32_t ai, uint32_t s, uint32_t w) = 0; // invalidate a cache block
+  virtual const CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) const = 0;
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
 };
 
-// normal set associate cache
-// IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
-template<int IW, int NW, typename MT, typename DT>
-class CacheNorm : public CacheBase
+// Skewed Cache
+// IW: index width, NW: number of ways, P: number of partitions
+// MT: metadata type, DT: data type (void if not in use)
+// IDX: indexer type, RPC: replacer type
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC>
+class CacheSkewed : public CacheBase
 {
 public:
-  CacheNorm(IndexFuncBase *indexer,
-            std::string name = "")
-    : CacheBase(indexer, name)
+  CacheSkewed(std::string name = "")
+    : CacheBase(new IDX(), new RPC(), name)
   {
-    arrays.resize(1);
-    arrays[0] = new CacheArrayNorm<IW,NW,MT,DT>();
+    arrays.resize(P);
+    for(auto a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
   }
 
   // @jinchi ToDo: implement these functions
-  virtual const CMMetadataBase *read(uint64_t addr);  // obtain the cache block for read
-  virtual CMMetadataBase *access(uint64_t addr);  // obtain the cache block for modification (other than simple write) ? necessary ?
-  virtual CMMetadataBase *write(uint64_t addr); // obtain the cache block for write
+  virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for read
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for modification
+  virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w) = 0; // obtain the cache block for write
+  virtual void invalidate(uint32_t ai, uint32_t s, uint32_t w) = 0; // invalidate a cache block
+  virtual const CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) const = 0;
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
 };
+
+// Normal set-associative cache
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
+
+/* Example: a 128-set 8-way set-associative cache using
+     a 48-bit address system,
+     64B cache block,
+     normal index,
+     LRU replacement policy
+
+  CacheNorm<7, 8, MetadataMSI<48, 7+6>, Data64B, IndexNorm<7, 6>, ReplaceLRU<7, 8> > cache;
+*/
+
 
 
 #endif
