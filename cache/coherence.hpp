@@ -15,7 +15,7 @@ public:
   virtual ~OuterPortBase() {}
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) = 0;
   virtual void writeback_req(uint64_t addr, CMDataBase *data) = 0;
-  virtual void probe_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) = 0;
+  virtual void probe_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {} // may not implement if not supported
 }
 
 
