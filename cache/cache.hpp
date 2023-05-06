@@ -8,10 +8,10 @@
 #include <set>
 #include <map>
 #include <vector>
-#include <memory>
 
 #include "util/random.hpp"
 #include "cache/index.hpp"
+#include "cache/replace.hpp"
 
 class CMMetadataBase
 {
@@ -205,7 +205,8 @@ protected:
   // MIRAGE: parition number of CacheArrayNorm (meta only) with one separate CacheArrayNorm for storing data (in derived class)
   std::vector<CacheArrayBase *> arrays;
 
-  std::unique_ptr<IndexFuncBase> indexer; // index resolver
+  IndexFuncBase *indexer; // index resolver
+  ReplaceFuncBase *replacer; // replacer
 
 public:
   CacheBase(IndexFuncBase *indexer,
@@ -215,6 +216,8 @@ public:
   {}
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
+    delete indexer;
+    delete replacer;
   }
 
   virtual bool hit(uint64_t addr,
