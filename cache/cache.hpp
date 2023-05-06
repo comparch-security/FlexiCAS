@@ -127,23 +127,11 @@ public:
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
 
-  // locate a data block in a meta and data separate cache, such as MIRAGE
-  virtual bool locate_data(uint32_t ms, uint32_t mw, uint32_t *ds, uint32_t *dw) const {
-    *ds = ms; *dw = mw;
-    return true;
-  }
-
-  // locate a data block in a meta and data separate cache, such as MIRAGE
-  virtual bool locate_meta(uint32_t ds, uint32_t dw, uint32_t *ms, uint32_t *mw) const {
-    *ms = ds; *mw = dw;
-    return true;
-  }
-
   virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
 
-  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const = 0;
-  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw) = 0;
+  virtual const CMDataBase * get_data(uint32_t s, uint32_t w) const = 0;
+  virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
 };
 
 // normal set associative cache array
@@ -175,12 +163,12 @@ public:
   virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const { return &(meta[s*NW + w]); }
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return &(meta[s*NW + w]); }
 
-  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const {
-    return std::is_void<DT>::value ? nullptr : &(data[ds*NW + dw]);
+  virtual const CMDataBase * get_data(uint32_t s, uint32_t w) const {
+    return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]);
   }
 
-  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw) {
-    return std::is_void<DT>::value ? nullptr : &(data[ds*NW + dw]);
+  virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
+    return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]);
   }
 
 protected:
@@ -214,7 +202,7 @@ protected:
   // set-associative: one CacheArrayNorm objects
   // with VC: two CacheArrayNorm objects (one fully associative)
   // skewed: partition number of CacheArrayNorm objects (each as a single cache array)
-  // MIRAGE: parition number of CacheArrayNorm (configured with separate meta and data array)
+  // MIRAGE: parition number of CacheArrayNorm (meta only) with one separate CacheArrayNorm for storing data (in derived class)
   std::vector<CacheArrayBase *> arrays;
 
   std::unique_ptr<IndexFuncBase> indexer; // index resolver
