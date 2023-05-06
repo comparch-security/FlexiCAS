@@ -172,12 +172,22 @@ public:
     return false;
   }
 
-  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const;
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w);
+  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const { return &(meta[s*NW + w]); }
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return &(meta[s*NW + w]); }
 
   // @jinchi remember to check whether DT is void
-  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const;
-  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw);
+  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const {
+    if(!std::is_void<DT>::value) 
+      return &(data[ds*NW + dw]); 
+    else
+      return nullptr;
+  }
+  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw) {
+    if(!std::is_void<DT>::value) 
+      return &(data[ds*NW + dw]); 
+    else
+      return nullptr;
+  }
 
 protected:
   MT *meta; // meta array
