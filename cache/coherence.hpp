@@ -5,6 +5,7 @@
 
 class OuterCohPortBase;
 class InnerCohPortBase;
+class CoherentCacheBase;
 
 // proactive support for future parallel simulation using multi-thread
 //   When multi-thread is supported,
@@ -22,7 +23,7 @@ protected:
   CohMasterBase *coh; // hook up with the coherence hub
   uint32_t coh_id; // the identifier used in locating this cache client by the coherence mster
 public:
-  OuterCohPortBase(CacheBase *cache) : cache(cache), coh(nullptr) {}
+  OuterCohPortBase() {}
   virtual ~OuterCohPortBase() {}
 
   void connect(CohMasterBase *h, uint32_t id) {coh = h; coh_id = id;}
@@ -30,6 +31,8 @@ public:
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) = 0;
   virtual void writeback_req(uint64_t addr, CMDataBase *data) = 0;
   virtual void probe_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {} // may not implement if not supported
+
+  friend CoherentCacheBase; // deferred assignment for cache
 };
 
 
@@ -42,7 +45,7 @@ protected:
   CacheBase *cache; // reverse pointer for the cache parent
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
 public:
-  InnerCohPortBase(CacheBase *cache) : cache(cache) {}
+  InnerCohPortBase() {}
   virtual ~InnerCohPortBase() {}
 
   void connect(CohClientBase *c) { coh.push_back(c); }
@@ -50,6 +53,8 @@ public:
   virtual void acquire_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data) = 0;
   virtual void probe_req(uint64_t addr, CMDataBase *data, uint32_t cmd) {} // may not implement if not supported
+
+  friend CoherentCacheBase; // deferred assignment for cache
 };
 
 
@@ -60,23 +65,61 @@ class CoherentCacheBase
 {
 protected:
   const std::string name;               // an optional name to describe this cache
-
   CacheBase *cache; // pointer to the actual cache
+
+public:
   OuterCohPortBase *outer; // coherence outer port, nullptr if last level
   InnerCohPortBase *inner; // coherence inner port, nullptr if 1st level
 
-public:
   CoherentCacheBase(CacheBase *cache, OuterCohPortBase *outer, InnerCohPortBase *inner, std::string name)
     : name(name), cache(cache), outer(outer), inner(inner)
-  {}
+  {
+    // deferred assignment for the reverse pointer to cache
+    if(outer) outer->cache = cache;
+    if(inner) inner->cache = cache;
+  }
+
   virtual ~CoherentCacheBase() {
     delete cache;
     if(outer) delete outer;
     if(inner) delete inner;
   }
-
-  virtual std::pair<const CMMetadataBase *, const CMDataBase *> read(uint64_t addr) = 0; // read a cache block
-  virtual std::pair<CMMetadataBase *, CMDataBase *> access(uint64_t addr) = 0; // access a cache block for modification (write)
 };
+
+
+// Normal coherent cache
+template<typename CacheT, typename OuterT, typename InnerT>
+class CoherentCacheNorm : public CoherentCacheBase
+{
+public:
+  CoherentCacheNorm(std::string name = "")
+    : CoherentCacheBase(new CacheT(),
+                        std::is_void<OuterT>::value ? nullptr : new OuterT(),
+                        std::is_void<InnerT>::value ? nullptr : new InnerT(),
+                        name)
+  {}
+
+  virtual ~CoherentCacheNorm() {}
+};
+
+
+// Normal L1 coherent cache
+template<typename CacheT, typename OuterT, typename DT>
+class CoherentL1CacheNorm : public CoherentCacheNorm<CacheT, OuterT, void>
+{
+public:
+  CoherentL1CacheNorm(std::string name = "") : CoherentCacheNorm<CacheT, OuterT, void>(name) {}
+  virtual ~CoherentL1CacheNorm() {}
+
+  // only L1 cache implement the user interface
+  DT *read(uint64_t addr);
+  void write(uint64_t addr, DT *data);
+};
+
+// Normal LLC supporting coherence
+//  MCT: memory controller type, must be a derived class of OuterCohPortBase
+template<typename CacheT, typename MCT, typename InnerT>
+using CoherentLLCNorm = CoherentCacheNorm<CacheT, MCT, InnerT>;
+
 
 #endif
