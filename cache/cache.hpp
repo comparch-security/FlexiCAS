@@ -24,6 +24,7 @@ public:
   virtual void to_owned() = 0;                  // change to owned
   virtual void to_exclusive() = 0;              // change to exclusive
   virtual void to_dirty() = 0;                  // change to dirty
+  virtual void to_clean() = 0;                  // change to dirty
   virtual bool is_valid() const = 0;
   virtual bool is_shared() const = 0;
   virtual bool is_modified() const = 0;
@@ -41,6 +42,7 @@ public:
   virtual uint64_t read(unsigned int index) const = 0; // read a 64b data
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) = 0; // write a 64b data with wmask
   virtual void write(uint64_t *wdata) = 0; // write the whole cache block
+  virtual void copy(const CMDataBase *block) = 0; // copy the content of block
 
   virtual ~CMDataBase() {}
 };
@@ -72,6 +74,7 @@ public:
   virtual void to_owned() { state = 2; }     // not supported, equal to modified
   virtual void to_exclusive() { state = 2; } // not supported, equal to modified
   virtual void to_dirty() { dirty = 1; }
+  virtual void to_clean() { dirty = 0; }
   virtual bool is_valid() const { return state; }
   virtual bool is_shared() const { return state == 1; }
   virtual bool is_modified() const {return state == 2; }
@@ -90,9 +93,14 @@ public:
   Data64B() : data{0} {}
   virtual ~Data64B() {}
 
-  virtual uint64_t read(unsigned int index) { return data[index]; }
+  virtual void reset() { for(auto d:data) d = 0; }
+  virtual uint64_t read(unsigned int index) const { return data[index]; }
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) { data[index] = (data[index] & (~wmask)) | (wdata & wmask); }
   virtual void write(uint64_t *wdata) { for(int i=0; i<8; i++) data[i] = wdata[i]; }
+  virtual void copy(const CMDataBase *m_block) {
+    auto block = static_cast<const Data64B *>(m_block);
+    for(int i=0; i<8; i++) data[i] = block->data[i];
+  }
 };
 
 //////////////// define cache array ////////////////////
