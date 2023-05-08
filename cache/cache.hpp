@@ -241,12 +241,12 @@ public:
   }
 
   // @jinchi ToDo: implement these functions
-  virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for read
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for modification
-  virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w) = 0; // obtain the cache block for write
-  virtual void invalidate(uint32_t ai, uint32_t s, uint32_t w) = 0; // invalidate a cache block
-  virtual const CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) const = 0;
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w);  // obtain the cache block for read
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w);  // obtain the cache block for modification
+  virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w); // obtain the cache block for write
+  virtual void invalidate(uint32_t ai, uint32_t s, uint32_t w); // invalidate a cache block
+  virtual const CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) const;
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w);
 };
 
 // Normal set-associative cache
