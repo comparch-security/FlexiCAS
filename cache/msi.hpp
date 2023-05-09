@@ -77,8 +77,8 @@ public:
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, uint32_t cmd) {
     uint32_t ai, s, w;
     if(this->cache->hit(addr, &ai, &s, &w)) {
-      auto meta = this->cache->access(ai, s, w); // oddly here, `this->' is required by the g++
-      auto data = this->cache->get_data(ai, s, w);
+      auto meta = this->cache->access(ai, s, w); // oddly here, `this->' is required by the g++ 11.3.0 @wsong83
+      CMDataBase *data = std::is_void<DT>::value ? nullptr : this->cache->get_data(ai, s, w);
 
       // sync if necessary
       if(this->inner && Policy::need_sync(cmd, meta)) this->inner->probe_req(addr, meta, data, Policy::cmd_for_sync(cmd));
@@ -86,7 +86,7 @@ public:
       // writeback if dirty
       if(meta->is_dirty()) { // dirty, writeback
         meta_outer->to_dirty();
-        if(data_outer) data_outer->copy(data);
+        if(!std::is_void<DT>::value) data_outer->copy(data);
         meta->to_clean();
       }
 
@@ -109,7 +109,7 @@ public:
     CMDataBase *data;
     if(this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
-      data = this->cache->get_data(ai, s, w);
+      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
       // sync if necessary
       if(Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(cmd));
@@ -119,7 +119,7 @@ public:
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
-      data = this->cache->get_data(ai, s, w);
+      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
       // sync if necessary
       if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
@@ -131,7 +131,7 @@ public:
       outer->acquire_req(addr, meta, data, cmd);
     }
     // grant
-    if(data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
+    if(!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
     Policy::meta_after_acquire(cmd, meta);
     Policy::meta_after_grant(cmd, meta_inner);
   }
