@@ -20,6 +20,7 @@ class OuterCohPortBase
 {
 protected:
   CacheBase *cache; // reverse pointer for the cache parent
+  InnerCohPortBase *inner; // inner port for probe when sync
   CohMasterBase *coh; // hook up with the coherence hub
   uint32_t coh_id; // the identifier used in locating this cache client by the coherence mster
 public:
@@ -29,7 +30,7 @@ public:
   void connect(CohMasterBase *h, uint32_t id) {coh = h; coh_id = id;}
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) = 0;
-  virtual void writeback_req(uint64_t addr, CMDataBase *data) = 0;
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data) = 0;
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
@@ -42,6 +43,7 @@ class InnerCohPortBase
 {
 protected:
   CacheBase *cache; // reverse pointer for the cache parent
+  OuterCohPortBase *outer; // outer port for writeback when replace
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
 public:
   InnerCohPortBase() {}
@@ -74,8 +76,8 @@ public:
     : name(name), cache(cache), outer(outer), inner(inner)
   {
     // deferred assignment for the reverse pointer to cache
-    if(outer) outer->cache = cache;
-    if(inner) inner->cache = cache;
+    if(outer) { outer->cache = cache; outer->inner = inner; }
+    if(inner) { inner->cache = cache; inner->outer = outer; }
   }
 
   virtual ~CoherentCacheBase() {

@@ -190,6 +190,8 @@ public:
                    uint32_t *s, uint32_t *w
                    ) const = 0;
 
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w);
+
   virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for read
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for modification
   virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w) = 0; // obtain the cache block for write
