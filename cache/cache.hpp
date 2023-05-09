@@ -16,21 +16,22 @@
 class CMMetadataBase
 {
 public:
-  virtual bool match(uint64_t addr) const = 0;  // wether an address match with this block
-  virtual void reset() = 0;                     // reset the metadata
-  virtual void to_invalid() = 0;                // change state to invalid
-  virtual void to_shared() = 0;                 // change to shared
-  virtual void to_modified() = 0;               // change to modified
-  virtual void to_owned() = 0;                  // change to owned
-  virtual void to_exclusive() = 0;              // change to exclusive
-  virtual void to_dirty() = 0;                  // change to dirty
-  virtual void to_clean() = 0;                  // change to dirty
-  virtual bool is_valid() const = 0;
-  virtual bool is_shared() const = 0;
-  virtual bool is_modified() const = 0;
-  virtual bool is_owned() const = 0;
-  virtual bool is_exclusive() const = 0;
-  virtual bool is_dirty() const = 0;
+  // implement a totally useless base class
+  virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
+  virtual void reset() {}            // reset the metadata
+  virtual void to_invalid() {}       // change state to invalid
+  virtual void to_shared() {}        // change to shared
+  virtual void to_modified() {}      // change to modified
+  virtual void to_owned() {}         // change to owned
+  virtual void to_exclusive() {}     // change to exclusive
+  virtual void to_dirty() {}         // change to dirty
+  virtual void to_clean() {}         // change to dirty
+  virtual bool is_valid() const { return false; }
+  virtual bool is_shared() const { return false; }
+  virtual bool is_modified() const { return false; }
+  virtual bool is_owned() const { return false; }
+  virtual bool is_exclusive() const { return false; }
+  virtual bool is_dirty() const { return false; }
 
   virtual ~CMMetadataBase() {}
 };
@@ -38,49 +39,14 @@ public:
 class CMDataBase
 {
 public:
-  virtual void reset() = 0; // reset the data block, normally unnecessary
-  virtual uint64_t read(unsigned int index) const = 0; // read a 64b data
-  virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) = 0; // write a 64b data with wmask
-  virtual void write(uint64_t *wdata) = 0; // write the whole cache block
-  virtual void copy(const CMDataBase *block) = 0; // copy the content of block
+  // implement a totally useless base class
+  virtual void reset() {} // reset the data block, normally unnecessary
+  virtual uint64_t read(unsigned int index) const { return 0; } // read a 64b data
+  virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) {} // write a 64b data with wmask
+  virtual void write(uint64_t *wdata) {} // write the whole cache block
+  virtual void copy(const CMDataBase *block) {} // copy the content of block
 
   virtual ~CMDataBase() {}
-};
-
-// Note: may be we should move this into another header
-
-// metadata supporting MSI coherency
-// AW    : address width
-// TOfst : tag offset
-template <int AW, int TOfst>
-class MetadataMSI : public CMMetadataBase
-{
-protected:
-  uint64_t     tag   : AW-TOfst;
-  unsigned int state : 2; // 0: invalid, 1: shared, 2:modify
-  unsigned int dirty : 1; // 0: clean, 1: dirty
-
-  static const uint64_t mask = (1ull << (AW-TOfst)) - 1;
-
-public:
-  MetadataMSI() : tag(0), state(0), dirty(0) {}
-  virtual ~MetadataMSI() {}
-
-  virtual bool match(uint64_t addr) { return ((addr >> TOfst) & mask) == tag; }
-  virtual void reset() { tag = 0; state = 0; dirty = 0; }
-  virtual void to_invalid() { state = 0; }
-  virtual void to_shared() { state = 1; }
-  virtual void to_modified() { state = 2; }
-  virtual void to_owned() { state = 2; }     // not supported, equal to modified
-  virtual void to_exclusive() { state = 2; } // not supported, equal to modified
-  virtual void to_dirty() { dirty = 1; }
-  virtual void to_clean() { dirty = 0; }
-  virtual bool is_valid() const { return state; }
-  virtual bool is_shared() const { return state == 1; }
-  virtual bool is_modified() const {return state == 2; }
-  virtual bool is_owned() const { return state == 2; } // not supported, equal to modified
-  virtual bool is_exclusive()  { return state == 2; }  // not supported, equal to modified
-  virtual bool is_dirty() const { return dirty; }
 };
 
 // typical 64B data block
@@ -265,7 +231,8 @@ using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
      a 48-bit address system,
      64B cache block,
      normal index,
-     LRU replacement policy
+     LRU replacement policy,
+     MSI coherence protocol
 
   CacheNorm<7, 8, MetadataMSI<48, 7+6>, Data64B, IndexNorm<7, 6>, ReplaceLRU<7, 8> > cache;
 */

@@ -3,10 +3,6 @@
 
 #include "cache/coherence.hpp"
 
-/////////////////////////////////
-// Define a group of static (singlton) class for interprating the command of actions
-// for different coherence policies
-
 // MSI protocol
 class CohPolicyMSI {
 public:
@@ -16,11 +12,39 @@ public:
   static bool is_probe_to_invalid(uint32_t cmd);
 };
 
-/////////////////////////////////
-// Implement the MSI protocol
+// metadata supporting MSI coherency
+// AW    : address width
+// TOfst : tag offset
+template <int AW, int TOfst>
+class MetadataMSI : public CMMetadataBase
+{
+protected:
+  uint64_t     tag   : AW-TOfst;
+  unsigned int state : 2; // 0: invalid, 1: shared, 2:modify
+  unsigned int dirty : 1; // 0: clean, 1: dirty
 
-// Outer port for MSI, uncached, no support for reverse probe as if there is no internal cache
-// or the interl cache does not participate in the coherence communication
+  static const uint64_t mask = (1ull << (AW-TOfst)) - 1;
+
+public:
+  MetadataMSI() : tag(0), state(0), dirty(0) {}
+  virtual ~MetadataMSI() {}
+
+  virtual bool match(uint64_t addr) { return ((addr >> TOfst) & mask) == tag; }
+  virtual void reset() { tag = 0; state = 0; dirty = 0; }
+  virtual void to_invalid() { state = 0; }
+  virtual void to_shared() { state = 1; }
+  virtual void to_modified() { state = 2; }
+  virtual void to_dirty() { dirty = 1; }
+  virtual void to_clean() { dirty = 0; }
+  virtual bool is_valid() const { return state; }
+  virtual bool is_shared() const { return state == 1; }
+  virtual bool is_modified() const {return state == 2; }
+  virtual bool is_dirty() const { return dirty; }
+};
+
+// uncached MSI outer port:
+//   no support for reverse probe as if there is no internal cache
+//   or the interl cache does not participate in the coherence communication
 template<typename MT, typename DT>
 class OuterPortMSIUncached : public OuterCohPortBase
 {
@@ -33,7 +57,7 @@ public:
   }
 };
 
-// Outer port for MSI, cached, support reverse probes
+// full MSI Outer port
 template<typename MT, typename DT>
 class OuterPortMSI : public OuterPortMSIUncached<MT, DT>
 {
