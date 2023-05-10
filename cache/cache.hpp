@@ -10,68 +10,43 @@
 #include <vector>
 
 #include "util/random.hpp"
+#include "cache/index.hpp"
+#include "cache/replace.hpp"
 
 class CMMetadataBase
 {
 public:
-  virtual bool match(uint64_t addr) const = 0;  // wether an address match with this block
-  virtual void reset() = 0;                     // reset the metadata
-  virtual void to_invalid() = 0;                // change state to invalid
-  virtual void to_shared() = 0;                 // change to shared
-  virtual void to_modified() = 0;               // change to modified
-  virtual void to_owned() = 0;                  // change to owned
-  virtual void to_exclusive() = 0;              // change to exclusive
-  virtual void to_dirty() = 0;                  // change to dirty
-  virtual bool is_valid() const = 0;
-  virtual bool is_shared() const = 0;
-  virtual bool is_modified() const = 0;
-  virtual bool is_owned() const = 0;
-  virtual bool is_exclusive() const = 0;
-  virtual bool is_dirty() const = 0;
+  // implement a totally useless base class
+  virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
+  virtual void reset() {}            // reset the metadata
+  virtual void to_invalid() {}       // change state to invalid
+  virtual void to_shared() {}        // change to shared
+  virtual void to_modified() {}      // change to modified
+  virtual void to_owned() {}         // change to owned
+  virtual void to_exclusive() {}     // change to exclusive
+  virtual void to_dirty() {}         // change to dirty
+  virtual void to_clean() {}         // change to dirty
+  virtual bool is_valid() const { return false; }
+  virtual bool is_shared() const { return false; }
+  virtual bool is_modified() const { return false; }
+  virtual bool is_owned() const { return false; }
+  virtual bool is_exclusive() const { return false; }
+  virtual bool is_dirty() const { return false; }
+
+  virtual ~CMMetadataBase() {}
 };
 
 class CMDataBase
 {
 public:
-  virtual void reset() = 0; // reset the data block, normally unnecessary
-  virtual uint64_t read(unsigned int index) const = 0; // read a 64b data
-  virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) = 0; // write a 64b data with wmask
-  virtual void write(uint64_t *wdata) = 0; // write the whole cache block
-};
+  // implement a totally useless base class
+  virtual void reset() {} // reset the data block, normally unnecessary
+  virtual uint64_t read(unsigned int index) const { return 0; } // read a 64b data
+  virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) {} // write a 64b data with wmask
+  virtual void write(uint64_t *wdata) {} // write the whole cache block
+  virtual void copy(const CMDataBase *block) {} // copy the content of block
 
-// Note: may be we should move this into another header
-
-// metadata supporting MSI coherency
-// AW    : address width
-// TOfst : tag offset
-template <int AW, int TOfst>
-class MetadataMSI : public CMMetadataBase
-{
-protected:
-  uint64_t     tag   : AW-TOfst;
-  unsigned int state : 2; // 0: invalid, 1: shared, 2:modify
-  unsigned int dirty : 1; // 0: clean, 1: dirty
-
-  static const uint64_t mask = (1ull << (AW-TOfst)) - 1;
-
-public:
-  MetadataMSI() : tag(0), state(0), dirty(0) {}
-
-  virtual bool match(uint64_t addr) { return ((addr >> TOfst) & mask) == tag; }
-  virtual void reset() { tag = 0; state = 0; dirty = 0; }
-  virtual void to_invalid() { state = 0; }
-  virtual void to_shared() { state = 1; }
-  virtual void to_modified() { state = 2; }
-  virtual void to_owned() { state = 2; }     // not supported, equal to modified
-  virtual void to_exclusive() { state = 2; } // not supported, equal to modified
-  virtual void to_dirty() { dirty = 1; }
-  virtual bool is_valid() const { return state; }
-  virtual bool is_shared() const { return state == 1; }
-  virtual bool is_modified() const {return state == 2; }
-  virtual bool is_owned() const { return state == 2; } // not supported, equal to modified
-  virtual bool is_exclusive()  { return state == 2; }  // not supported, equal to modified
-  virtual bool is_dirty() const { return dirty; }
-  
+  virtual ~CMDataBase() {}
 };
 
 // typical 64B data block
@@ -82,9 +57,16 @@ protected:
 
 public:
   Data64B() : data{0} {}
-  virtual uint64_t read(unsigned int index) { return data[index]; }
+  virtual ~Data64B() {}
+
+  virtual void reset() { for(auto d:data) d = 0; }
+  virtual uint64_t read(unsigned int index) const { return data[index]; }
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) { data[index] = (data[index] & (~wmask)) | (wdata & wmask); }
   virtual void write(uint64_t *wdata) { for(int i=0; i<8; i++) data[i] = wdata[i]; }
+  virtual void copy(const CMDataBase *m_block) {
+    auto block = static_cast<const Data64B *>(m_block);
+    for(int i=0; i<8; i++) data[i] = block->data[i];
+  }
 };
 
 //////////////// define cache array ////////////////////
@@ -111,38 +93,40 @@ class CacheArrayBase
 protected:
   const uint32_t id;                    // a unique id to identify this cache
   const std::string name;               // an optional name to describe this cache
+  CMMetadataBase *meta;                 // meta array
+  CMDataBase *data;                     // data array, could be null
 
 public:
-  CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name) {}
+  CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name), meta(nullptr), data(nullptr) {}
+
+  virtual ~CacheArrayBase() {
+    delete [] meta;
+    if(data != nullptr) delete [] data;
+  }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
-  // locate a data block for meta and data separate cache, such as MIRAGE
-  virtual bool locate_data(uint32_t s, uint32_t w, uint32_t *ds, uint32_t *dw) const = 0;
 
   virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
 
-  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const = 0;
-  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw) = 0;
+  virtual const CMDataBase * get_data(uint32_t s, uint32_t w) const = 0;
+  virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
 };
 
 // normal set associative cache array
-template<typename MT, typename DT>
+// IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
+template<int IW, int NW, typename MT, typename DT,
+         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type, // MT <- CMMetadataBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class CacheArrayNorm : public CacheArrayBase
 {
 public:
-  uint32_t nset, nway;  // number of sets and ways
+  const uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(uint32_t nset, uint32_t nway)
-    : CacheArrayBase(), nset(nset), nway(nway)
-  {
-    init();
-  }
-
-  CacheArrayNorm(uint32_t nset, uint32_t nway, std::string name)
-    : CacheArrayBase(name), nset(nset), nway(nway)
-  {
-    init();
+  CacheArrayNorm(std::string name = "") : CacheArrayBase(name) {
+    size_t num = nset * NW;
+    meta = new MT[num];
+    if(!std::is_void<DT>::value) data = new DT[num];
   }
 
   virtual ~CacheArrayNorm() {
@@ -152,8 +136,8 @@ public:
 
   // @jinchi ToDo: implement these functions
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
-    for(int i=0; i<nway; i++)
-      if(meta[s*nway + i].match(addr)) {
+    for(int i=0; i<NW; i++)
+      if(meta[s*NW + i].match(addr)) {
         *w = i;
         return true;
       }
@@ -180,22 +164,12 @@ public:
       return nullptr;
   }
 
-protected:
-  MT *meta; // meta array
-  DT *data; // data array
+  virtual const CMDataBase * get_data(uint32_t s, uint32_t w) const {
+    return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]);
+  }
 
-  void init() {
-    size_t num = nset * nway;
-
-    size_t meta_size = num * sizeof(MT);
-    meta = (MT *)malloc(meta_size);
-    for(size_t i=0; i<num; i++) meta[i].reset();
-
-    if(!std::is_void<DT>::value) {
-      size_t data_size = num * sizeof(DT);
-      data = (DT *)malloc(data_size);
-      // for(size_t i=0; i<num; i++) data[i].reset();
-    }
+  virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
+    return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]);
   }
 };
 
@@ -211,27 +185,83 @@ protected:
   // set-associative: one CacheArrayNorm objects
   // with VC: two CacheArrayNorm objects (one fully associative)
   // skewed: partition number of CacheArrayNorm objects (each as a single cache array)
-  // MIRAGE: parition number of CacheArrayNorm (configured with separate meta and data array)
+  // MIRAGE: parition number of CacheArrayNorm (meta only) with one separate CacheArrayNorm for storing data (in derived class)
   std::vector<CacheArrayBase *> arrays;
 
+  IndexFuncBase *indexer; // index resolver
+  ReplaceFuncBase *replacer; // replacer
+
 public:
-  CacheBase(std::string name = "") : name(name) {}
+  CacheBase(IndexFuncBase *indexer,
+            ReplaceFuncBase *replcaer,
+            std::string name)
+    : name(name),
+      indexer(indexer),
+      replacer(replcaer)
+  {}
+  virtual ~CacheBase() {
+    for(auto a: arrays) delete a;
+    delete indexer;
+    delete replacer;
+  }
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
-                   uint32_t *s, uint32_t *w,
-                   uint32_t *ds, uint32_t *dw // data set and way index when data array is separate as in MIRAGE
+                   uint32_t *s, uint32_t *w
                    ) const = 0;
 
-  virtual const CMMetadataBase *read(uint64_t addr) = 0;  // obtain the cache block for read
-  virtual CMMetadataBase *access(uint64_t addr) = 0;  // obtain the cache block for modification (other than simple write) ? necessary ?
-  virtual CMMetadataBase *write(uint64_t addr) = 0; // obtain the cache block for write
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w);
+
+  virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for read
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for modification
+  virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w) = 0; // obtain the cache block for write
+  virtual void invalidate(uint32_t ai, uint32_t s, uint32_t w) = 0; // invalidate a cache block
+  virtual const CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) const = 0;
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
+
 };
 
-// normal set associate cache
-class CacheNorm : public CacheBase
+// Skewed Cache
+// IW: index width, NW: number of ways, P: number of partitions
+// MT: metadata type, DT: data type (void if not in use)
+// IDX: indexer type, RPC: replacer type
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC,
+         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
+         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type>  // IDX <- IndexFuncBase
+  class CacheSkewed : public CacheBase
 {
+public:
+  CacheSkewed(std::string name = "")
+    : CacheBase(new IDX(), new RPC(), name)
+  {
+    arrays.resize(P);
+    for(auto a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
+  }
+
+  // @jinchi ToDo: implement these functions
+  virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w);  // obtain the cache block for read
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w);  // obtain the cache block for modification
+  virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w); // obtain the cache block for write
+  virtual void invalidate(uint32_t ai, uint32_t s, uint32_t w); // invalidate a cache block
+  virtual const CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) const;
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w);
 };
+
+// Normal set-associative cache
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
+
+/* Example: a 128-set 8-way set-associative cache using
+     a 48-bit address system,
+     no cache block,
+     normal index,
+     LRU replacement policy,
+     MSI coherence protocol
+
+  CacheNorm<7, 8, MetadataMSI<48, 7+6>, void, IndexNorm<7, 6>, ReplaceLRU<7, 8> > cache;
+*/
+
 
 
 #endif

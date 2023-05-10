@@ -7,13 +7,9 @@
 
 /////////////////////////////////
 // Base class
-//   IW: index width
-template<int IW>
 class IndexFuncBase
 {
-  const uint32_t mask;
 public:
-  IndexFuncBase() : mask((1ul << IW) - 1) {}
   virtual ~IndexFuncBase() {}
   virtual void index(uint64_t addr, std::vector<uint32_t>& indices) = 0;
 };
@@ -23,13 +19,14 @@ public:
 // Set associative caches
 //   IW: index width, IOfst: index offset
 template<int IW, int IOfst>
-class IndexNorm : public IndexFuncBase<IW>
+class IndexNorm : public IndexFuncBase
 {
-public:  
+  const uint32_t mask;
+public:
+  IndexNorm() : mask((1ul << IW) - 1) {}
   virtual ~IndexNorm() {}
 
   virtual void index(uint64_t addr, std::vector<uint32_t>& indices) {
-    const uint32_t mask = (1ul << IW) - 1;
     indices[0] = (addr >> IOfst) & mask;
   }
 };
@@ -38,7 +35,7 @@ public:
 // Skewed cache
 //   IW: index width, IOfst: index offset, P: number of partitions
 template<int IW, int IOfst, int P>
-class IndexSkewed : public IndexFuncBase<IW>
+class IndexSkewed : public IndexFuncBase
 {
   CMHasher hashers[P];
 public:
