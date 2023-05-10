@@ -115,7 +115,9 @@ public:
 
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
-template<int IW, int NW, typename MT, typename DT>
+template<int IW, int NW, typename MT, typename DT,
+         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type, // MT <- CMMetadataBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class CacheArrayNorm : public CacheArrayBase
 {
 public:
@@ -205,8 +207,11 @@ public:
 // IW: index width, NW: number of ways, P: number of partitions
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
-template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC>
-class CacheSkewed : public CacheBase
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC,
+         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
+         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type>  // IDX <- IndexFuncBase
+  class CacheSkewed : public CacheBase
 {
 public:
   CacheSkewed(std::string name = "")
@@ -231,12 +236,12 @@ using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
 
 /* Example: a 128-set 8-way set-associative cache using
      a 48-bit address system,
-     64B cache block,
+     no cache block,
      normal index,
      LRU replacement policy,
      MSI coherence protocol
 
-  CacheNorm<7, 8, MetadataMSI<48, 7+6>, Data64B, IndexNorm<7, 6>, ReplaceLRU<7, 8> > cache;
+  CacheNorm<7, 8, MetadataMSI<48, 7+6>, void, IndexNorm<7, 6>, ReplaceLRU<7, 8> > cache;
 */
 
 

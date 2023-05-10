@@ -1,6 +1,7 @@
 #ifndef CM_CACHE_COHERENCE_HPP
 #define CM_CACHE_COHERENCE_HPP
 
+#include <type_traits>
 #include "cache/cache.hpp"
 
 class OuterCohPortBase;
@@ -89,7 +90,10 @@ public:
 
 
 // Normal coherent cache
-template<typename CacheT, typename OuterT, typename InnerT>
+template<typename CacheT, typename OuterT, typename InnerT,
+         typename = typename std::enable_if<std::is_base_of<CacheBase, CacheT>::value>::type,  // CacheT <- CacheBase
+         typename = typename std::enable_if<std::is_base_of<OuterCohPortBase, OuterT>::value || std::is_void<OuterT>::value>::type, // OuterCohPortBase <- OuterT or void
+         typename = typename std::enable_if<std::is_base_of<InnerCohPortBase, InnerT>::value || std::is_void<InnerT>::value>::type> // InnerCohPortBase <- OuterT or void
 class CoherentCacheNorm : public CoherentCacheBase
 {
 public:

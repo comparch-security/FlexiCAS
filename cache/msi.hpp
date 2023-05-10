@@ -2,6 +2,7 @@
 #define CM_CACHE_MSI_HPP
 
 #include <cassert>
+#include <type_traits>
 #include "cache/coherence.hpp"
 
 namespace // file visibility
@@ -24,24 +25,15 @@ namespace // file visibility
 }
 
 // metadata supporting MSI coherency
-// AW    : address width
-// TOfst : tag offset
-template <int AW, int TOfst>
-class MetadataMSI : public CMMetadataBase
+class MetadataMSIBase : public CMMetadataBase
 {
 protected:
-  uint64_t     tag   : AW-TOfst;
   unsigned int state : 2; // 0: invalid, 1: shared, 2:modify
   unsigned int dirty : 1; // 0: clean, 1: dirty
-
-  static const uint64_t mask = (1ull << (AW-TOfst)) - 1;
-
 public:
-  MetadataMSI() : tag(0), state(0), dirty(0) {}
-  virtual ~MetadataMSI() {}
+  MetadataMSIBase() : state(0), dirty(0) {}
+  virtual ~MetadataMSIBase() {}
 
-  virtual bool match(uint64_t addr) { return ((addr >> TOfst) & mask) == tag; }
-  virtual void reset() { tag = 0; state = 0; dirty = 0; }
   virtual void to_invalid() { state = 0; }
   virtual void to_shared() { state = 1; }
   virtual void to_modified() { state = 2; }
@@ -53,11 +45,31 @@ public:
   virtual bool is_dirty() const { return dirty; }
 };
 
+// Metadata with match function
+// AW    : address width
+// TOfst : tag offset
+template <int AW, int TOfst>
+class MetadataMSI : public MetadataMSIBase
+{
+protected:
+  uint64_t     tag   : AW-TOfst;
+  static const uint64_t mask = (1ull << (AW-TOfst)) - 1;
+
+public:
+  MetadataMSI() : tag(0) {}
+  virtual ~MetadataMSI() {}
+
+  virtual bool match(uint64_t addr) { return ((addr >> TOfst) & mask) == tag; }
+  virtual void reset() { tag = 0; state = 0; dirty = 0; }
+};
+
 
 // uncached MSI outer port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT>
+template<typename MT, typename DT,
+         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class OuterPortMSIUncached : public OuterCohPortBase
 {
 public:
@@ -99,7 +111,9 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT>
+template<typename MT, typename DT,
+         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class InnerPortMSIUncached : public InnerCohPortBase
 {
 public:
