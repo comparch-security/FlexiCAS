@@ -9,13 +9,58 @@ namespace // file visibility
 {
   // MSI protocol
   class Policy {
+    // definition of command:
+    // [31  :   16] [15 : 8] [7 :0]
+    // coherence-id msg-type action
+    //---------------------------------------
+    // msg type:
+    // [1] Acquire [2] Release (writeback) [3] Probe
+    //---------------------------------------
+    // action:
+    // Acquire: fetch for [0] read / [1] write
+    // Release: [0] evict / [1] writeback (keep modified)
+    // Probe: [0] evict / [1] writeback (keep shared)
+
+    static const uint32_t acquire_msg = 1 << 8;
+    static const uint32_t release_msg = 2 << 8;
+    static const uint32_t probe_msg = 3 << 8;
+
+    static const uint32_t acquire_read = 0;
+    static const uint32_t acquire_write = 1;
+
+    static const uint32_t release_evict = 0;
+    static const uint32_t release_writeback = 1;
+
+    static const uint32_t probe_evict = 0;
+    static const uint32_t probe_writeback = 1;
+
+    static inline bool is_acquire(uint32_t cmd) {return (cmd & 0x0ff00ul) == acquire_msg; }
+    static inline bool is_release(uint32_t cmd) {return (cmd & 0x0ff00ul) == release_msg; }
+    static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
+    static inline uint32_t get_id(uint32_t cmd) {return cmd >> 16; }
+    static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
+    
   public:
-    static uint32_t cmd_probe_to_share();
-    static uint32_t cmd_probe_to_invalid();
-    static bool is_probe_to_share(uint32_t cmd);
-    static bool is_probe_to_invalid(uint32_t cmd);
-    static bool need_sync(uint32_t cmd, CMMetadataBase *meta);
-    static uint32_t cmd_for_sync(uint32_t cmd);
+
+    // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
+    static bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
+      if(is_probe(cmd) && probe_evict == get_action(cmd)) return true; // purge the block
+      else return meta->is_modified();
+    }
+
+    // generate the command for reverse probe
+    static uint32_t cmd_for_sync(uint32_t cmd) {
+      uint32_t rv = cmd & (~0x0fffful);
+      if(is_probe(cmd)) probe_msg | (-1l << 16); // no coherence id for probes
+
+      // set whether the probe will purge the block from inner caches
+      if((is_acquire(cmd) && acquire_read == get_action(cmd)) ||
+         (is_probe(cmd)   && probe_writeback == get_action(cmd))) // need to purge
+        return rv | probe_writeback;
+      else
+        return rv | probe_evict;
+    }
+
     static void meta_after_probe(uint32_t cmd, CMMetadataBase *meta);
     static void meta_after_grant(uint32_t cmd, CMMetadataBase *meta);
     static void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta);
