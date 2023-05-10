@@ -145,24 +145,8 @@ public:
     return false;
   }
 
-  virtual bool locate_data(uint32_t s, uint32_t w, uint32_t *ds, uint32_t *dw) const { *ds = s; *dw = w; return true; }
-
-  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const { return &(meta[s*nway + w]); }
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return &(meta[s*nway + w]); }
-
-  // @jinchi remember to check whether DT is void
-  virtual const CMDataBase * get_data(uint32_t ds, uint32_t dw) const {
-    if(!std::is_void<DT>::value) 
-      return &(data[ds*nway + dw]); 
-    else
-      return nullptr;
-  }
-  virtual CMDataBase * get_data(uint32_t ds, uint32_t dw) {
-    if(!std::is_void<DT>::value) 
-      return &(data[ds*nway + dw]); 
-    else
-      return nullptr;
-  }
+  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const { return &(meta[s*NW + w]); }
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return &(meta[s*NW + w]); }
 
   virtual const CMDataBase * get_data(uint32_t s, uint32_t w) const {
     return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]);
@@ -193,11 +177,11 @@ protected:
 
 public:
   CacheBase(IndexFuncBase *indexer,
-            ReplaceFuncBase *replcaer,
+            ReplaceFuncBase *replacer, 
             std::string name)
     : name(name),
       indexer(indexer),
-      replacer(replcaer)
+      replacer(replacer)
   {}
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
