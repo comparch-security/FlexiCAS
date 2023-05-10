@@ -20,6 +20,9 @@ namespace // file visibility
     static void meta_after_grant(uint32_t cmd, CMMetadataBase *meta);
     static void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta);
     static uint32_t cmd_for_evict();
+    static void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta);
+    static void meta_after_release(uint32_t cmd, CMMetadataBase *meta);
+    static bool need_probe(uint32_t cmd, uint32_t coh_id);
   };
 
 }
@@ -74,10 +77,12 @@ class OuterPortMSIUncached : public OuterCohPortBase
 {
 public:
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {
-    coh->acquire_resp(addr, meta, data, cmd);
+    coh->acquire_resp(addr, data, cmd);
+    Policy::meta_after_grant(cmd, meta);
   }
-  virtual void writeback_req(uint64_t addr, CMDataBase *data) {
-    coh->writeback_resp(addr, data);
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {
+    coh->writeback_resp(addr, data, cmd);
+    Policy::meta_after_writeback(cmd, meta);
   }
 };
 
@@ -117,7 +122,7 @@ template<typename MT, typename DT,
 class InnerPortMSIUncached : public InnerCohPortBase
 {
 public:
-  virtual void acquire_resp(uint64_t addr, CMMetadataBase *meta_inner, CMDataBase *data_inner, uint32_t cmd) {
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd) {
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
@@ -139,7 +144,7 @@ public:
       if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
 
       // writeback if dirty
-      if(meta->is_dirty()) outer->writeback_req(addr, meta, data);
+      if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict());
 
       // fetch the missing block
       outer->acquire_req(addr, meta, data, cmd);
@@ -147,7 +152,28 @@ public:
     // grant
     if(!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
     Policy::meta_after_acquire(cmd, meta);
-    Policy::meta_after_grant(cmd, meta_inner);
+  }
+
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {
+    uint32_t ai, s, w;
+    CMMetadataBase *meta;
+    auto h = this->cache->hit(addr, &ai, &s, &w);
+    assert(h); // must hit
+    meta = this->cache->access(ai, s, w);
+    if(!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data);
+    Policy::meta_after_release(cmd, meta);
+  }
+};
+
+// full MSI inner port (broadcasting hub, snoop)
+template<typename MT, typename DT>
+class InnerPortMSIBroadcast : public InnerPortMSIUncached<MT, DT>
+{
+public:
+  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {
+    for(uint32_t i=0; i<this->coh.size(); i++)
+      if(Policy::need_probe(cmd, i))
+        this->coh[i]->probe_resp(addr, meta, data, cmd);
   }
 };
 
