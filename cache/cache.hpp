@@ -177,9 +177,11 @@ protected:
 
 public:
   CacheBase(IndexFuncBase *indexer,
+            ReplaceFuncBase *replacer, 
             std::string name)
     : name(name),
-      indexer(indexer)
+      indexer(indexer),
+      replacer(replacer)
   {}
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
@@ -192,7 +194,7 @@ public:
                    uint32_t *s, uint32_t *w
                    ) const = 0;
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w);
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
   virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for read
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for modification
