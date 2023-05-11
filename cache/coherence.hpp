@@ -59,7 +59,7 @@ public:
   InnerCohPortBase() {}
   virtual ~InnerCohPortBase() {}
 
-  virtual void connect(CohClientBase *c) { coh.push_back(c); }
+  virtual uint32_t connect(CohClientBase *c) { coh.push_back(c); return coh.size() - 1;}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) = 0;
@@ -81,7 +81,7 @@ public:
 
 private:
   // hide and prohibit calling these functions
-  virtual void connect(CohClientBase *c) {}
+  virtual uint32_t connect(CohClientBase *c) { return 0;}
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {}
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {}
 };

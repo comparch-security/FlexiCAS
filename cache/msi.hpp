@@ -5,6 +5,49 @@
 #include <type_traits>
 #include "cache/coherence.hpp"
 
+// Initiate a single-level cache system (L1 is also LLC)
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
+
+/* Example: a two-level cache system
+     a 48-bit address system,
+     normal index,
+     LRU replacement policy,
+     MSI coherence protocol,
+     broadcasting.
+
+   L1: 64-set 8-way set-associative
+   L2(LLC): 1024-set 16-way skewed-cache with 2 partitions
+
+code:
+  // initiate the L1 cache
+  typedef Data64B data_type;
+  typedef MetadataMSI<48, 6+6> metadata_type;
+  typedef IndexNorm<6, 6> l1_indexer_type;
+  typedef ReplaceLRU<6, 8> l1_replacer_type;
+  typedef CacheNorm<6, 8, metadata_type, data_type, l1_indexer_type, l1_replacer_type> l1_type;
+  typedef CoreInterfaceMSI<metadata_type, data_type> l1_inner_type; // support core interface
+  typedef OuterPortMSI<metadata_type, data_type> l1_outer_type;     // support reverse probe
+  typedef CoherentL1CacheNorm<l1_type, l1_outer_type, l1_inner_type> l1_cache_type;
+  auto l1 = new l1_cache_type("L1");
+
+  // initiate the llc
+  typedef IndexSkewed<10, 6, 2> llc_indexer_type;
+  typedef ReplacerLRU<10, 8> llc_replacer_type;
+  typedef CacheSkewed<10, 8, 2, metadata_type, data_type, llc_indexer_type, llc_replacer_type> llc_type;
+  typedef InnerPortMSIBroadcast<metadata_type, data_type> llc_inner_type;
+  typedef MemoryInterface<data_type> llc_outer_type;
+  typedef CoherentLLCNorm<llc_type, llc_outer_type, llc_inner_type> llc_cache_type;
+  auto llc = new llc_cache_type();
+
+  // connect the two levels
+  l1->outer->connect(llc->inner, llc->connect(l1->outer));
+
+  // We need to implement the DSL compiler to automatically generate these initialization code
+  // based on a user provide script defining the cache architecture
+*/
+
+
 namespace // file visibility
 {
   // MSI protocol

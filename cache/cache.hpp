@@ -216,14 +216,4 @@ public:
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
 
-/* Example: a 128-set 8-way set-associative cache using
-     a 48-bit address system,
-     no cache block,
-     normal index,
-     LRU replacement policy,
-     MSI coherence protocol
-
-  CacheNorm<7, 8, MetadataMSI<48, 7+6>, void, IndexNorm<7, 6>, ReplaceLRU<7, 8> > cache;
-*/
-
 #endif
