@@ -188,7 +188,7 @@ public:
       CMDataBase *data = std::is_void<DT>::value ? nullptr : this->cache->get_data(ai, s, w);
 
       // sync if necessary
-      if(this->inner && Policy::need_sync(cmd, meta)) this->inner->probe_req(addr, meta, data, Policy::cmd_for_sync(cmd));
+      if(Policy::need_sync(cmd, meta)) this->inner->probe_req(addr, meta, data, Policy::cmd_for_sync(cmd));
 
       // writeback if dirty
       if(meta->is_dirty()) { // dirty, writeback
@@ -223,8 +223,6 @@ public:
       // sync if necessary
       if(Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(cmd));
     } else { // miss
-      assert(outer);
-
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
