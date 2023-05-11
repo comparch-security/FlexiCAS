@@ -39,35 +39,80 @@ namespace // file visibility
     static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
     static inline uint32_t get_id(uint32_t cmd) {return cmd >> 16; }
     static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
+    static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (~0x0fffful)) | (id << 16); }
     
   public:
 
     // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
-    static bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
-      if(is_probe(cmd) && probe_evict == get_action(cmd)) return true; // purge the block
-      else return meta->is_modified();
+    static inline bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
+      return (is_probe(cmd) && probe_evict == get_action(cmd)) || meta->is_modified();
     }
 
+    // avoid self probe
+    static inline bool need_probe(uint32_t cmd, uint32_t coh_id) { return coh_id != get_id(cmd); }
+
     // generate the command for reverse probe
-    static uint32_t cmd_for_sync(uint32_t cmd) {
-      uint32_t rv = cmd & (~0x0fffful);
-      if(is_probe(cmd)) probe_msg | (-1l << 16); // no coherence id for probes
+    static inline uint32_t cmd_for_sync(uint32_t cmd) {
+      uint32_t rv = attach_id(probe_msg, get_id(cmd));
 
       // set whether the probe will purge the block from inner caches
       if((is_acquire(cmd) && acquire_read == get_action(cmd)) ||
          (is_probe(cmd)   && probe_writeback == get_action(cmd))) // need to purge
         return rv | probe_writeback;
-      else
+      else {
+        assert((is_acquire(cmd) && acquire_write == get_action(cmd)) ||
+               (is_probe(cmd)   && probe_evict == get_action(cmd)));
         return rv | probe_evict;
+      }
     }
 
-    static void meta_after_probe(uint32_t cmd, CMMetadataBase *meta);
-    static void meta_after_grant(uint32_t cmd, CMMetadataBase *meta);
-    static void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta);
-    static uint32_t cmd_for_evict();
-    static void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta);
-    static void meta_after_release(uint32_t cmd, CMMetadataBase *meta);
-    static bool need_probe(uint32_t cmd, uint32_t coh_id);
+    // command to evict a cache block from this cache
+    static inline uint32_t cmd_for_evict() { return attach_id(release_msg | release_evict, -1); } // eviction needs no coh_id
+
+    // set the meta after processing an acquire
+    static inline void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta) {
+      assert(is_acquire(cmd)); // must be an acquire
+      if(acquire_read == get_action(cmd))
+        meta->to_shared();
+      else {
+        assert(acquire_write == get_action(cmd));
+        meta->to_modified();
+      }
+    }
+
+    // set the metadata for a newly fetched block
+    static inline void meta_after_grant(uint32_t cmd, CMMetadataBase *meta) {
+      assert(is_acquire(cmd)); // must be an acquire
+      assert(!meta->is_dirty()); // by default an invalid block must be clean
+      if(acquire_read == get_action(cmd))
+        meta->to_shared();
+      else {
+        assert(acquire_write == get_action(cmd));
+        meta->to_modified();
+      }
+    }
+
+    // set the metadata after a block is written back
+    static inline void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta) {
+      assert(is_release(cmd)); // must be an acquire
+      meta->to_clean();
+      if(release_evict == get_action(cmd)) meta->to_invalid();
+    }
+
+    // set the meta after the block is released
+    static inline void meta_after_release(uint32_t cmd, CMMetadataBase *meta) { meta->to_dirty(); }
+
+    // update the metadata for inner cache after ack a probe
+    static inline void meta_after_probe_ack(uint32_t cmd, CMMetadataBase *meta) {
+      assert(is_probe(cmd)); // must be a probe
+      if(probe_evict == get_action(cmd))
+        meta->to_invalid();
+      else {
+        assert(meta->is_modified()); // for MSI, probe degradation happens only for modified state
+        meta->to_shared();
+      }
+    }
+
   };
 
 }
@@ -122,11 +167,11 @@ class OuterPortMSIUncached : public OuterCohPortBase
 {
 public:
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {
-    coh->acquire_resp(addr, data, cmd);
+    coh->acquire_resp(addr, data, Policy::attach_id(cmd, this->coh_id));
     Policy::meta_after_grant(cmd, meta);
   }
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {
-    coh->writeback_resp(addr, data, cmd);
+    coh->writeback_resp(addr, data, Policy::attach_id(cmd, this->coh_id));
     Policy::meta_after_writeback(cmd, meta);
   }
 };
@@ -153,7 +198,7 @@ public:
       }
 
       // update meta
-      Policy::meta_after_probe(cmd, meta);
+      Policy::meta_after_probe_ack(cmd, meta);
     }
   }
 };
@@ -183,13 +228,16 @@ public:
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
-      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
-      // sync if necessary
-      if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
+      if(meta->is_valid()) {
+        if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
-      // writeback if dirty
-      if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict());
+        // sync if necessary
+        if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
+
+        // writeback if dirty
+        if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict());
+      }
 
       // fetch the missing block
       outer->acquire_req(addr, meta, data, cmd);
