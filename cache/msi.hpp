@@ -268,4 +268,53 @@ public:
   }
 };
 
+// MSI core interface:
+template<typename MT, typename DT,
+         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
+class CoreInterfaceMSI : public CoreInterfaceBase
+{
+  inline CMDataBase *access(uint64_t addr, uint32_t cmd) {
+    uint32_t ai, s, w;
+    CMMetadataBase *meta;
+    CMDataBase *data = nullptr;
+    if(this->cache->hit(addr, &ai, &s, &w)) { // hit
+      meta = this->cache->access(ai, s, w);
+      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+    } else { // miss
+      // get the way to be replaced
+      this->cache->replace(addr, &ai, &s, &w);
+      meta = this->cache->access(ai, s, w);
+
+      if(meta->is_valid()) {
+        if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+
+        // writeback if dirty
+        if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict());
+      }
+
+      // fetch the missing block
+      outer->acquire_req(addr, meta, data, cmd);
+    }
+    Policy::meta_after_acquire(cmd, meta);
+    return data;
+  }
+
+public:
+  virtual const CMDataBase *read(uint64_t addr) { return access(addr, Policy::acquire_msg | Policy::acquire_read); }
+
+  virtual void write(uint64_t addr, const CMDataBase *data) {
+    auto m_data = access(addr, Policy::acquire_msg | Policy::acquire_write);
+    if(!std::is_void<DT>::value) m_data->copy(data);
+  }
+
+  virtual void flush(uint64_t addr, uint32_t level) {
+    assert(nullptr == "Error: L1.flush() is not implemented yet!");
+  }
+
+  virtual void writeback(uint64_t addr, uint32_t level) {
+    assert(nullptr == "Error: L1.writeback() is not implemented yet!");
+  }
+};
+
 #endif

@@ -74,8 +74,8 @@ public:
   CoreInterfaceBase() {}
   virtual ~CoreInterfaceBase() {}
 
-  virtual CMDataBase *read(uint64_t addr) = 0;
-  virtual void write(uint64_t addr, CMDataBase *data) = 0;
+  virtual const CMDataBase *read(uint64_t addr) = 0;
+  virtual void write(uint64_t addr, const CMDataBase *data) = 0;
   virtual void flush(uint64_t addr, uint32_t level) = 0; // flush the address
   virtual void writeback(uint64_t addr, uint32_t level) = 0; // write back this address (without eviction)
 
