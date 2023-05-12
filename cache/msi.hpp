@@ -195,7 +195,7 @@ public:
   MetadataMSI() : tag(0) {}
   virtual ~MetadataMSI() {}
 
-  virtual bool match(uint64_t addr) { return ((addr >> TOfst) & mask) == tag; }
+  virtual bool match(uint64_t addr) { return is_valid() && ((addr >> TOfst) & mask) == tag; }
   virtual void reset() { tag = 0; state = 0; dirty = 0; }
 };
 
