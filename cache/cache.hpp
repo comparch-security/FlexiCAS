@@ -130,7 +130,6 @@ public:
     if(!std::is_void<DT>::value) free(data);
   }
 
-  // @jinchi ToDo: implement these functions
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
     for(int i=0; i<NW; i++)
       if(meta[s*NW + i].match(addr)) {
@@ -222,9 +221,7 @@ public:
     replacer[*ai].replace(*s, w);
   }
 
-  // @jinchi ToDo: implement these functions
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
-    replacer[ai].access(s, w);
     return arrays[ai]->get_meta(s, w);
   }
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w){
