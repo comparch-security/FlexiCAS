@@ -216,6 +216,12 @@ public:
     return false;
   }
 
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
+    *ai = P==1 ? 0 : (cm_get_random_uint32() % P);
+    *s = indexer->index(addr, *ai);
+    replacer[*ai].replace(*s, w);
+  }
+
   // @jinchi ToDo: implement these functions
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w);
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w);
