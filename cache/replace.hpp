@@ -9,7 +9,7 @@
 class ReplaceFuncBase
 {
 public:
-  virtual uint32_t replace(const uint32_t *s, uint32_t *w) = 0;
+  virtual uint32_t replace(uint32_t s, uint32_t *w) = 0;
   virtual void read(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual void access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual void write(uint32_t ai, uint32_t s, uint32_t w) = 0;
