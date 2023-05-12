@@ -223,8 +223,13 @@ public:
   }
 
   // @jinchi ToDo: implement these functions
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w);
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w);
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
+    replacer[ai].access(s, w);
+    return arrays[ai]->get_meta(s, w);
+  }
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w){
+    return arrays[ai]->get_data(s, w);
+  }
 };
 
 // Normal set-associative cache
