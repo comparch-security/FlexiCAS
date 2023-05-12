@@ -174,7 +174,7 @@ public:
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
     delete indexer;
-    delete replacer;
+    delete [] replacer;
   }
 
   virtual bool hit(uint64_t addr,
@@ -201,7 +201,7 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
 {
 public:
   CacheSkewed(std::string name = "")
-    : CacheBase(new IDX(), new RPC(), name)
+    : CacheBase(new IDX(), new RPC[P], name)
   {
     arrays.resize(P);
     for(auto a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
