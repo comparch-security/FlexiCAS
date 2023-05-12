@@ -124,7 +124,7 @@ public:
 
   virtual ~CacheArrayNorm() {
     delete[] (MT*)meta;
-    if(!std::is_void<DT>::value) delete (DT*)data;
+    if(!std::is_void<DT>::value) delete[] (DT*)data;
   }
 
   // @jinchi ToDo: implement these functions
