@@ -105,11 +105,7 @@ public:
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
-
-  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
-
-  virtual const CMDataBase * get_data(uint32_t s, uint32_t w) const = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
 };
 
@@ -145,16 +141,8 @@ public:
     return false;
   }
 
-  virtual const CMMetadataBase * get_meta(uint32_t s, uint32_t w) const { return &(meta[s*NW + w]); }
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return &(meta[s*NW + w]); }
-
-  virtual const CMDataBase * get_data(uint32_t s, uint32_t w) const {
-    return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]);
-  }
-
-  virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
-    return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]);
-  }
+  virtual CMDataBase * get_data(uint32_t s, uint32_t w) { return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]); }
 };
 
 //////////////// define cache ////////////////////
@@ -186,7 +174,7 @@ public:
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
     delete indexer;
-    delete replacer;
+    delete [] replacer;
   }
 
   virtual bool hit(uint64_t addr,
@@ -196,11 +184,7 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
-  virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for read
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;  // obtain the cache block for modification
-  virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w) = 0; // obtain the cache block for write
-  virtual void invalidate(uint32_t ai, uint32_t s, uint32_t w) = 0; // invalidate a cache block
-  virtual const CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) const = 0;
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
 };
@@ -217,35 +201,19 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
 {
 public:
   CacheSkewed(std::string name = "")
-    : CacheBase(new IDX(), new RPC(), name)
+    : CacheBase(new IDX(), new RPC[P], name)
   {
     arrays.resize(P);
     for(auto a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
   }
 
   // @jinchi ToDo: implement these functions
-  virtual const CMMetadataBase *read(uint32_t ai, uint32_t s, uint32_t w);  // obtain the cache block for read
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w);  // obtain the cache block for modification
-  virtual CMMetadataBase *write(uint32_t ai, uint32_t s, uint32_t w); // obtain the cache block for write
-  virtual void invalidate(uint32_t ai, uint32_t s, uint32_t w); // invalidate a cache block
-  virtual const CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) const;
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w);
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w);
 };
 
 // Normal set-associative cache
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
-
-/* Example: a 128-set 8-way set-associative cache using
-     a 48-bit address system,
-     no cache block,
-     normal index,
-     LRU replacement policy,
-     MSI coherence protocol
-
-  CacheNorm<7, 8, MetadataMSI<48, 7+6>, void, IndexNorm<7, 6>, ReplaceLRU<7, 8> > cache;
-*/
-
-
 
 #endif
