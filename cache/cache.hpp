@@ -180,7 +180,7 @@ public:
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w
-                   ) const = 0;
+                   ) = 0;
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
@@ -207,17 +207,11 @@ public:
     for(auto a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
   }
 
-  virtual bool hit(uint64_t addr,
-                   uint32_t *ai,  // index of the hitting cache array in "arrays"
-                   uint32_t *s, uint32_t *w
-                   ) const {
-    std::vector<uint32_t> indices(P);
-    indexer->index(addr, indices);
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
-      *s = indices[*ai];
+      *s = indexer->index(addr, *ai);
       for(*w=0; *w<NW; (*w)++)
-        if(access(*ai, *s, *w)->match(addr))
-          return true;
+        if(access(*ai, *s, *w)->match(addr)) return true;
     }
     return false;
   }

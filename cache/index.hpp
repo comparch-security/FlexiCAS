@@ -11,7 +11,7 @@ class IndexFuncBase
 {
 public:
   virtual ~IndexFuncBase() {}
-  virtual void index(uint64_t addr, std::vector<uint32_t>& indices) = 0;
+  virtual uint32_t index(uint64_t addr, int partition) = 0;
 };
 
 
@@ -26,8 +26,8 @@ public:
   IndexNorm() : mask((1ul << IW) - 1) {}
   virtual ~IndexNorm() {}
 
-  virtual void index(uint64_t addr, std::vector<uint32_t>& indices) {
-    indices[0] = (addr >> IOfst) & mask;
+  virtual uint32_t index(uint64_t addr, int partition) {
+    return (addr >> IOfst) & mask;
   }
 };
 
@@ -41,10 +41,8 @@ class IndexSkewed : public IndexFuncBase
 public:
   virtual ~IndexSkewed() {}
 
-  virtual void index(uint64_t addr, std::vector<uint32_t>& indices) {
-    uint64_t addr_s = addr >> IOfst;
-    for(int i=0; i<P; i++)
-      indices[i] = hashers[i](addr_s);
+  virtual uint32_t index(uint64_t addr, int partition) {
+    return hashers[partition](addr >> IOfst);
   }
 
   void seed(std::vector<uint64_t>& seeds) {
