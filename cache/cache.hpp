@@ -99,10 +99,7 @@ protected:
 public:
   CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name), meta(nullptr), data(nullptr) {}
 
-  virtual ~CacheArrayBase() {
-    delete [] meta;
-    if(data != nullptr) delete [] data;
-  }
+  virtual ~CacheArrayBase() {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
