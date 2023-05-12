@@ -351,13 +351,18 @@ public:
     if(!std::is_void<DT>::value) m_data->copy(data);
   }
 
-  virtual void flush(uint64_t addr, uint32_t level) {
-    assert(nullptr == "Error: L1.flush() is not implemented yet!");
+  virtual void flush(uint64_t addr) {
+    assert(nullptr == "Error: L1.flush(addr) is not implemented yet!");
   }
 
-  virtual void writeback(uint64_t addr, uint32_t level) {
-    assert(nullptr == "Error: L1.writeback() is not implemented yet!");
+  virtual void writeback(uint64_t addr) {
+    assert(nullptr == "Error: L1.writeback(addr) is not implemented yet!");
   }
+
+  virtual void writeback_invalidate() {
+    assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
+  }
+
 };
 
 #endif

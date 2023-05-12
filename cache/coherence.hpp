@@ -76,8 +76,9 @@ public:
 
   virtual const CMDataBase *read(uint64_t addr) = 0;
   virtual void write(uint64_t addr, const CMDataBase *data) = 0;
-  virtual void flush(uint64_t addr, uint32_t level) = 0; // flush the address
-  virtual void writeback(uint64_t addr, uint32_t level) = 0; // write back this address (without eviction)
+  virtual void flush(uint64_t addr) = 0; // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
+  virtual void writeback(uint64_t addr) = 0; // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
+  virtual void writeback_invalidate() = 0; // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
 
 private:
   // hide and prohibit calling these functions
