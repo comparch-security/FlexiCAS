@@ -126,8 +126,8 @@ public:
   }
 
   virtual ~CacheArrayNorm() {
-    free(meta);
-    if(!std::is_void<DT>::value) free(data);
+    delete[] (MT*)meta;
+    if(!std::is_void<DT>::value) delete (DT*)data;
   }
 
   // @jinchi ToDo: implement these functions
@@ -172,7 +172,7 @@ public:
       replacer(replacer)
   {}
   virtual ~CacheBase() {
-    for(auto a: arrays) delete a;
+    for(auto& a: arrays) delete a;
     delete indexer;
     delete [] replacer;
   }
@@ -204,7 +204,7 @@ public:
     : CacheBase(new IDX(), new RPC[P], name)
   {
     arrays.resize(P);
-    for(auto a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
+    for(auto& a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
   }
 
   // @jinchi ToDo: implement these functions
