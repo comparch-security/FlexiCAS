@@ -29,19 +29,22 @@ code:
   typedef CoreInterfaceMSI<metadata_type, data_type> l1_inner_type; // support core interface
   typedef OuterPortMSI<metadata_type, data_type> l1_outer_type;     // support reverse probe
   typedef CoherentL1CacheNorm<l1_type, l1_outer_type, l1_inner_type> l1_cache_type;
-  auto l1 = new l1_cache_type("L1");
+  l1_cache_type *l1 = new l1_cache_type("L1");
 
   // initiate the llc
   typedef IndexSkewed<10, 6, 2> llc_indexer_type;
-  typedef ReplacerLRU<10, 8> llc_replacer_type;
+  typedef ReplaceLRU<10, 8> llc_replacer_type;
   typedef CacheSkewed<10, 8, 2, metadata_type, data_type, llc_indexer_type, llc_replacer_type> llc_type;
   typedef InnerPortMSIBroadcast<metadata_type, data_type> llc_inner_type;
-  typedef MemoryInterface<data_type> llc_outer_type;
+  typedef OuterPortMSIUncached<metadata_type, data_type> llc_outer_type;
   typedef CoherentLLCNorm<llc_type, llc_outer_type, llc_inner_type> llc_cache_type;
-  auto llc = new llc_cache_type();
+  static llc_cache_type *llc = new llc_cache_type();
+
+  static SimpleMemoryModel<data_type> *mem = new SimpleMemoryModel<data_type>();
 
   // connect the two levels
-  l1->outer->connect(llc->inner, llc->connect(l1->outer));
+  l1->outer->connect(llc->inner, llc->inner->connect(l1->outer));
+  llc->outer->connect(mem, mem->connect(llc->outer));
 
   // We need to implement the DSL compiler to automatically generate these initialization code
   // based on a user provide script defining the cache architecture
