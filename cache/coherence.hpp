@@ -37,15 +37,6 @@ public:
   friend CoherentCacheBase; // deferred assignment for cache
 };
 
-// memory interface is a special OuterCohPort
-// ToDo: we need to define a memory model
-class MemoryPortBase : public OuterCohPortBase
-{
-public:
-  MemoryPortBase() {}
-  virtual ~MemoryPortBase() {}
-};
-
 /////////////////////////////////
 // Base interface for inner ports
 
@@ -137,9 +128,8 @@ using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 // Normal LLC supporting coherence
 //  MCT: memory controller type, must be a derived class of OuterCohPortBase
-template<typename CacheT, typename MCT, typename InnerT,
-         typename = typename std::enable_if<std::is_base_of<MemoryPortBase, MCT>::value>::type> // MemoryPortBase <= MCT
-using CoherentLLCNorm = CoherentCacheNorm<CacheT, MCT, InnerT>;
+template<typename CacheT, typename OuterT, typename InnerT>
+using CoherentLLCNorm = CoherentCacheNorm<CacheT, OuterT, InnerT>;
 
 
 #endif
