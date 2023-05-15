@@ -71,22 +71,6 @@ public:
 
 //////////////// define cache array ////////////////////
 
-// record and generate the unique IDs for caches
-// We will need to use these ids in the reporter for fast locating a cache
-class CacheID
-{
-protected:
-  static std::set<uint32_t> ids;
-public:
-  // generate a new unique id
-  uint32_t static new_id() {
-    uint32_t id = cm_get_random_uint32();
-    while(ids.count(id)) id = cm_get_random_uint32();
-    ids.insert(id);
-    return id;
-  }
-};
-
 // base class for a cache array:
 class CacheArrayBase
 {
@@ -95,7 +79,7 @@ protected:
   const std::string name;               // an optional name to describe this cache
 
 public:
-  CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name) {}
+  CacheArrayBase(std::string name = "") : id(UniqueID::new_id()), name(name) {}
   virtual ~CacheArrayBase() {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;

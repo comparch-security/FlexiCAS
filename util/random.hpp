@@ -2,6 +2,7 @@
 #define CM_UTIL_RANDOM_HPP_
 
 #include <cstdint>
+#include <unordered_set>
 
 extern void cm_set_random_seed(uint64_t seed);
 extern uint64_t cm_get_random_uint64();
@@ -34,6 +35,21 @@ public:
 
   void seed(uint64_t s) {
     *(uint64_t *)(msg+8) = s;
+  }
+};
+
+// record and generate a unique ID
+class UniqueID
+{
+protected:
+  static std::unordered_set<uint32_t> ids;
+public:
+  // generate a new unique id
+  static uint32_t new_id() {
+    uint32_t id = cm_get_random_uint32();
+    while(ids.count(id)) id = cm_get_random_uint32();
+    ids.insert(id);
+    return id;
   }
 };
 

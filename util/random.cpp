@@ -12,3 +12,4 @@ void cm_set_random_seed(uint64_t seed) { gen.seed(seed); }
 uint64_t cm_get_random_uint64() { return uniform64(gen); }
 uint32_t cm_get_random_uint32() { return uniform32(gen); }
 
+std::unordered_set<uint32_t> UniqueID::ids;
