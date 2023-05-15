@@ -51,7 +51,7 @@ code:
 namespace // file visibility
 {
   // MSI protocol
-  class Policy {
+  struct Policy {
     // definition of command:
     // [31  :   16] [15 : 8] [7 :0]
     // coherence-id msg-type action
@@ -82,9 +82,9 @@ namespace // file visibility
     static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
     static inline uint32_t get_id(uint32_t cmd) {return cmd >> 16; }
     static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
+
+    // attach an id to a command
     static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (~0x0fffful)) | (id << 16); }
-    
-  public:
 
     // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
     static inline bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
