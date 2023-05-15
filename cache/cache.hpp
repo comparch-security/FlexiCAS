@@ -157,6 +157,11 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
+  // update replacer states and potentially link to reporter hooks
+  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
+
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
@@ -199,6 +204,18 @@ public:
     *ai = P==1 ? 0 : (cm_get_random_uint32() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
+  }
+
+  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
+    replacer[ai].access(s, w);
+  }
+
+  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
+    replacer[ai].access(s, w);
+  }
+
+  virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
+    replacer[ai].invalid(s, w);
   }
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
