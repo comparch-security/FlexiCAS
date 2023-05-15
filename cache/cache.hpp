@@ -93,16 +93,10 @@ class CacheArrayBase
 protected:
   const uint32_t id;                    // a unique id to identify this cache
   const std::string name;               // an optional name to describe this cache
-  CMMetadataBase *meta;                 // meta array
-  CMDataBase *data;                     // data array, could be null
 
 public:
-  CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name), meta(nullptr), data(nullptr) {}
-
-  virtual ~CacheArrayBase() {
-    delete [] meta;
-    if(data != nullptr) delete [] data;
-  }
+  CacheArrayBase(std::string name = "") : id(CacheID::new_id()), name(name) {}
+  virtual ~CacheArrayBase() {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
@@ -116,23 +110,31 @@ template<int IW, int NW, typename MT, typename DT,
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class CacheArrayNorm : public CacheArrayBase
 {
+protected:
+  std::vector<MT *> meta;   // meta array
+  std::vector<DT *> data;   // data array, could be null
+
 public:
   const uint32_t nset = 1ul<<IW;  // number of sets
 
   CacheArrayNorm(std::string name = "") : CacheArrayBase(name) {
     size_t num = nset * NW;
-    meta = new MT[num];
-    if(!std::is_void<DT>::value) data = new DT[num];
+    meta.resize(num);
+    for(auto &m:meta) m = new MT();
+    if(!std::is_void<DT>::value) {
+      data.resize(num);
+      for(auto &d:data) d = new DT();
+    }
   }
 
   virtual ~CacheArrayNorm() {
-    free(meta);
-    if(!std::is_void<DT>::value) free(data);
+    for(auto m:meta) delete m;
+    if(!std::is_void<DT>::value) for(auto d:data) delete d;
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
     for(int i=0; i<NW; i++)
-      if(meta[s*NW + i].match(addr)) {
+      if(meta[s*NW + i]->match(addr)) {
         *w = i;
         return true;
       }
@@ -140,8 +142,8 @@ public:
     return false;
   }
 
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return &(meta[s*NW + w]); }
-  virtual CMDataBase * get_data(uint32_t s, uint32_t w) { return std::is_void<DT>::value ? nullptr : &(data[s*NW + w]); }
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*NW + w]; }
+  virtual CMDataBase * get_data(uint32_t s, uint32_t w) { return std::is_void<DT>::value ? nullptr : data[s*NW + w]; }
 };
 
 //////////////// define cache ////////////////////
@@ -159,22 +161,10 @@ protected:
   // MIRAGE: parition number of CacheArrayNorm (meta only) with one separate CacheArrayNorm for storing data (in derived class)
   std::vector<CacheArrayBase *> arrays;
 
-  IndexFuncBase *indexer; // index resolver
-  ReplaceFuncBase *replacer; // replacer
-
 public:
-  CacheBase(IndexFuncBase *indexer,
-            ReplaceFuncBase *replacer, 
-            std::string name)
-    : name(name),
-      indexer(indexer),
-      replacer(replacer)
-  {}
-  virtual ~CacheBase() {
-    for(auto a: arrays) delete a;
-    delete indexer;
-    delete [] replacer;
-  }
+  CacheBase(std::string name) : name(name) {}
+
+  virtual ~CacheBase() { for(auto a: arrays) delete a; }
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
@@ -198,17 +188,23 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type>  // IDX <- IndexFuncBase
   class CacheSkewed : public CacheBase
 {
+protected:
+  IDX indexer;     // index resolver
+  RPC replacer[P]; // replacer
+
 public:
   CacheSkewed(std::string name = "")
-    : CacheBase(new IDX(), new RPC[P], name)
+    : CacheBase(name)
   {
     arrays.resize(P);
-    for(auto a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
+    for(auto &a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
   }
+
+  virtual ~CacheSkewed() {}
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
-      *s = indexer->index(addr, *ai);
+      *s = indexer.index(addr, *ai);
       for(*w=0; *w<NW; (*w)++)
         if(access(*ai, *s, *w)->match(addr)) return true;
     }
@@ -217,7 +213,7 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
     *ai = P==1 ? 0 : (cm_get_random_uint32() % P);
-    *s = indexer->index(addr, *ai);
+    *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
   }
 
