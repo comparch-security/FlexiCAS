@@ -78,6 +78,9 @@ protected:
   const uint32_t id;                    // a unique id to identify this cache
   const std::string name;               // an optional name to describe this cache
 
+  // monitor related
+  std:set<MonitorBase *> monitors;
+
 public:
   CacheArrayBase(std::string name = "") : id(UniqueID::new_id()), name(name) {}
   virtual ~CacheArrayBase() {}
@@ -85,11 +88,17 @@ public:
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
+
+  // monitor related
+  virtual void attach_monitor(MoniterBase *m) {
+    if(m->attach(id)) monitors.insert(m);
+  }
 };
 
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
-template<int IW, int NW, typename MT, typename DT,
+// EnMon: whether to enable monitoring
+template<int IW, int NW, typename MT, typename DT, bool EnMon,
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type, // MT <- CMMetadataBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class CacheArrayNorm : public CacheArrayBase
