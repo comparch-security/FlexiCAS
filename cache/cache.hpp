@@ -75,30 +75,20 @@ public:
 class CacheArrayBase
 {
 protected:
-  const uint32_t id;                    // a unique id to identify this cache
   const std::string name;               // an optional name to describe this cache
 
-  // monitor related
-  std:set<MonitorBase *> monitors;
-
 public:
-  CacheArrayBase(std::string name = "") : id(UniqueID::new_id()), name(name) {}
+  CacheArrayBase(std::string name = "") : name(name) {}
   virtual ~CacheArrayBase() {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
-
-  // monitor related
-  virtual void attach_monitor(MoniterBase *m) {
-    if(m->attach(id)) monitors.insert(m);
-  }
 };
 
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
-// EnMon: whether to enable monitoring
-template<int IW, int NW, typename MT, typename DT, bool EnMon,
+template<int IW, int NW, typename MT, typename DT,
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type, // MT <- CMMetadataBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class CacheArrayNorm : public CacheArrayBase
@@ -145,6 +135,7 @@ public:
 class CacheBase
 {
 protected:
+  const uint32_t id;                    // a unique id to identify this cache
   const std::string name;               // an optional name to describe this cache
 
   // a vector of cache arrays
@@ -154,8 +145,11 @@ protected:
   // MIRAGE: parition number of CacheArrayNorm (meta only) with one separate CacheArrayNorm for storing data (in derived class)
   std::vector<CacheArrayBase *> arrays;
 
+  // monitor related
+  std:set<MonitorBase *> monitors;
+
 public:
-  CacheBase(std::string name) : name(name) {}
+  CacheBase(std::string name) : id(UniqueID::new_id()), name(name) {}
 
   virtual ~CacheBase() { for(auto a: arrays) delete a; }
 
@@ -174,13 +168,18 @@ public:
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
+  // monitor related
+  virtual void attach_monitor(MoniterBase *m) {
+    if(m->attach(id)) monitors.insert(m);
+  }
 };
 
 // Skewed Cache
 // IW: index width, NW: number of ways, P: number of partitions
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
-template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC,
+// EnMon: whether to enable monitoring
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, bool EnMon,
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type>  // IDX <- IndexFuncBase
@@ -217,14 +216,17 @@ public:
 
   virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
     replacer[ai].access(s, w);
+    if(EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w);
   }
 
   virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
     replacer[ai].access(s, w);
+    if(EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w);
   }
 
   virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
     replacer[ai].invalid(s, w);
+    if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
   }
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
@@ -236,7 +238,7 @@ public:
 };
 
 // Normal set-associative cache
-template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC>
-using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, bool EnMon>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, EnMon>;
 
 #endif
