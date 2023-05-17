@@ -13,7 +13,7 @@
      broadcasting.
 
    L1: 64-set 8-way set-associative
-   L2(LLC): 1024-set 16-way skewed-cache with 2 partitions
+   L2(LLC): 1024-set 16-way skewed-cache with 2 partitions, attached with a pfc monitor
 
 code:
   // initiate the L1 cache
@@ -31,7 +31,7 @@ code:
   typedef MetadataMSI<48, 16, 6> llc_metadata_type;
   typedef IndexSkewed<10, 6, 2> llc_indexer_type;
   typedef ReplaceLRU<10, 8> llc_replacer_type;
-  typedef CacheSkewed<10, 8, 2, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, false> llc_type;
+  typedef CacheSkewed<10, 8, 2, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, true> llc_type;
   typedef InnerPortMSIBroadcast<llc_metadata_type, data_type> llc_inner_type;
   typedef OuterPortMSIUncached<llc_metadata_type, data_type> llc_outer_type;
   typedef CoherentLLCNorm<llc_type, llc_outer_type, llc_inner_type> llc_cache_type;
@@ -42,6 +42,10 @@ code:
   // connect the two levels
   l1->outer->connect(llc->inner, llc->inner->connect(l1->outer));
   llc->outer->connect(mem, mem->connect(llc->outer));
+
+  // attach PFC
+  auto pfc = new PFCMonitor();
+  llc->attach_monitor(pfc);
 
   // We need to implement the DSL compiler to automatically generate these initialization code
   // based on a user provide script defining the cache architecture
@@ -263,7 +267,8 @@ public:
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
-    if(this->cache->hit(addr, &ai, &s, &w)) { // hit
+    bool hit;
+    if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
       if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
@@ -292,7 +297,7 @@ public:
     // grant
     if(!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
     Policy::meta_after_acquire(cmd, meta);
-    this->cache->replace_read(addr, ai, s, w);
+    this->cache->replace_read(addr, ai, s, w, hit);
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {
@@ -303,7 +308,7 @@ public:
     meta = this->cache->access(ai, s, w);
     if(!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data);
     Policy::meta_after_release(cmd, meta);
-    this->cache->replace_write(addr, ai, s, w);
+    this->cache->replace_write(addr, ai, s, w, true);
   }
 };
 
@@ -329,7 +334,8 @@ class CoreInterfaceMSI : public CoreInterfaceBase
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data = nullptr;
-    if(this->cache->hit(addr, &ai, &s, &w)) { // hit
+    bool hit;
+    if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
       if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
     } else { // miss
@@ -350,6 +356,10 @@ class CoreInterfaceMSI : public CoreInterfaceBase
       outer->acquire_req(addr, meta, data, cmd);
     }
     Policy::meta_after_acquire(cmd, meta);
+    if(Policy::acquire_read == Policy::get_action(cmd))
+      this->cache->replace_read(addr, ai, s, w, hit);
+    else
+      this->cache->replace_write(addr, ai, s, w, hit);
     return data;
   }
 

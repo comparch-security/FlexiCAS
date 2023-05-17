@@ -165,8 +165,8 @@ public:
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
   // update replacer states and potentially link to reporter hooks
-  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
-  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
+  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
   virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
@@ -222,14 +222,14 @@ public:
     replacer[*ai].replace(*s, w);
   }
 
-  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
+  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) {
     replacer[ai].access(s, w);
-    if(EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w);
+    if(EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
   }
 
-  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
+  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) {
     replacer[ai].access(s, w);
-    if(EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w);
+    if(EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
   }
 
   virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
