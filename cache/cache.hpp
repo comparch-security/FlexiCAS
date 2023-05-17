@@ -173,13 +173,16 @@ public:
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   // monitor related
-  virtual bool attach_monitor(MonitorBase *m) {
+  bool attach_monitor(MonitorBase *m) {
     if(m->attach(id)) {
       monitors.insert(m);
       return true;
     } else
       return false;
   }
+
+  // support run-time assign/reassign mointors
+  void detach_monitor() { monitors.clear(); }
 };
 
 // Skewed Cache
