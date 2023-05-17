@@ -9,7 +9,10 @@
 // Base class
 class IndexFuncBase
 {
+protected: 
+  const uint32_t mask;
 public:
+  IndexFuncBase(uint32_t mask) : mask(mask) {}
   virtual ~IndexFuncBase() {}
   virtual uint32_t index(uint64_t addr, int partition) = 0;
 };
@@ -21,9 +24,8 @@ public:
 template<int IW, int IOfst>
 class IndexNorm : public IndexFuncBase
 {
-  const uint32_t mask;
 public:
-  IndexNorm() : mask((1ul << IW) - 1) {}
+  IndexNorm() : IndexFuncBase((1ul << IW) - 1) {}
   virtual ~IndexNorm() {}
 
   virtual uint32_t index(uint64_t addr, int partition) {
@@ -39,10 +41,11 @@ class IndexSkewed : public IndexFuncBase
 {
   CMHasher hashers[P];
 public:
+  IndexSkewed() : IndexFuncBase((1ul << IW) - 1) {}
   virtual ~IndexSkewed() {}
 
   virtual uint32_t index(uint64_t addr, int partition) {
-    return hashers[partition](addr >> IOfst);
+    return (hashers[partition](addr >> IOfst)) & mask;
   }
 
   void seed(std::vector<uint64_t>& seeds) {
