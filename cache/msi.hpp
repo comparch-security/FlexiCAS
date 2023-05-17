@@ -18,21 +18,22 @@
 code:
   // initiate the L1 cache
   typedef Data64B data_type;
-  typedef MetadataMSI<48, 6+6> metadata_type;
+  typedef MetadataMSI<48, 12, 6> l1_metadata_type;
   typedef IndexNorm<6, 6> l1_indexer_type;
   typedef ReplaceLRU<6, 8> l1_replacer_type;
-  typedef CacheNorm<6, 8, metadata_type, data_type, l1_indexer_type, l1_replacer_type> l1_type;
-  typedef CoreInterfaceMSI<metadata_type, data_type> l1_inner_type; // support core interface
-  typedef OuterPortMSI<metadata_type, data_type> l1_outer_type;     // support reverse probe
+  typedef CacheNorm<6, 8, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, false> l1_type;
+  typedef CoreInterfaceMSI<l1_metadata_type, data_type> l1_inner_type; // support core interface
+  typedef OuterPortMSI<l1_metadata_type, data_type> l1_outer_type;     // support reverse probe
   typedef CoherentL1CacheNorm<l1_type, l1_outer_type, l1_inner_type> l1_cache_type;
   l1_cache_type *l1 = new l1_cache_type("L1");
 
   // initiate the llc
+  typedef MetadataMSI<48, 16, 6> llc_metadata_type;
   typedef IndexSkewed<10, 6, 2> llc_indexer_type;
   typedef ReplaceLRU<10, 8> llc_replacer_type;
-  typedef CacheSkewed<10, 8, 2, metadata_type, data_type, llc_indexer_type, llc_replacer_type> llc_type;
-  typedef InnerPortMSIBroadcast<metadata_type, data_type> llc_inner_type;
-  typedef OuterPortMSIUncached<metadata_type, data_type> llc_outer_type;
+  typedef CacheSkewed<10, 8, 2, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, false> llc_type;
+  typedef InnerPortMSIBroadcast<llc_metadata_type, data_type> llc_inner_type;
+  typedef OuterPortMSIUncached<llc_metadata_type, data_type> llc_outer_type;
   typedef CoherentLLCNorm<llc_type, llc_outer_type, llc_inner_type> llc_cache_type;
   static llc_cache_type *llc = new llc_cache_type();
 
@@ -123,9 +124,10 @@ namespace // file visibility
     }
 
     // set the metadata for a newly fetched block
-    static inline void meta_after_grant(uint32_t cmd, CMMetadataBase *meta) {
+    static inline void meta_after_grant(uint32_t cmd, CMMetadataBase *meta, uint64_t addr) {
       assert(is_acquire(cmd)); // must be an acquire
       assert(!meta->is_dirty()); // by default an invalid block must be clean
+      meta->init(addr);
       if(acquire_read == get_action(cmd))
         meta->to_shared();
       else {
@@ -183,7 +185,8 @@ public:
 // Metadata with match function
 // AW    : address width
 // TOfst : tag offset
-template <int AW, int TOfst>
+// IOfst : index offset
+template <int AW, int TOfst, int IOfst>
 class MetadataMSI : public MetadataMSIBase
 {
 protected:
@@ -196,6 +199,8 @@ public:
 
   virtual bool match(uint64_t addr) { return is_valid() && ((addr >> TOfst) & mask) == tag; }
   virtual void reset() { tag = 0; state = 0; dirty = 0; }
+  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0; }
+  virtual uint64_t addr(uint32_t s) const { return (tag << TOfst) | (s << IOfst); }
 };
 
 
@@ -210,7 +215,7 @@ class OuterPortMSIUncached : public OuterCohPortBase
 public:
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {
     coh->acquire_resp(addr, data, Policy::attach_id(cmd, this->coh_id));
-    Policy::meta_after_grant(cmd, meta);
+    Policy::meta_after_grant(cmd, meta, addr);
   }
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {
     coh->writeback_resp(addr, data, Policy::attach_id(cmd, this->coh_id));
@@ -276,7 +281,7 @@ public:
         if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
 
         // writeback if dirty
-        if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict());
+        if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict());
 
         this->cache->replace_invalid(addr, ai, s, w);
       }
@@ -336,7 +341,7 @@ class CoreInterfaceMSI : public CoreInterfaceBase
         if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
         // writeback if dirty
-        if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict());
+        if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict());
 
         this->cache->replace_invalid(addr, ai, s, w);
       }

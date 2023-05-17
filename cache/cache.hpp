@@ -19,7 +19,10 @@ class CMMetadataBase
 public:
   // implement a totally useless base class
   virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
-  virtual void reset() {}            // reset the metadata
+  virtual void reset() {}                                   // reset the metadata
+  virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
+  virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
+
   virtual void to_invalid() {}       // change state to invalid
   virtual void to_shared() {}        // change to shared
   virtual void to_modified() {}      // change to modified
