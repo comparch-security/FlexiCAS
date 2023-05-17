@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "util/random.hpp"
+#include "util/monitor.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
 
@@ -146,7 +147,7 @@ protected:
   std::vector<CacheArrayBase *> arrays;
 
   // monitor related
-  std:set<MonitorBase *> monitors;
+  std::set<MonitorBase *> monitors;
 
 public:
   CacheBase(std::string name) : id(UniqueID::new_id()), name(name) {}
@@ -169,8 +170,12 @@ public:
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   // monitor related
-  virtual void attach_monitor(MoniterBase *m) {
-    if(m->attach(id)) monitors.insert(m);
+  virtual bool attach_monitor(MonitorBase *m) {
+    if(m->attach(id)) {
+      monitors.insert(m);
+      return true;
+    } else
+      return false;
   }
 };
 
@@ -183,7 +188,7 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type>  // IDX <- IndexFuncBase
-  class CacheSkewed : public CacheBase
+class CacheSkewed : public CacheBase
 {
 protected:
   IDX indexer;     // index resolver

@@ -105,6 +105,9 @@ public:
     if(outer) delete outer;
     if(inner) delete inner;
   }
+
+  // monitor related
+  bool attach_monitor(MonitorBase *m) { return cache->attach_monitor(m); }
 };
 
 

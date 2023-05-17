@@ -8,7 +8,7 @@
 class MonitorBase
 {
 public:
-  MointorBase() {}
+  MonitorBase() {}
   virtual ~MonitorBase() {}
 
   // standard functions to supprt a type of monitoring

@@ -5,10 +5,6 @@
 #include <type_traits>
 #include "cache/coherence.hpp"
 
-// Initiate a single-level cache system (L1 is also LLC)
-template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC>
-using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC>;
-
 /* Example: a two-level cache system
      a 48-bit address system,
      normal index,
@@ -282,7 +278,7 @@ public:
         // writeback if dirty
         if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict());
 
-        this->cache->replace_invalid(ai, s, w);
+        this->cache->replace_invalid(addr, ai, s, w);
       }
 
       // fetch the missing block
@@ -291,7 +287,7 @@ public:
     // grant
     if(!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
     Policy::meta_after_acquire(cmd, meta);
-    this->cache->replace_read(ai, s, w);
+    this->cache->replace_read(addr, ai, s, w);
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {
@@ -302,7 +298,7 @@ public:
     meta = this->cache->access(ai, s, w);
     if(!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data);
     Policy::meta_after_release(cmd, meta);
-    this->cache->replace_write(ai, s, w);
+    this->cache->replace_write(addr, ai, s, w);
   }
 };
 
@@ -342,7 +338,7 @@ class CoreInterfaceMSI : public CoreInterfaceBase
         // writeback if dirty
         if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict());
 
-        this->cache->replace_invalid(ai, s, w);
+        this->cache->replace_invalid(addr, ai, s, w);
       }
 
       // fetch the missing block
