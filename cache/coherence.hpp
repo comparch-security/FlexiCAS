@@ -108,6 +108,8 @@ public:
 
   // monitor related
   bool attach_monitor(MonitorBase *m) { return cache->attach_monitor(m); }
+  // support run-time assign/reassign mointors
+  void detach_monitor() { cache->detach_monitor(); }
 };
 
 
