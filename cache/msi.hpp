@@ -18,7 +18,7 @@
 code:
   // initiate the L1 cache
   typedef Data64B data_type;
-  typedef MetadataMSI<48, 12, 6> l1_metadata_type;
+  typedef MetadataMSI<48, 6, 12> l1_metadata_type;
   typedef IndexNorm<6, 6> l1_indexer_type;
   typedef ReplaceLRU<6, 8> l1_replacer_type;
   typedef CacheNorm<6, 8, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, false> l1_type;
@@ -28,7 +28,7 @@ code:
   l1_cache_type *l1 = new l1_cache_type("L1");
 
   // initiate the llc
-  typedef MetadataMSI<48, 16, 6> llc_metadata_type;
+  typedef MetadataMSI<48, 0, 6> llc_metadata_type;
   typedef IndexSkewed<10, 6, 2> llc_indexer_type;
   typedef ReplaceLRU<10, 8> llc_replacer_type;
   typedef CacheSkewed<10, 8, 2, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, true> llc_type;
@@ -188,9 +188,9 @@ public:
 
 // Metadata with match function
 // AW    : address width
+// IW    : index width
 // TOfst : tag offset
-// IOfst : index offset
-template <int AW, int TOfst, int IOfst>
+template <int AW, int IW, int TOfst>
 class MetadataMSI : public MetadataMSIBase
 {
 protected:
@@ -204,7 +204,14 @@ public:
   virtual bool match(uint64_t addr) { return is_valid() && ((addr >> TOfst) & mask) == tag; }
   virtual void reset() { tag = 0; state = 0; dirty = 0; }
   virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0; }
-  virtual uint64_t addr(uint32_t s) const { return (tag << TOfst) | (s << IOfst); }
+  virtual uint64_t addr(uint32_t s) const {
+    uint64_t addr = tag << TOfst;
+    if(IW > 0) {
+      uint32_t index_mask = (1 << IW) - 1;
+      addr |= (s & index_mask) << (IOfst - IW);
+    }
+    return addr;
+  }
 };
 
 
