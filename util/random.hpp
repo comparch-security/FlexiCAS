@@ -9,7 +9,7 @@ extern uint64_t cm_get_random_uint64();
 extern uint32_t cm_get_random_uint32();
 
 #include "cryptopp/cryptlib.h"
-#include "crptopp/tiger.h"
+#include "cryptopp/tiger.h"
 
 // see https://cryptopp.com/wiki/Tiger
 
