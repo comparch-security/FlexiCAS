@@ -201,14 +201,14 @@ public:
   MetadataMSI() : tag(0) {}
   virtual ~MetadataMSI() {}
 
-  virtual bool match(uint64_t addr) { return is_valid() && ((addr >> TOfst) & mask) == tag; }
+  virtual bool match(uint64_t addr) const { return is_valid() && ((addr >> TOfst) & mask) == tag; }
   virtual void reset() { tag = 0; state = 0; dirty = 0; }
   virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0; }
   virtual uint64_t addr(uint32_t s) const {
     uint64_t addr = tag << TOfst;
     if(IW > 0) {
       uint32_t index_mask = (1 << IW) - 1;
-      addr |= (s & index_mask) << (IOfst - IW);
+      addr |= (s & index_mask) << (TOfst - IW);
     }
     return addr;
   }
