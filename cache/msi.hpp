@@ -88,7 +88,7 @@ namespace // file visibility
     static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
 
     // attach an id to a command
-    static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (~0x0fffful)) | (id << 16); }
+    static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (0x0fffful)) | (id << 16); }
 
     // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
     static inline bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
@@ -285,10 +285,9 @@ public:
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
+      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
       if(meta->is_valid()) {
-        if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
         // sync if necessary
         if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
 
@@ -349,10 +348,9 @@ class CoreInterfaceMSI : public CoreInterfaceBase
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
+      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
       if(meta->is_valid()) {
-        if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
         // writeback if dirty
         if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict());
 
