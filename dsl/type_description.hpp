@@ -8,7 +8,6 @@
 #include <list>
 #include <string>
 #include <cstdlib>
-#include "dsl/statement.hpp"
 
 ////////////////////////////// A gloabl database ///////////////////////////////////////////////
 
@@ -32,6 +31,13 @@ struct DescriptionDB
 };
 
 extern DescriptionDB typedb;
+
+// base class for declaring a type definition
+class TypeDeclaration
+{
+public:
+  virtual void emit(std::ofstream &file) = 0;
+};
 
 // base classes for all description
 class Description : public TypeDeclaration
@@ -58,14 +64,7 @@ public:
   virtual bool set(std::list<std::string> &values) = 0;
   // check type compliant
   bool comply(const std::string& c) { return types.count(c); }
-  // add the header files required fro this type
-  virtual void emit_header() {
-    std::string header("cache/cache.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header(); // add the header files required fro this type
 
 };
 
@@ -101,13 +100,7 @@ public:
     file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "> " << this->name << ";" << std::endl;
   }
 
-  virtual void emit_header() {
-    std::string header("cache/msi.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeCMDataBase : public Description {
@@ -253,13 +246,7 @@ public:
     file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
   }  
 
-  virtual void emit_header() {
-    std::string header("cache/msi.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeOuterPortMSI : public TypeOuterCohPortBase {
@@ -283,13 +270,7 @@ public:
     file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
   }  
 
-  virtual void emit_header() {
-    std::string header("cache/msi.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeInnerCohPortBase : public Description {
@@ -319,13 +300,7 @@ public:
     file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
   }    
 
-  virtual void emit_header() {
-    std::string header("cache/msi.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeInnerPortMSIBroadcast : public TypeInnerCohPortBase
@@ -351,13 +326,7 @@ public:
     file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
   }    
 
-  virtual void emit_header() {
-    std::string header("cache/msi.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeCoreInterfaceBase : public TypeInnerCohPortBase {
@@ -387,26 +356,14 @@ public:
     file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
   }    
 
-  virtual void emit_header() {
-    std::string header("cache/msi.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeCoherentCacheBase : public Description {
 public:
   TypeCoherentCacheBase(const std::string &name) : Description(name) { types.insert("CoherentCacheBase"); }
 
-  virtual void emit_header() {
-    std::string header("cache/coherence.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeCoherentCacheNorm : public TypeCoherentCacheBase
@@ -464,13 +421,7 @@ class TypeIndexFuncBase : public Description {
 public:
   TypeIndexFuncBase(const std::string &name) : Description(name) { types.insert("IndexFuncBase"); }
 
-  virtual void emit_header() {
-    std::string header("cache/index.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeIndexNorm : public TypeIndexFuncBase
@@ -549,13 +500,7 @@ class TypeReplaceFuncBase : public Description {
 public:
   TypeReplaceFuncBase(const std::string &name) : Description(name) { types.insert("ReplaceFuncBase"); }
 
-  virtual void emit_header() {
-    std::string header("cache/replace.hpp");
-    if(!codegendb.header_set.count(header)) {
-      codegendb.header_set.insert(header);
-      codegendb.header_list.push_back(header);
-    }
-  }
+  virtual void emit_header();
 };
 
 class TypeReplaceFIFO : public TypeReplaceFuncBase

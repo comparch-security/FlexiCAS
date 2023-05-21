@@ -12,13 +12,6 @@
 
 #include "dsl/type_description.hpp"
 
-// base class for declaring a type definition
-class TypeDeclaration
-{
-public:
-  virtual void emit(std::ofstream &file) = 0;
-};
-
 // base class for processing a statement
 class StatementBase
 {
@@ -136,6 +129,13 @@ struct CodeGen
 
   ~CodeGen() {
     for(auto d:decoders) delete d;
+  }
+
+  void add_header(const std::string &header) {
+    if(!header_set.count(header)) {
+      header_set.insert(header);
+      header_list.push_back(header);
+    }
   }
 
   void emit(std::ofstream &file) {
