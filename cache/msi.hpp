@@ -55,7 +55,7 @@ code:
 namespace // file visibility
 {
   // MSI protocol
-  struct Policy {
+  class Policy {
     // definition of command:
     // [31  :   16] [15 : 8] [7 :0]
     // coherence-id msg-type action
@@ -81,6 +81,7 @@ namespace // file visibility
     static const uint32_t probe_evict = 0;
     static const uint32_t probe_writeback = 1;
 
+  public:
     static inline bool is_acquire(uint32_t cmd) {return (cmd & 0x0ff00ul) == acquire_msg; }
     static inline bool is_release(uint32_t cmd) {return (cmd & 0x0ff00ul) == release_msg; }
     static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
@@ -120,6 +121,10 @@ namespace // file visibility
 
     // command to evict a cache block from this cache
     static inline uint32_t cmd_for_evict() { return attach_id(release_msg | release_evict, -1); } // eviction needs no coh_id
+
+    // command for core interface to read/write a cache block
+    static inline uint32_t cmd_for_core_read() { return acquire_msg | acquire_read; }
+    static inline uint32_t cmd_for_core_write() { return acquire_msg | acquire_write; }
 
     // set the meta after processing an acquire
     static inline void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta) {
@@ -360,7 +365,7 @@ class CoreInterfaceMSI : public CoreInterfaceBase
       outer->acquire_req(addr, meta, data, cmd);
     }
     Policy::meta_after_acquire(cmd, meta);
-    if(Policy::acquire_read == Policy::get_action(cmd))
+    if(cmd == Policy::cmd_for_core_read())
       this->cache->replace_read(addr, ai, s, w, hit);
     else
       this->cache->replace_write(addr, ai, s, w, hit);
@@ -368,10 +373,10 @@ class CoreInterfaceMSI : public CoreInterfaceBase
   }
 
 public:
-  virtual const CMDataBase *read(uint64_t addr) { return access(addr, Policy::acquire_msg | Policy::acquire_read); }
+  virtual const CMDataBase *read(uint64_t addr) { return access(addr, Policy::cmd_for_core_read()); }
 
   virtual void write(uint64_t addr, const CMDataBase *data) {
-    auto m_data = access(addr, Policy::acquire_msg | Policy::acquire_write);
+    auto m_data = access(addr, Policy::cmd_for_core_write());
     if(!std::is_void<DT>::value) m_data->copy(data);
   }
 
