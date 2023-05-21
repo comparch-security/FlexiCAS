@@ -22,7 +22,7 @@ code:
   typedef IndexNorm<6, 6> l1_indexer_type;
   typedef ReplaceLRU<6, 8> l1_replacer_type;
   typedef CacheNorm<6, 8, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, false> l1_type;
-  typedef CoreInterfaceMSI<l1_metadata_type, data_type> l1_inner_type; // support core interface
+  typedef CoreInterfaceMSI<l1_metadata_type, data_type, false> l1_inner_type; // support core interface
   typedef OuterPortMSI<l1_metadata_type, data_type> l1_outer_type;     // support reverse probe
   typedef CoherentL1CacheNorm<l1_type, l1_outer_type, l1_inner_type> l1_cache_type;
   l1_cache_type *l1 = new l1_cache_type("L1");
@@ -32,9 +32,9 @@ code:
   typedef IndexSkewed<10, 6, 2> llc_indexer_type;
   typedef ReplaceLRU<10, 8> llc_replacer_type;
   typedef CacheSkewed<10, 8, 2, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, true> llc_type;
-  typedef InnerPortMSIBroadcast<llc_metadata_type, data_type> llc_inner_type;
+  typedef InnerPortMSIBroadcast<llc_metadata_type, data_type, true> llc_inner_type;
   typedef OuterPortMSIUncached<llc_metadata_type, data_type> llc_outer_type;
-  typedef CoherentLLCNorm<llc_type, llc_outer_type, llc_inner_type> llc_cache_type;
+  typedef CoherentCacheNorm<llc_type, llc_outer_type, llc_inner_type> llc_cache_type;
   static llc_cache_type *llc = new llc_cache_type();
 
   static SimpleMemoryModel<data_type> *mem = new SimpleMemoryModel<data_type>();
@@ -55,7 +55,7 @@ code:
 namespace // file visibility
 {
   // MSI protocol
-  struct Policy {
+  class Policy {
     // definition of command:
     // [31  :   16] [15 : 8] [7 :0]
     // coherence-id msg-type action
@@ -81,6 +81,7 @@ namespace // file visibility
     static const uint32_t probe_evict = 0;
     static const uint32_t probe_writeback = 1;
 
+  public:
     static inline bool is_acquire(uint32_t cmd) {return (cmd & 0x0ff00ul) == acquire_msg; }
     static inline bool is_release(uint32_t cmd) {return (cmd & 0x0ff00ul) == release_msg; }
     static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
@@ -88,11 +89,16 @@ namespace // file visibility
     static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
 
     // attach an id to a command
-    static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (~0x0fffful)) | (id << 16); }
+    static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (0x0fffful)) | (id << 16); }
 
     // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
     static inline bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
       return (is_probe(cmd) && probe_evict == get_action(cmd)) || meta->is_modified();
+    }
+
+    // check whether a permission upgrade is needed for the required action
+    static inline bool need_promote(uint32_t cmd, CMMetadataBase *meta) {
+      return (is_acquire(cmd) && acquire_write == get_action(cmd) && !meta->is_modified());
     }
 
     // avoid self probe
@@ -115,6 +121,10 @@ namespace // file visibility
 
     // command to evict a cache block from this cache
     static inline uint32_t cmd_for_evict() { return attach_id(release_msg | release_evict, -1); } // eviction needs no coh_id
+
+    // command for core interface to read/write a cache block
+    static inline uint32_t cmd_for_core_read() { return acquire_msg | acquire_read; }
+    static inline uint32_t cmd_for_core_write() { return acquire_msg | acquire_write; }
 
     // set the meta after processing an acquire
     static inline void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta) {
@@ -264,7 +274,7 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT,
+template<typename MT, typename DT, bool isLLC,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class InnerPortMSIUncached : public InnerCohPortBase
@@ -278,28 +288,20 @@ public:
     if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
       if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
-      // sync if necessary
-      if(Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(cmd));
+      if(Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(cmd)); // sync if necessary
+      if(Policy::need_promote(cmd, meta) && !isLLC) outer->acquire_req(addr, meta, data, cmd); // promote permission if needed
     } else { // miss
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
-
+      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(meta->is_valid()) {
-        if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
         // sync if necessary
         if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
-
-        // writeback if dirty
-        if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict());
-
+        if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict()); // writeback if dirty
         this->cache->replace_invalid(addr, ai, s, w);
       }
-
-      // fetch the missing block
-      outer->acquire_req(addr, meta, data, cmd);
+      outer->acquire_req(addr, meta, data, cmd); // fetch the missing block
     }
     // grant
     if(!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
@@ -320,8 +322,8 @@ public:
 };
 
 // full MSI inner port (broadcasting hub, snoop)
-template<typename MT, typename DT>
-class InnerPortMSIBroadcast : public InnerPortMSIUncached<MT, DT>
+template<typename MT, typename DT, bool isLLC>
+class InnerPortMSIBroadcast : public InnerPortMSIUncached<MT, DT, isLLC>
 {
 public:
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {
@@ -332,7 +334,7 @@ public:
 };
 
 // MSI core interface:
-template<typename MT, typename DT,
+template<typename MT, typename DT, bool isLLC,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class CoreInterfaceMSI : public CoreInterfaceBase
@@ -345,14 +347,14 @@ class CoreInterfaceMSI : public CoreInterfaceBase
     if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
       if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if(Policy::need_promote(cmd, meta) && !isLLC) outer->acquire_req(addr, meta, data, cmd);
     } else { // miss
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
+      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
       if(meta->is_valid()) {
-        if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
         // writeback if dirty
         if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict());
 
@@ -363,7 +365,7 @@ class CoreInterfaceMSI : public CoreInterfaceBase
       outer->acquire_req(addr, meta, data, cmd);
     }
     Policy::meta_after_acquire(cmd, meta);
-    if(Policy::acquire_read == Policy::get_action(cmd))
+    if(cmd == Policy::cmd_for_core_read())
       this->cache->replace_read(addr, ai, s, w, hit);
     else
       this->cache->replace_write(addr, ai, s, w, hit);
@@ -371,10 +373,10 @@ class CoreInterfaceMSI : public CoreInterfaceBase
   }
 
 public:
-  virtual const CMDataBase *read(uint64_t addr) { return access(addr, Policy::acquire_msg | Policy::acquire_read); }
+  virtual const CMDataBase *read(uint64_t addr) { return access(addr, Policy::cmd_for_core_read()); }
 
   virtual void write(uint64_t addr, const CMDataBase *data) {
-    auto m_data = access(addr, Policy::acquire_msg | Policy::acquire_write);
+    auto m_data = access(addr, Policy::cmd_for_core_write());
     if(!std::is_void<DT>::value) m_data->copy(data);
   }
 

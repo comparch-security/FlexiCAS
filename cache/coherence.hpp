@@ -131,10 +131,4 @@ template<typename CacheT, typename OuterT, typename CoreT,
 using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 
-// Normal LLC supporting coherence
-//  MCT: memory controller type, must be a derived class of OuterCohPortBase
-template<typename CacheT, typename OuterT, typename InnerT>
-using CoherentLLCNorm = CoherentCacheNorm<CacheT, OuterT, InnerT>;
-
-
 #endif
