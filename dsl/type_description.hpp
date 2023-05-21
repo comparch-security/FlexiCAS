@@ -298,24 +298,25 @@ public: TypeInnerCohPortBase(const std::string &name) : Description(name) { type
 
 class TypeInnerPortMSIUncached : public TypeInnerCohPortBase
 {
-  std::string MT, DT;
+  std::string MT, DT; bool isLLC;
   const std::string tname;
 public:
   TypeInnerPortMSIUncached(const std::string &name) : TypeInnerCohPortBase(name), tname("InnerPortMSIUncached") {}
 
   virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+    if(values.size() != 3) {
+      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
     MT  = *it; if(this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
     DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    isLLC = std::stoi(*it); it++;
     return true;
   }
   
   virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
+    file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
   }    
 
   virtual void emit_header() {
@@ -329,24 +330,25 @@ public:
 
 class TypeInnerPortMSIBroadcast : public TypeInnerCohPortBase
 {
-  std::string MT, DT;
+  std::string MT, DT; bool isLLC;
   const std::string tname;
 public:
   TypeInnerPortMSIBroadcast(const std::string &name) : TypeInnerCohPortBase(name), tname("InnerPortMSIBroadcast") {}
 
   virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+    if(values.size() != 3) {
+      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
     MT  = *it; if(this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
     DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    isLLC = std::stoi(*it); it++;
     return true;
   }
   
   virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
+    file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
   }    
 
   virtual void emit_header() {
@@ -364,24 +366,25 @@ public: TypeCoreInterfaceBase(const std::string &name) : TypeInnerCohPortBase(na
 
 class TypeCoreInterfaceMSI : public TypeCoreInterfaceBase
 {
-  std::string MT, DT;
+  std::string MT, DT; bool isLLC;
   const std::string tname;
 public:
   TypeCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("CoreInterfaceMSI") {}
 
   virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+    if(values.size() != 3) {
+      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
     MT  = *it; if(this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
     DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    isLLC = std::stoi(*it); it++;
     return true;
   }
   
   virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
+    file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
   }    
 
   virtual void emit_header() {
@@ -432,49 +435,26 @@ public:
 
 class TypeCoherentL1CacheNorm : public TypeCoherentCacheBase
 {
-  std::string CacheT, OuterT, CoreT;
+  std::string CacheT, OuterT, CoreT; bool isLLC;
   const std::string tname;
 public:
   TypeCoherentL1CacheNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentL1CacheNorm") {}
 
   virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
+    if(values.size() != 4) {
+      std::cerr << "[Misnatching Paramater] " << tname << " needs 4 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
     CacheT = *it; if(this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
     OuterT = *it; if(this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
     CoreT = *it; if(this->check(tname, "CoreT", *it, "CoreInterfaceBase", false)) return false; it++;
+    isLLC = std::stoi(*it); it++;
     return true;
   }
   
   virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << CoreT << "> " << this->name << ";" << std::endl;
-  }
-};
-
-class TypeCoherentLLCNorm : public TypeCoherentCacheBase
-{
-  std::string CacheT, OuterT, InnerT;
-  const std::string tname;
-public:
-  TypeCoherentLLCNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentLLCNorm") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    CacheT = *it; if(this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
-    OuterT = *it; if(this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
-    InnerT = *it; if(this->check(tname, "InnerT", *it, "InnerCohPortBase", false)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << InnerT << "> " << this->name << ";" << std::endl;
+    file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << CoreT << "," << isLLC << "> " << this->name << ";" << std::endl;
   }
 };
 
