@@ -6,6 +6,7 @@ CodeGen::CodeGen() {
   
   decoders.push_back(new StatementComment);
   decoders.push_back(new StatementBlank);
+  decoders.push_back(new StatementConst);
   decoders.push_back(new StatementTypeDef);
 
   decoders.push_back(new StatementError); // always the final one
@@ -57,4 +58,21 @@ bool StatementTypeDef::decode(const char* line) {
   if(params.size() > 0) std::cerr << *it;
   std::cerr << ")" << std::endl;
   return false;
+}
+
+bool StatementConst::decode(const char* line) {
+  if(!std::regex_match(line, cm, expression)) return false;
+
+  if(codegendb.consts.count(cm[1])) {
+    std::cerr << "[Double Definition] Const `" << cm[1] << "' has already been defined!" << std::endl;
+    return false;
+  }
+
+  try { codegendb.consts[cm[1]] = std::stoi(cm[2]); }
+  catch(std::invalid_argument &e) {
+    std::cerr << "[Integer] Fail to parse `" << cm[2] << "' into integer for defining const `" << cm[1] << "'." << std::endl;
+    return false;
+  }
+
+  return true;
 }

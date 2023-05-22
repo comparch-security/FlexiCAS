@@ -16,18 +16,18 @@ class Description;
 struct DescriptionDB
 {
   std::map<std::string, Description *> types;
-  std::map<std::string, int> consts;
   ~DescriptionDB();
 
   void init();
   bool create(const std::string &type_name, const std::string &base_name, std::list<std::string> &params);
 
-  void add(const std::string &name, Description *d) {
+  bool add(const std::string &name, Description *d) {
     if(types.count(name)) {
       std::cerr << "[Double Definition] Type description: `" << name << "' has already been defined!" << std::endl;
-      exit(-1);
+      return false;
     }
     types[name] = d;
+    return true;
   }
 };
 

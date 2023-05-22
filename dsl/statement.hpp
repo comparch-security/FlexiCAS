@@ -32,6 +32,7 @@ struct CodeGen
   std::set<std::string> header_set;
   std::list<std::string> header_list;
   std::list<TypeDeclaration *> type_declarations;
+  std::map<std::string, int> consts;
 
   CodeGen();
   ~CodeGen();
@@ -70,6 +71,14 @@ class StatementTypeDef : public StatementBase
 {
 public:
   StatementTypeDef() : StatementBase("^\\s*type\\s+([a-zA-Z0-9_]+)\\s*=\\s*([a-zA-Z0-9_]+)\\s*[(]([a-zA-Z0-9_, ]*)[)]\\s*;((\\s*//.*)|(\\s*))$") {}
+  virtual bool decode(const char* line);
+};
+
+// set a const variable for integer value
+class StatementConst : public StatementBase
+{
+public:
+  StatementConst() : StatementBase("^\\s*const\\s+([a-zA-Z0-9_]+)\\s*=\\s*([a-zA-Z0-9_]+)\\s*;((\\s*//.*)|(\\s*))$") {}
   virtual bool decode(const char* line);
 };
 

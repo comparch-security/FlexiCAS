@@ -36,7 +36,7 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
     return false;
   }
   if(!descriptor->set(params)) return false;
-  add(type_name, descriptor);
+  if(!add(type_name, descriptor)) return false;
   descriptor->emit_header();
   codegendb.type_declarations.push_back(descriptor);
   return true;
@@ -45,14 +45,14 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
 DescriptionDB typedb;
 
 bool Description::parse_int(const std::string &param, int &rv) const {
-  if(typedb.consts.count(param)) {
-    rv = typedb.consts[param];
+  if(codegendb.consts.count(param)) {
+    rv = codegendb.consts[param];
     return true;
   }
 
   try { rv = std::stoi(param); }
   catch(std::invalid_argument &e) {
-    std::cerr << "[Integer] Fail to parse `" << e.what() << "' into an integer when defining a new type from `" << name << "'." << std::endl;
+    std::cerr << "[Integer] Fail to parse `" << param << "' into an integer when defining a new type from `" << name << "'." << std::endl;
     return false;
   }
 
@@ -63,14 +63,14 @@ bool Description::parse_bool(const std::string &param, bool &rv) const {
   if(param == "true"  || param == "TRUE" || param == "T") { rv = true; return true; }
   if(param == "false" || param == "FALSE" || param == "F") { rv = false; return true; }
   
-  if(typedb.consts.count(param)) {
-    rv = typedb.consts[param];
+  if(codegendb.consts.count(param)) {
+    rv = codegendb.consts[param];
     return true;
   }
 
   try { rv = std::stoi(param); }
   catch(std::invalid_argument &e) {
-    std::cerr << "[Integer] Fail to parse `" << e.what() << "' into boolean when defining a new type from `" << name << "'." << std::endl;
+    std::cerr << "[Integer] Fail to parse `" << param << "' into boolean when defining a new type from `" << name << "'." << std::endl;
     return false;
   }
 
