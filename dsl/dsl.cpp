@@ -10,8 +10,8 @@ int main(int argc, char* argv[]) {
   }
 
   std::ifstream cfg_file; cfg_file.open(std::string(argv[1]));
-  //std::ofstream cache_hpp; cache_hpp.open(std::string(argv[2])+".hpp");
-  //std::ofstream cache_cpp; cache_cpp.open(std::string(argv[2])+".cpp");
+  std::ofstream cache_hpp; cache_hpp.open(std::string(argv[2])+".hpp");
+  std::ofstream cache_cpp; cache_cpp.open(std::string(argv[2])+".cpp");
   char line[2048];
 
   while(cfg_file.good()) {
@@ -20,8 +20,12 @@ int main(int argc, char* argv[]) {
       if(decoder->decode(line))
         break;
   }
-
+  
+  codegendb.emit_hpp(cache_hpp);
+  codegendb.emit_cpp(cache_cpp);
   cfg_file.close();
+  cache_hpp.close();
+  cache_cpp.close();
 
   return 0;
 }

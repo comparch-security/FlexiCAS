@@ -16,9 +16,10 @@ class Description;
 struct DescriptionDB
 {
   std::map<std::string, Description *> types;
-  DescriptionDB();
+  std::map<std::string, int> consts;
   ~DescriptionDB();
 
+  void init();
   bool create(const std::string &type_name, const std::string &base_name, std::list<std::string> &params);
 
   void add(const std::string &name, Description *d) {
@@ -26,7 +27,7 @@ struct DescriptionDB
       std::cerr << "[Double Definition] Type description: `" << name << "' has already been defined!" << std::endl;
       exit(-1);
     }
-    types["name"] = d;
+    types[name] = d;
   }
 };
 
@@ -58,6 +59,9 @@ protected:
     }
     return true;
   }
+
+  bool parse_int(const std::string &param, int &rv) const;
+  bool parse_bool(const std::string &param, bool &rv) const;
 public:
   Description(const std::string &name): name(name) {}
 
@@ -86,13 +90,13 @@ public:
   
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 3) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    AW = std::stoi(*it); it++;
-    IW = std::stoi(*it); it++;
-    TOfst = std::stoi(*it); it++;
+    if(!parse_int(*it, AW)) return false; it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, TOfst)) return false; it++;
     return true;
   }
 
@@ -115,6 +119,7 @@ public:
   TypeData64B() : TypeCMDataBase(""), tname("Data64B") { types.insert("Data64B"); }
 
   virtual bool set(std::list<std::string> &values) {
+    if(values.empty()) return true;
     std::cerr << "[No Paramater] " << tname << " supports no parameter!" << std::endl;
     return false;
   }
@@ -140,14 +145,14 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 4) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 4 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    IW = std::stoi(*it); it++;
-    NW = std::stoi(*it); it++;
-    MT = *it; if(this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-    DT = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, NW)) return false; it++;
+    MT = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
+    DT = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
     return true;
   }
 
@@ -171,18 +176,18 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 8) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 8 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 8 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    IW = std::stoi(*it); it++;
-    NW = std::stoi(*it); it++;
-    P = std::stoi(*it); it++;
-    MT  = *it; if(this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-    DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    IDX = *it; if(this->check(tname, "IDX", *it, "IndexFuncBase", false)) return false; it++;
-    RPC = *it; if(this->check(tname, "RPC", *it, "ReplaceFuncBase", false)) return false; it++;
-    EnMon = std::stoi(*it); it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, NW)) return false; it++;
+    if(!parse_int(*it, P)) return false; it++;
+    MT  = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
+    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    IDX = *it; if(!this->check(tname, "IDX", *it, "IndexFuncBase", false)) return false; it++;
+    RPC = *it; if(!this->check(tname, "RPC", *it, "ReplaceFuncBase", false)) return false; it++;
+    if(!parse_bool(*it, EnMon)) return false; it++;
     return true;
   }
  
@@ -200,17 +205,17 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 7) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 7 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 7 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    IW = std::stoi(*it); it++;
-    NW = std::stoi(*it); it++;
-    MT  = *it; if(this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-    DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    IDX = *it; if(this->check(tname, "IDX", *it, "IndexFuncBase", false)) return false; it++;
-    RPC = *it; if(this->check(tname, "RPC", *it, "ReplaceFuncBase", false)) return false; it++;
-    EnMon = std::stoi(*it); it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, NW)) return false; it++;
+    MT  = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
+    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    IDX = *it; if(!this->check(tname, "IDX", *it, "IndexFuncBase", false)) return false; it++;
+    RPC = *it; if(!this->check(tname, "RPC", *it, "ReplaceFuncBase", false)) return false; it++;
+    if(!parse_bool(*it, EnMon)) return false; it++;
     return true;
   }
  
@@ -233,12 +238,12 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    MT  = *it; if(this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
     return true;
   }
   
@@ -257,12 +262,12 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    MT  = *it; if(this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
     return true;
   }
   
@@ -286,13 +291,13 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 3) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    MT  = *it; if(this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    isLLC = std::stoi(*it); it++;
+    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    if(!parse_bool(*it, isLLC)) return false; it++;
     return true;
   }
   
@@ -312,13 +317,13 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 3) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    MT  = *it; if(this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    isLLC = std::stoi(*it); it++;
+    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    if(!parse_bool(*it, isLLC)) return false; it++;
     return true;
   }
   
@@ -342,13 +347,13 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 3) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    MT  = *it; if(this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    isLLC = std::stoi(*it); it++;
+    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+    if(!parse_bool(*it, isLLC)) return false; it++;
     return true;
   }
   
@@ -375,13 +380,13 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 3) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    CacheT = *it; if(this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
-    OuterT = *it; if(this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
-    InnerT = *it; if(this->check(tname, "InnerT", *it, "InnerCohPortBase", false)) return false; it++;
+    CacheT = *it; if(!this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
+    OuterT = *it; if(!this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
+    InnerT = *it; if(!this->check(tname, "InnerT", *it, "InnerCohPortBase", false)) return false; it++;
     return true;
   }
   
@@ -398,15 +403,14 @@ public:
   TypeCoherentL1CacheNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentL1CacheNorm") {}
 
   virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 4) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 4 parameters!" << std::endl;
+    if(values.size() != 3) {
+      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    CacheT = *it; if(this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
-    OuterT = *it; if(this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
-    CoreT = *it; if(this->check(tname, "CoreT", *it, "CoreInterfaceBase", false)) return false; it++;
-    isLLC = std::stoi(*it); it++;
+    CacheT = *it; if(!this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
+    OuterT = *it; if(!this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
+    CoreT = *it;  if(!this->check(tname, "CoreT", *it, "CoreInterfaceBase", false)) return false; it++;
     return true;
   }
   
@@ -433,12 +437,12 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    IW = std::stoi(*it); it++;
-    IOfst = std::stoi(*it); it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, IOfst)) return false; it++;
     return true;
   }
   
@@ -456,13 +460,13 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 3) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 3 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    IW = std::stoi(*it); it++;
-    IOfst = std::stoi(*it); it++;
-    P = std::stoi(*it); it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, IOfst)) return false; it++;
+    if(!parse_int(*it, P)) return false; it++;
     return true;
   }
   
@@ -480,12 +484,12 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    IW = std::stoi(*it); it++;
-    IOfst = std::stoi(*it); it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, IOfst)) return false; it++;
     return true;
   }
   
@@ -512,12 +516,12 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    IW = std::stoi(*it); it++;
-    NW = std::stoi(*it); it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, NW)) return false; it++;
     return true;
   }
   
@@ -535,12 +539,12 @@ public:
 
   virtual bool set(std::list<std::string> &values) {
     if(values.size() != 2) {
-      std::cerr << "[Misnatching Paramater] " << tname << " needs 2 parameters!" << std::endl;
+      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
       return false;
     }
     auto it = values.begin();
-    IW = std::stoi(*it); it++;
-    NW = std::stoi(*it); it++;
+    if(!parse_int(*it, IW)) return false; it++;
+    if(!parse_int(*it, NW)) return false; it++;
     return true;
   }
   
