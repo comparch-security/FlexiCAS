@@ -15,6 +15,7 @@ class StatementBase
 {
 protected:
   const std::regex expression;
+  std::cmatch cm;
 public:
   StatementBase(const std::string& exp): expression(exp) {}
   virtual ~StatementBase() {}
@@ -31,7 +32,6 @@ public:
   StatementComment() : StatementBase("^\\s*//.*$") {}
 
   virtual bool decode(const char* line) {
-    std::cmatch cm;
     if(std::regex_match(line, cm, expression)) {
       std::cout << "Comment: " << std::string(line) << std::endl;
       return true;
@@ -47,7 +47,6 @@ public:
   StatementBlank() : StatementBase("^\\s*$") {}
 
   virtual bool decode(const char* line) {
-    std::cmatch cm;
     if(std::regex_match(line, cm, expression)) {
       std::cout << "Blank: " << std::string(line) << std::endl;
       return true;
@@ -63,7 +62,6 @@ public:
   StatementTypeDef0() : StatementBase("^\\s*type\\s+([a-z0-9_]+)\\s*=\\s*([a-z0-9_]+)\\s*;((\\s*//.*)|(\\s*))$") {}
 
   virtual bool decode(const char* line) {
-    std::cmatch cm;
     if(std::regex_match(line, cm, expression)) {
       std::cout << "Type def " << cm[1] << " = " << cm[2]  << std::endl;
       return true;
@@ -80,7 +78,6 @@ public:
   StatementTypeDef1() : StatementBase("^\\s*type\\s+([a-z0-9_]+)\\s*=\\s*([a-z0-9_]+)\\s*[(]([a-z0-9_, ]*)[)]\\s*;((\\s*//.*)|(\\s*))$") {}
 
   virtual bool decode(const char* line) {
-    std::cmatch cm;
     if(std::regex_match(line, cm, expression)) {
       char param[2048];
       std::list<std::string> params;
