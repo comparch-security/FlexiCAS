@@ -10,8 +10,6 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "dsl/type_description.hpp"
-
 // base class for processing a statement
 class StatementBase
 {
@@ -109,27 +107,17 @@ public:
   }
 };
 
+class TypeDeclaration;
+
 struct CodeGen
-{
+{  
   std::list<StatementBase *> decoders;
-  
   std::set<std::string> header_set;
   std::list<std::string> header_list;
-  
   std::list<TypeDeclaration *> type_declarations;
 
-  CodeGen() {
-    decoders.push_back(new StatementComment);
-    decoders.push_back(new StatementBlank);
-    decoders.push_back(new StatementTypeDef0);
-    decoders.push_back(new StatementTypeDef1);
-
-    decoders.push_back(new StatementError); // always the final one
-  }
-
-  ~CodeGen() {
-    for(auto d:decoders) delete d;
-  }
+  CodeGen();
+  ~CodeGen();
 
   void add_header(const std::string &header) {
     if(!header_set.count(header)) {
@@ -138,11 +126,7 @@ struct CodeGen
     }
   }
 
-  void emit(std::ofstream &file) {
-    for(auto h:header_list) file << "#include \"" << h << "\"" << std::endl;
-    file << std::endl;
-    for(auto def:type_declarations) def->emit(file);
-  }
+  void emit(std::ofstream &file);
 };
 
 extern CodeGen codegendb;

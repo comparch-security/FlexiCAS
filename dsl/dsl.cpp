@@ -1,7 +1,6 @@
 #include "dsl/statement.hpp"
 #include "dsl/type_description.hpp"
 
-CodeGen codegendb;
 
 int main(int argc, char* argv[]) {
   if(argc != 3) {
