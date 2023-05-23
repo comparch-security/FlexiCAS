@@ -25,6 +25,7 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "CoreInterfaceMSI")      descriptor = new TypeCoreInterfaceMSI(type_name);
   if(base_name == "CoherentCacheNorm")     descriptor = new TypeCoherentCacheNorm(type_name);
   if(base_name == "CoherentL1CacheNorm")   descriptor = new TypeCoherentL1CacheNorm(type_name);
+  if(base_name == "SimpleMemoryModel")     descriptor = new TypeSimpleMemoryModel(type_name);
   if(base_name == "IndexNorm")             descriptor = new TypeIndexNorm(type_name);
   if(base_name == "IndexSkewed")           descriptor = new TypeIndexSkewed(type_name);
   if(base_name == "IndexRandom")           descriptor = new TypeIndexRandom(type_name);
@@ -334,3 +335,19 @@ bool TypeReplaceLRU::set(std::list<std::string> &values) {
 void TypeReplaceLRU::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
 }  
+
+bool TypeSimpleMemoryModel::set(std::list<std::string> &values) {
+  if(values.size() != 1) {
+    std::cerr << "[Mismatch] " << tname << " needs 1 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  return true;
+}
+
+void TypeSimpleMemoryModel::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << DT << "> " << this->name << ";" << std::endl;
+}
+
+void TypeSimpleMemoryModel::emit_header() { codegendb.add_header("cache/memory.hpp"); }

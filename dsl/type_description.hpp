@@ -60,6 +60,8 @@ public:
   bool comply(const std::string& c) { return types.count(c); }
   virtual void emit(std::ofstream &file) = 0;
   virtual void emit_header(); // add the header files required fro this type
+  virtual std::string get_outer() { return std::string(); }
+  virtual std::string get_inner() { return std::string(); }
 
 };
 
@@ -221,6 +223,8 @@ public:
   TypeCoherentCacheNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentCacheNorm") {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
+  virtual std::string get_outer() { return "->outer"; }
+  virtual std::string get_inner() { return "->inner"; }
 };
 
 class TypeCoherentL1CacheNorm : public TypeCoherentCacheBase
@@ -231,6 +235,21 @@ public:
   TypeCoherentL1CacheNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentL1CacheNorm") {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
+  virtual std::string get_outer() { return "->outer"; }
+  virtual std::string get_inner() { return "->inner"; }
+};
+
+////////////////////////////// Memory ///////////////////////////////////////////////
+
+class TypeSimpleMemoryModel : public TypeCoreInterfaceBase
+{
+  std::string DT;
+  const std::string tname;
+public:
+  TypeSimpleMemoryModel(const std::string &name) : TypeCoreInterfaceBase(name), tname("SimpleMemoryModel") {}
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
 };
 
 ////////////////////////////// Index ///////////////////////////////////////////////
@@ -296,7 +315,7 @@ class TypeReplaceLRU : public TypeReplaceFuncBase
   const std::string tname;
 public:
   TypeReplaceLRU(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceLRU") {}
-  virtual bool set(std::list<std::string> &values);  
+  virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
 

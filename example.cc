@@ -22,9 +22,7 @@ type l1_type          = CacheNorm(L1IW, L1WN, l1_metadata_type, data_type, l1_in
 type l1_inner_type    = CoreInterfaceMSI(l1_metadata_type, data_type, false);
 type l1_outer_type    = OuterPortMSI(l1_metadata_type, data_type);     // support reverse probe
 type l1_cache_type    = CoherentL1CacheNorm(l1_type, l1_outer_type, l1_inner_type);
-
 create l1 = l1_cache_type(2); // 2 L1 caches
-
 
 // initiate the llc
 type llc_metadata_type = MetadataMSI(AddrWidth, 0, LLCTagOffset);
@@ -34,10 +32,12 @@ type llc_type          = CacheSkewed(LLCIW, LLCWN, LLCPartitionN, llc_metadata_t
 type llc_inner_type    = InnerPortMSIBroadcast(llc_metadata_type, data_type, true);
 type llc_outer_type    = OuterPortMSIUncached(llc_metadata_type, data_type);
 type llc_cache_type    = CoherentCacheNorm(llc_type, llc_outer_type, llc_inner_type);
-
 create llc = llc_cache_type(1); // shared llc
 
-//static SimpleMemoryModel<data_type> *mem = new SimpleMemoryModel<data_type>();
+// initiate memory
+type memory_type       = SimpleMemoryModel(data_type);
+create mem = memory_type(1);
+
 
 // connect the two levels
 //l1->outer->connect(llc->inner, llc->inner->connect(l1->outer));
