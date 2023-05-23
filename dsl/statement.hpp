@@ -28,7 +28,8 @@ class Description;
 class CacheEntity;
 
 struct CodeGen
-{  
+{
+  std::string space;
   std::list<StatementBase *> decoders;
   std::set<std::string> header_set;
   std::list<std::string> header_list;
@@ -50,7 +51,7 @@ struct CodeGen
   bool parse_bool(const std::string &param, bool &rv);
 
   void emit_hpp(std::ofstream &file);
-  void emit_cpp(std::ofstream &file);
+  void emit_cpp(std::ofstream &file, const std::string& h);
 };
 
 extern CodeGen codegendb;
@@ -95,6 +96,13 @@ public:
   virtual bool decode(const char* line);
 };
 
+// create entities
+class StatementNameSpace : public StatementBase
+{
+public:
+  StatementNameSpace() : StatementBase("^\\s*namespace\\s+([a-zA-Z0-9_]+)\\s*;((\\s*//.*)|(\\s*))$") {}
+  virtual bool decode(const char* line);
+};
 
 // blank line
 class StatementError : public StatementBase

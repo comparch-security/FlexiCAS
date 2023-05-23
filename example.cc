@@ -1,5 +1,7 @@
 // This is an example cache system definition file that can be automatically compiled into a cache implementation
 
+namespace example;
+
 const AddrWidth = 48;    // 48b addr
 const BlockOffset = 6;   // 64B cache block
 const L1IW = 6;          // L1 64 sets

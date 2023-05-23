@@ -4,9 +4,10 @@
 
 CodeGen::CodeGen() {
   typedb.init();
-  
+
   decoders.push_back(new StatementComment);
   decoders.push_back(new StatementBlank);
+  decoders.push_back(new StatementNameSpace);
   decoders.push_back(new StatementConst);
   decoders.push_back(new StatementTypeDef);
   decoders.push_back(new StatementCreate);
@@ -56,15 +57,20 @@ void CodeGen::emit_hpp(std::ofstream &file) {
   file << "#include <vector>" << std::endl;
   for(auto h:header_list) file << "#include \"" << h << "\"" << std::endl;
   file << std::endl;
+  if(!space.empty()) file << "namespace " << space << " {\n" << std::endl;
   for(auto def:type_declarations) def->emit(file);
   for(auto e:entities) e->emit_declaration(file, true);
+  if(!space.empty()) file << "\n}" << std::endl;
 }
 
-void CodeGen::emit_cpp(std::ofstream &file) {
+void CodeGen::emit_cpp(std::ofstream &file, const std::string& h) {
+  file << "#include \"" << h << "\"" << std::endl;
+  if(!space.empty()) file << "namespace " << space << " {\n" << std::endl;
   for(auto e:entities) e->emit_declaration(file, false);
   file << "void init() {" << std::endl;
   for(auto e:entities) e->emit_initialization(file);
   file << "}" << std::endl;
+  if(!space.empty()) file << "\n}" << std::endl;
 }
 
 CodeGen codegendb;
@@ -127,5 +133,11 @@ bool StatementCreate::decode(const char* line) {
   int size;
   if(!codegendb.parse_int(cm[3], size)) return false;
   entitydb.create(name, type_name, size);
+  return true;
+}
+
+bool StatementNameSpace::decode(const char* line) {
+  if(!std::regex_match(line, cm, expression)) return false;
+  codegendb.space = cm[1];
   return true;
 }

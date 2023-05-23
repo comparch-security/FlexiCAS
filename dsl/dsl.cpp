@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
   }
   
   codegendb.emit_hpp(cache_hpp);
-  codegendb.emit_cpp(cache_cpp);
+  codegendb.emit_cpp(cache_cpp, std::string(argv[2])+".hpp");
   cfg_file.close();
   cache_hpp.close();
   cache_cpp.close();
