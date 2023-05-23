@@ -1,5 +1,6 @@
 #include "dsl/statement.hpp"
 #include "dsl/type_description.hpp"
+#include "dsl/entity.hpp"
 
 CodeGen::CodeGen() {
   typedb.init();
@@ -8,21 +9,62 @@ CodeGen::CodeGen() {
   decoders.push_back(new StatementBlank);
   decoders.push_back(new StatementConst);
   decoders.push_back(new StatementTypeDef);
+  decoders.push_back(new StatementCreate);
 
   decoders.push_back(new StatementError); // always the final one
+
 }
 
 CodeGen::~CodeGen() {
   for(auto d:decoders) delete d;
 }
 
+bool CodeGen::parse_int(const std::string &param, int &rv) {
+  if(consts.count(param)) {
+    rv = consts[param];
+    return true;
+  }
+
+  try { rv = std::stoi(param); }
+  catch(std::invalid_argument &e) {
+    std::cerr << "[Integer] Fail to parse `" << param << "' into an integer." << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+bool CodeGen::parse_bool(const std::string &param, bool &rv) {
+  if(param == "true"  || param == "TRUE" || param == "T") { rv = true; return true; }
+  if(param == "false" || param == "FALSE" || param == "F") { rv = false; return true; }
+  
+  if(consts.count(param)) {
+    rv = consts[param];
+    return true;
+  }
+
+  try { rv = std::stoi(param); }
+  catch(std::invalid_argument &e) {
+    std::cerr << "[Integer] Fail to parse `" << param << "' into boolean." << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
 void CodeGen::emit_hpp(std::ofstream &file) {
+  file << "#include <vector>" << std::endl;
   for(auto h:header_list) file << "#include \"" << h << "\"" << std::endl;
   file << std::endl;
   for(auto def:type_declarations) def->emit(file);
+  for(auto e:entities) e->emit_declaration(file, true);
 }
 
 void CodeGen::emit_cpp(std::ofstream &file) {
+  for(auto e:entities) e->emit_declaration(file, false);
+  file << "void init() {" << std::endl;
+  for(auto e:entities) e->emit_initialization(file);
+  file << "}" << std::endl;
 }
 
 CodeGen codegendb;
@@ -74,5 +116,16 @@ bool StatementConst::decode(const char* line) {
     return false;
   }
 
+  return true;
+}
+
+bool StatementCreate::decode(const char* line) {
+  if(!std::regex_match(line, cm, expression)) return false;
+
+  std::string name(cm[1]);
+  std::string type_name(cm[2]);
+  int size;
+  if(!codegendb.parse_int(cm[3], size)) return false;
+  entitydb.create(name, type_name, size);
   return true;
 }

@@ -24,14 +24,16 @@ public:
   virtual bool decode(const char* line) = 0;
 };
 
-class TypeDeclaration;
+class Description;
+class CacheEntity;
 
 struct CodeGen
 {  
   std::list<StatementBase *> decoders;
   std::set<std::string> header_set;
   std::list<std::string> header_list;
-  std::list<TypeDeclaration *> type_declarations;
+  std::list<Description *> type_declarations;
+  std::list<CacheEntity *> entities;
   std::map<std::string, int> consts;
 
   CodeGen();
@@ -43,6 +45,9 @@ struct CodeGen
       header_list.push_back(header);
     }
   }
+
+  bool parse_int(const std::string &param, int &rv);
+  bool parse_bool(const std::string &param, bool &rv);
 
   void emit_hpp(std::ofstream &file);
   void emit_cpp(std::ofstream &file);
@@ -81,6 +86,15 @@ public:
   StatementConst() : StatementBase("^\\s*const\\s+([a-zA-Z0-9_]+)\\s*=\\s*([a-zA-Z0-9_]+)\\s*;((\\s*//.*)|(\\s*))$") {}
   virtual bool decode(const char* line);
 };
+
+// create entities
+class StatementCreate : public StatementBase
+{
+public:
+  StatementCreate() : StatementBase("^\\s*create\\s+([a-zA-Z0-9_]+)\\s*=\\s*([a-zA-Z0-9_]+)\\s*[(]([a-zA-Z0-9_]+)[)]\\s*;((\\s*//.*)|(\\s*))$") {}
+  virtual bool decode(const char* line);
+};
+
 
 // blank line
 class StatementError : public StatementBase

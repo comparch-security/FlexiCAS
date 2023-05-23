@@ -33,17 +33,10 @@ struct DescriptionDB
 
 extern DescriptionDB typedb;
 
-// base class for declaring a type definition
-class TypeDeclaration
+// base classes for all description
+class Description
 {
 public:
-  virtual void emit(std::ofstream &file) = 0;
-};
-
-// base classes for all description
-class Description : public TypeDeclaration
-{
-protected:
   const std::string name; // name of the description
   std::set<std::string> types; // list the types matching this description
 
@@ -60,14 +53,12 @@ protected:
     return true;
   }
 
-  bool parse_int(const std::string &param, int &rv) const;
-  bool parse_bool(const std::string &param, bool &rv) const;
-public:
   Description(const std::string &name): name(name) {}
 
   virtual bool set(std::list<std::string> &values) = 0;
   // check type compliant
   bool comply(const std::string& c) { return types.count(c); }
+  virtual void emit(std::ofstream &file) = 0;
   virtual void emit_header(); // add the header files required fro this type
 
 };
@@ -87,23 +78,8 @@ class TypeMetadataMSI : public TypeMetadataMSIBase {
   const std::string tname;
 public:
   TypeMetadataMSI(const std::string &name) : TypeMetadataMSIBase(name), tname("MetadataMSI") {}
-  
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, AW)) return false; it++;
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, TOfst)) return false; it++;
-    return true;
-  }
-
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "> " << this->name << ";" << std::endl;
-  }
-
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
 
@@ -117,17 +93,8 @@ class TypeData64B : public TypeCMDataBase
 public:
   TypeData64B(const std::string &name) : TypeCMDataBase(name), tname("Data64B") { types.insert("Data64B"); }
   TypeData64B() : TypeCMDataBase(""), tname("Data64B") { types.insert("Data64B"); }
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.empty()) return true;
-    std::cerr << "[No Paramater] " << tname << " supports no parameter!" << std::endl;
-    return false;
-  }
-
-  virtual void emit(std::ofstream &file) {
-    if(!this->name.empty())
-      file << "typedef " << tname << " " << this->name << ";" << std::endl;
-  }
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
 };
 
 ////////////////////////////// Cache Array ///////////////////////////////////////////////
@@ -142,23 +109,8 @@ class TypeCacheArrayNorm : public TypeCacheArrayBase
   const std::string tname;
 public:
   TypeCacheArrayNorm(const std::string &name) : TypeCacheArrayBase(name), tname("CacheArrayNorm") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 4) {
-      std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, NW)) return false; it++;
-    MT = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-    DT = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    return true;
-  }
-
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << IW << "," << NW << "," << MT << "," << DT << "> " << this->name << ";" << std::endl;
-  }
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
 };
 
 ////////////////////////////// Cache ///////////////////////////////////////////////
@@ -173,27 +125,8 @@ class TypeCacheSkewed : public TypeCacheBase
   const std::string tname;
 public:
   TypeCacheSkewed(const std::string &name) : TypeCacheBase(name), tname("CacheSkewed") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 8) {
-      std::cerr << "[Mismatch] " << tname << " needs 8 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, NW)) return false; it++;
-    if(!parse_int(*it, P)) return false; it++;
-    MT  = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    IDX = *it; if(!this->check(tname, "IDX", *it, "IndexFuncBase", false)) return false; it++;
-    RPC = *it; if(!this->check(tname, "RPC", *it, "ReplaceFuncBase", false)) return false; it++;
-    if(!parse_bool(*it, EnMon)) return false; it++;
-    return true;
-  }
- 
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << IW << "," << NW << "," << P << "," << MT << "," << DT << "," << IDX << "," << RPC << "," << EnMon << "> " << this->name << ";" << std::endl;
-  }
+  virtual bool set(std::list<std::string> &values); 
+  virtual void emit(std::ofstream &file);
 };
 
 class TypeCacheNorm : public TypeCacheBase
@@ -202,26 +135,8 @@ class TypeCacheNorm : public TypeCacheBase
   const std::string tname;
 public:
   TypeCacheNorm(const std::string &name) : TypeCacheBase(name), tname("CacheNorm") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 7) {
-      std::cerr << "[Mismatch] " << tname << " needs 7 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, NW)) return false; it++;
-    MT  = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    IDX = *it; if(!this->check(tname, "IDX", *it, "IndexFuncBase", false)) return false; it++;
-    RPC = *it; if(!this->check(tname, "RPC", *it, "ReplaceFuncBase", false)) return false; it++;
-    if(!parse_bool(*it, EnMon)) return false; it++;
-    return true;
-  }
- 
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << IW << "," << NW << "," << MT << "," << DT << "," << IDX << "," << RPC << "," << EnMon << "> " << this->name << ";" << std::endl;
-  }
+  virtual bool set(std::list<std::string> &values); 
+  virtual void emit(std::ofstream &file);
 };
 
 ////////////////////////////// Coherent Cache ///////////////////////////////////////////////
@@ -235,22 +150,8 @@ class TypeOuterPortMSIUncached : public TypeOuterCohPortBase {
   const std::string tname;
 public:
   TypeOuterPortMSIUncached(const std::string &name) : TypeOuterCohPortBase(name), tname("OuterPortMSIUncached") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
-  }  
-
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
 
@@ -259,22 +160,8 @@ class TypeOuterPortMSI : public TypeOuterCohPortBase {
   const std::string tname;
 public:
   TypeOuterPortMSI(const std::string &name) : TypeOuterCohPortBase(name), tname("OuterPortMSI") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
-  }  
-
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
 
@@ -288,23 +175,8 @@ class TypeInnerPortMSIUncached : public TypeInnerCohPortBase
   const std::string tname;
 public:
   TypeInnerPortMSIUncached(const std::string &name) : TypeInnerCohPortBase(name), tname("InnerPortMSIUncached") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    if(!parse_bool(*it, isLLC)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
-  }    
-
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
 
@@ -314,23 +186,8 @@ class TypeInnerPortMSIBroadcast : public TypeInnerCohPortBase
   const std::string tname;
 public:
   TypeInnerPortMSIBroadcast(const std::string &name) : TypeInnerCohPortBase(name), tname("InnerPortMSIBroadcast") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    if(!parse_bool(*it, isLLC)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
-  }    
-
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
 
@@ -344,23 +201,8 @@ class TypeCoreInterfaceMSI : public TypeCoreInterfaceBase
   const std::string tname;
 public:
   TypeCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("CoreInterfaceMSI") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-    DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-    if(!parse_bool(*it, isLLC)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
-  }    
-
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
 
@@ -377,22 +219,8 @@ class TypeCoherentCacheNorm : public TypeCoherentCacheBase
   const std::string tname;
 public:
   TypeCoherentCacheNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentCacheNorm") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    CacheT = *it; if(!this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
-    OuterT = *it; if(!this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
-    InnerT = *it; if(!this->check(tname, "InnerT", *it, "InnerCohPortBase", false)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << InnerT << "> " << this->name << ";" << std::endl;
-  }
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
 };
 
 class TypeCoherentL1CacheNorm : public TypeCoherentCacheBase
@@ -401,22 +229,8 @@ class TypeCoherentL1CacheNorm : public TypeCoherentCacheBase
   const std::string tname;
 public:
   TypeCoherentL1CacheNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentL1CacheNorm") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    CacheT = *it; if(!this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
-    OuterT = *it; if(!this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
-    CoreT = *it;  if(!this->check(tname, "CoreT", *it, "CoreInterfaceBase", false)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << CoreT << "," << isLLC << "> " << this->name << ";" << std::endl;
-  }
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
 };
 
 ////////////////////////////// Index ///////////////////////////////////////////////
@@ -424,7 +238,6 @@ public:
 class TypeIndexFuncBase : public Description {
 public:
   TypeIndexFuncBase(const std::string &name) : Description(name) { types.insert("IndexFuncBase"); }
-
   virtual void emit_header();
 };
 
@@ -434,21 +247,8 @@ class TypeIndexNorm : public TypeIndexFuncBase
   const std::string tname;
 public:
   TypeIndexNorm(const std::string &name) : TypeIndexFuncBase(name), tname("IndexNorm") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, IOfst)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << IW << "," << IOfst << "> " << this->name << ";" << std::endl;
-  }  
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
 };
 
 class TypeIndexSkewed : public TypeIndexFuncBase
@@ -457,22 +257,8 @@ class TypeIndexSkewed : public TypeIndexFuncBase
   const std::string tname;
 public:
   TypeIndexSkewed(const std::string &name) : TypeIndexFuncBase(name), tname("IndexSkewed") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 3) {
-      std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, IOfst)) return false; it++;
-    if(!parse_int(*it, P)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << IW << "," << IOfst << "," << P << "> " << this->name << ";" << std::endl;
-  }  
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
 };
 
 class TypeIndexRandom : public TypeIndexFuncBase
@@ -481,21 +267,8 @@ class TypeIndexRandom : public TypeIndexFuncBase
   const std::string tname;
 public:
   TypeIndexRandom(const std::string &name) : TypeIndexFuncBase(name), tname("IndexRandom") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, IOfst)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << IW << "," << IOfst << "> " << this->name << ";" << std::endl;
-  }  
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
 };
 
 ////////////////////////////// Replacer ///////////////////////////////////////////////
@@ -513,21 +286,8 @@ class TypeReplaceFIFO : public TypeReplaceFuncBase
   const std::string tname;
 public:
   TypeReplaceFIFO(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceFIFO") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, NW)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
-  }  
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
 };
 
 class TypeReplaceLRU : public TypeReplaceFuncBase
@@ -536,21 +296,8 @@ class TypeReplaceLRU : public TypeReplaceFuncBase
   const std::string tname;
 public:
   TypeReplaceLRU(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceLRU") {}
-
-  virtual bool set(std::list<std::string> &values) {
-    if(values.size() != 2) {
-      std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-      return false;
-    }
-    auto it = values.begin();
-    if(!parse_int(*it, IW)) return false; it++;
-    if(!parse_int(*it, NW)) return false; it++;
-    return true;
-  }
-  
-  virtual void emit(std::ofstream &file) {
-    file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
-  }  
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
 };
 
 #endif
