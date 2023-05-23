@@ -33,7 +33,7 @@ public:
   virtual ~ReplaceFIFO() {}
   virtual uint32_t replace(uint32_t s, uint32_t *w){
     if(!free_map.count(s))
-      for(uint32_t i=0; i<IW; i++) free_map[s].insert(i);
+      for(uint32_t i=0; i<NW; i++) free_map[s].insert(i);
     if(free_map[s].size() > 0)
       *w = *(free_map[s].begin());
     else
