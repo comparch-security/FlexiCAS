@@ -365,10 +365,11 @@ class CoreInterfaceMSI : public CoreInterfaceBase
       outer->acquire_req(addr, meta, data, cmd);
     }
     Policy::meta_after_acquire(cmd, meta);
-    if(cmd == Policy::cmd_for_core_read())
-      this->cache->replace_read(addr, ai, s, w, hit);
-    else
+    if(cmd == Policy::cmd_for_core_write()) {
+      meta->to_dirty();
       this->cache->replace_write(addr, ai, s, w, hit);
+    } else
+      this->cache->replace_read(addr, ai, s, w, hit);
     return data;
   }
 
