@@ -114,7 +114,8 @@ namespace // file visibility
         return rv | probe_writeback;
       else {
         assert((is_acquire(cmd) && acquire_write == get_action(cmd)) ||
-               (is_probe(cmd)   && probe_evict == get_action(cmd)));
+               (is_probe(cmd)   && probe_evict == get_action(cmd))  ||
+               (is_release(cmd) && release_evict == get_action(cmd)));
         return rv | probe_evict;
       }
     }
