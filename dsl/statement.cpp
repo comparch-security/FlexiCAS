@@ -3,14 +3,14 @@
 #include "dsl/entity.hpp"
 
 namespace {
-  std::string R_LS   = "^\\s*";                   // line start
-  std::string R_LE   = "(//.*)?\\s*$";        // line end
-  std::string R_SE   = ";\\s*"+R_LE;              // statement end
-  std::string R_VAR  = "\\s*([a-zA-Z0-9_]+)\\s*"; // variable (or a const number)
-  std::string R_ARGL = "\\s*[(](.*)[)]\\s*";      // arguement list, need a 2nd level parsing
-  std::string R_R    = R_VAR+":("+R_VAR;          // range
-  std::string R_SI   = "(\\["+R_VAR+"])?\\s*";   // single index
-  std::string R_RI   = "\\s*\\["+R_R+"]\\s*";     // range index
+  const std::string R_LS   = "^\\s*";                   // line start
+  const std::string R_LE   = "(//.*)?\\s*$";        // line end
+  const std::string R_SE   = ";\\s*"+R_LE;              // statement end
+  const std::string R_VAR  = "\\s*([a-zA-Z0-9_]+)\\s*"; // variable (or a const number)
+  const std::string R_ARGL = "\\s*[(](.*)[)]\\s*";      // arguement list, need a 2nd level parsing
+  const std::string R_R    = R_VAR+":("+R_VAR;          // range
+  const std::string R_SI   = "(\\["+R_VAR+"])?\\s*";   // single index
+  const std::string R_RI   = "\\s*\\["+R_R+"]\\s*";     // range index
 
   void parse_arglist(const char *plist, std::list<std::string> & params) {
     static char param[2048];
@@ -33,6 +33,7 @@ CodeGen::CodeGen() {
 
   decoders.push_back(new StatementError); // always the final one
 
+  debug = false;
 }
 
 CodeGen::~CodeGen() {
@@ -74,6 +75,7 @@ bool CodeGen::parse_bool(const std::string &param, bool &rv) {
 
 void CodeGen::emit_hpp(std::ofstream &file) {
   file << "#include <vector>" << std::endl;
+  file << std::endl;
   for(auto h:header_list) file << "#include \"" << h << "\"" << std::endl;
   file << std::endl;
   if(!space.empty()) file << "namespace " << space << " {\n" << std::endl;
@@ -86,6 +88,7 @@ void CodeGen::emit_cpp(std::ofstream &file, const std::string& h) {
   file << "#include \"" << h << "\"" << std::endl;
   if(!space.empty()) file << "namespace " << space << " {\n" << std::endl;
   for(auto e:entities) e->emit_declaration(file, false);
+  file << std::endl;
   file << "void init() {" << std::endl;
   for(auto e:entities) e->emit_initialization(file);
   file << "}" << std::endl;
@@ -96,9 +99,11 @@ CodeGen codegendb;
 
 bool StatementBase::match(const char* line) {
   if(!std::regex_match(line, cm, expression)) return false;
-  std::cout << line << std::endl;
-  int i=0; for(auto m: cm) std::cout << "cm[" << i++ << "]: " << m << std::endl;
-  std::cout << std::endl;
+  if(codegendb.debug) {
+    std::cout << line << std::endl;
+    int i=0; for(auto m: cm) std::cout << "cm[" << i++ << "]: " << m << std::endl;
+    std::cout << std::endl;
+  }
   return true;
 }
 

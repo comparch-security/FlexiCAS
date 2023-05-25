@@ -38,6 +38,8 @@ struct CodeGen
   std::list<CacheEntity *> entities;
   std::map<std::string, int> consts;
 
+  bool debug;
+
   CodeGen();
   ~CodeGen();
 

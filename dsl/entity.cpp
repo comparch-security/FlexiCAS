@@ -4,14 +4,14 @@
 
 void CacheEntity::emit_declaration(std::ofstream &file, bool hpp) {
   if(hpp) file << "extern ";
-  file << "std::vector<" << etype->name << " *> " << name << ";" << std::endl;
+  file << "std::vector<" << etype->name << " *> " << name;
+  if(hpp)  file << ";" << std::endl;
+  else     file << "(" << size << ");" << std::endl;
 }
 
 void CacheEntity::emit_initialization(std::ofstream &file) {
-  file << "  " << name << ".resize(" << size << ");" << std::endl;
-  file << "  for(int i=0; i<" << size << "; i++) {" << std::endl;
-  file << "    " << name << "[i] = new " << etype->name << "(\"" << name << "\" + \"_\" + std::to_string(i));" << std::endl;
-  file << "  }" << std::endl;
+  file << "  for(int i=0; i<" << size << "; i++) "
+       << name << "[i] = new " << etype->name << "(\"" << name << "\" + \"_\" + std::to_string(i));" << std::endl;
 }
 
 EntityDB::~EntityDB() {
