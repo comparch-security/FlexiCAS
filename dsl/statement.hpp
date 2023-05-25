@@ -11,7 +11,7 @@
 #include <cstring>
 
 // base class for processing a statement
-class StatementBase
+struct StatementBase
 {
 protected:
   const std::regex expression;
@@ -21,6 +21,7 @@ public:
   virtual ~StatementBase() {}
 
   // try to decode the line
+  bool match(const char* line);
   virtual bool decode(const char* line) = 0;
 };
 
@@ -56,65 +57,17 @@ struct CodeGen
 
 extern CodeGen codegendb;
 
-// comment
-class StatementComment : public StatementBase
-{
-public:
-  StatementComment() : StatementBase("^\\s*//.*$") {}
-  virtual bool decode(const char* line);
-};
+#define GEN_STATEMENT(s) struct Statement ## s : public StatementBase { Statement ## s(); virtual bool decode(const char* line); }
 
-// blank line
-class StatementBlank : public StatementBase
-{
-public:
-  StatementBlank() : StatementBase("^\\s*$") {}
-  virtual bool decode(const char* line);
-};
+GEN_STATEMENT(Blank);
+GEN_STATEMENT(Comment);
+GEN_STATEMENT(NameSpace);
+GEN_STATEMENT(Const);
+GEN_STATEMENT(TypeDef);
+GEN_STATEMENT(Create);
+GEN_STATEMENT(Connect);
+GEN_STATEMENT(Error);
 
-// type definition
-class StatementTypeDef : public StatementBase
-{
-public:
-  StatementTypeDef() : StatementBase("^\\s*type\\s+([a-zA-Z0-9_]+)\\s*=\\s*([a-zA-Z0-9_]+)\\s*[(]([a-zA-Z0-9_, ]*)[)]\\s*;((\\s*//.*)|(\\s*))$") {}
-  virtual bool decode(const char* line);
-};
-
-// set a const variable for integer value
-class StatementConst : public StatementBase
-{
-public:
-  StatementConst() : StatementBase("^\\s*const\\s+([a-zA-Z0-9_]+)\\s*=\\s*([a-zA-Z0-9_]+)\\s*;((\\s*//.*)|(\\s*))$") {}
-  virtual bool decode(const char* line);
-};
-
-// create entities
-class StatementCreate : public StatementBase
-{
-public:
-  StatementCreate() : StatementBase("^\\s*create\\s+([a-zA-Z0-9_]+)\\s*=\\s*([a-zA-Z0-9_]+)\\s*[(]([a-zA-Z0-9_]+)[)]\\s*;((\\s*//.*)|(\\s*))$") {}
-  virtual bool decode(const char* line);
-};
-
-// create entities
-class StatementNameSpace : public StatementBase
-{
-public:
-  StatementNameSpace() : StatementBase("^\\s*namespace\\s+([a-zA-Z0-9_]+)\\s*;((\\s*//.*)|(\\s*))$") {}
-  virtual bool decode(const char* line);
-};
-
-// blank line
-class StatementError : public StatementBase
-{
-public:
-  StatementError() : StatementBase(".*") {}
-
-  virtual bool decode(const char* line) {
-    std::cerr << "Error: cannot parse line: " << std::endl;
-    std::cerr << std::string(line) << std::endl;
-    exit(-1);
-  }
-};
+#undef GEN_STATEMENT
 
 #endif

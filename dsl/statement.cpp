@@ -2,15 +2,34 @@
 #include "dsl/type_description.hpp"
 #include "dsl/entity.hpp"
 
+namespace {
+  std::string R_LS   = "^\\s*";                   // line start
+  std::string R_LE   = "(//.*)?\\s*$";        // line end
+  std::string R_SE   = ";\\s*"+R_LE;              // statement end
+  std::string R_VAR  = "\\s*([a-zA-Z0-9_]+)\\s*"; // variable (or a const number)
+  std::string R_ARGL = "\\s*[(](.*)[)]\\s*";      // arguement list, need a 2nd level parsing
+  std::string R_R    = R_VAR+":("+R_VAR;          // range
+  std::string R_SI   = "(\\["+R_VAR+"])?\\s*";   // single index
+  std::string R_RI   = "\\s*\\["+R_R+"]\\s*";     // range index
+
+  void parse_arglist(const char *plist, std::list<std::string> & params) {
+    static char param[2048];
+    strcpy(param, plist);
+    char *p = strtok(param, " ,");
+    while(p != NULL) { if(strlen(p)) params.push_back(std::string(p)); p = strtok(NULL, " ,"); }
+  }
+}
+
 CodeGen::CodeGen() {
   typedb.init();
 
-  decoders.push_back(new StatementComment);
   decoders.push_back(new StatementBlank);
+  decoders.push_back(new StatementComment);
   decoders.push_back(new StatementNameSpace);
   decoders.push_back(new StatementConst);
   decoders.push_back(new StatementTypeDef);
   decoders.push_back(new StatementCreate);
+  decoders.push_back(new StatementConnect);
 
   decoders.push_back(new StatementError); // always the final one
 
@@ -75,69 +94,88 @@ void CodeGen::emit_cpp(std::ofstream &file, const std::string& h) {
 
 CodeGen codegendb;
 
-bool StatementComment::decode(const char* line) {
+bool StatementBase::match(const char* line) {
   if(!std::regex_match(line, cm, expression)) return false;
-  return true; // do nothing
-}
-
-bool StatementBlank::decode(const char* line) {
-  if(!std::regex_match(line, cm, expression)) return false;
-  return true; // do nothing
-}
-
-bool StatementTypeDef::decode(const char* line) {
-  if(!std::regex_match(line, cm, expression)) return false;
-
-  // get the param list
-  char param[2048];
-  std::list<std::string> params;
-  strcpy(param, std::string(cm[3]).c_str());
-  char *p = strtok(param, " ,");
-  while(p != NULL) { if(strlen(p)) params.push_back(std::string(p)); p = strtok(NULL, " ,"); }
-
-  if(typedb.create(cm[1], cm[2], params)) return true;
-
-  // report as failed to decode
-  std::cerr << "[Decode] Cannot decode "
-            << "type " << cm[1] << " = " << cm[2] << "(";
-  auto it = params.begin();
-  for(int i=0; i<params.size()-1; i++, it++)
-    std::cerr << *it << ",";
-  if(params.size() > 0) std::cerr << *it;
-  std::cerr << ")" << std::endl;
-  return false;
-}
-
-bool StatementConst::decode(const char* line) {
-  if(!std::regex_match(line, cm, expression)) return false;
-
-  if(codegendb.consts.count(cm[1])) {
-    std::cerr << "[Double Definition] Const `" << cm[1] << "' has already been defined!" << std::endl;
-    return false;
-  }
-
-  try { codegendb.consts[cm[1]] = std::stoi(cm[2]); }
-  catch(std::invalid_argument &e) {
-    std::cerr << "[Integer] Fail to parse `" << cm[2] << "' into integer for defining const `" << cm[1] << "'." << std::endl;
-    return false;
-  }
-
+  std::cout << line << std::endl;
+  int i=0; for(auto m: cm) std::cout << "cm[" << i++ << "]: " << m << std::endl;
+  std::cout << std::endl;
   return true;
 }
 
+StatementBlank::StatementBlank() : StatementBase(R_LS+R_LE) {}
+
+bool StatementBlank::decode(const char* line) {
+  return match(line); // doing nothing
+}
+
+StatementComment::StatementComment() : StatementBase(R_LS+R_SE) {}
+
+bool StatementComment::decode(const char* line) {
+  return match(line); // doing nothing
+}
+
+StatementTypeDef::StatementTypeDef() : StatementBase(R_LS+"type"+R_VAR+"="+R_VAR+R_ARGL+R_SE) {}
+
+bool StatementTypeDef::decode(const char* line) {
+  if(!match(line)) return false;
+  std::list<std::string> params;
+  parse_arglist(std::string(cm[3]).c_str(), params);
+  if(typedb.create(cm[1], cm[2], params)) return true;
+
+  // report as failed to decode
+  std::cerr << "[Decode] Cannot decode: type " << cm[1] << " = " << cm[2] << "(";
+  int i=1; for(auto p:params) std::cerr << p << (params.size() == i++ ? ")" : ",");
+  std::cerr << std::endl;
+  return false;
+}
+
+StatementConst::StatementConst() : StatementBase(R_LS+"const"+R_VAR+"="+R_VAR+R_SE) {}
+
+bool StatementConst::decode(const char* line) {
+  if(!match(line)) return false;
+
+  std::string name(cm[1]);
+  if(codegendb.consts.count(name)) {
+    std::cerr << "[Double Definition] Const `" << name << "' has already been defined!" << std::endl;
+    return false;
+  }
+
+  if(!codegendb.parse_int(cm[2], codegendb.consts[cm[1]])) return false;
+  return true;
+}
+
+StatementCreate::StatementCreate() : StatementBase(R_LS+"create"+R_VAR+"="+R_VAR+R_SI+R_SE) {}
+
 bool StatementCreate::decode(const char* line) {
-  if(!std::regex_match(line, cm, expression)) return false;
+  if(!match(line)) return false;
 
   std::string name(cm[1]);
   std::string type_name(cm[2]);
-  int size;
-  if(!codegendb.parse_int(cm[3], size)) return false;
+  int size = 1; // default
+  if(cm[4].length() && !codegendb.parse_int(cm[4], size)) return false;
   entitydb.create(name, type_name, size);
   return true;
 }
 
+StatementNameSpace::StatementNameSpace() : StatementBase(R_LS+"namespace"+R_VAR+R_SE) {}
+
 bool StatementNameSpace::decode(const char* line) {
-  if(!std::regex_match(line, cm, expression)) return false;
+  if(!match(line)) return false;
   codegendb.space = cm[1];
   return true;
+}
+
+StatementConnect::StatementConnect() : StatementBase(R_LS+"connect"+R_VAR+R_SI+"->"+R_VAR+R_SI+R_SE) {}
+
+bool StatementConnect::decode(const char* line) {
+  if(!match(line)) return false;
+  return true;
+}
+
+StatementError::StatementError() :  StatementBase("") {}
+
+bool StatementError::decode(const char* line) {
+  std::cerr << "[Decode] cannot parse line: " << std::endl;
+  std::cerr << std::string(line) << std::endl;
+  exit(-1);
 }
