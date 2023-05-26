@@ -8,12 +8,11 @@
 class Description;
 
 // class to record the created entities
-class CacheEntity
+struct CacheEntity
 {
   Description *etype;
   const std::string name;
   const unsigned int size;
-public:
   CacheEntity(Description *etype, const std::string &name, unsigned int size)
     : etype(etype), name(name), size(size) {}
 

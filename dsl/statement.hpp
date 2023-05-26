@@ -37,6 +37,7 @@ struct CodeGen
   std::list<Description *> type_declarations;
   std::list<CacheEntity *> entities;
   std::map<std::string, int> consts;
+  std::list<std::pair<std::pair<CacheEntity *, int>, std::pair<CacheEntity *, int> > > connections;
 
   bool debug;
 

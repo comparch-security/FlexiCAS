@@ -4,13 +4,13 @@
 
 namespace {
   const std::string R_LS   = "^\\s*";                   // line start
-  const std::string R_LE   = "(//.*)?\\s*$";        // line end
+  const std::string R_LE   = "(//.*)?\\s*$";            // line end
   const std::string R_SE   = ";\\s*"+R_LE;              // statement end
   const std::string R_VAR  = "\\s*([a-zA-Z0-9_]+)\\s*"; // variable (or a const number)
   const std::string R_ARGL = "\\s*[(](.*)[)]\\s*";      // arguement list, need a 2nd level parsing
-  const std::string R_R    = R_VAR+":("+R_VAR;          // range
-  const std::string R_SI   = "(\\["+R_VAR+"])?\\s*";   // single index
-  const std::string R_RI   = "\\s*\\["+R_R+"]\\s*";     // range index
+  const std::string R_R    = R_VAR+"(:"+R_VAR+")?";     // range
+  const std::string R_SI   = "(\\["+R_VAR+"])?\\s*";    // single index
+  const std::string R_RI   = "(\\["+R_R+"])?\\s*";      // range index
 
   void parse_arglist(const char *plist, std::list<std::string> & params) {
     static char param[2048];
@@ -90,7 +90,22 @@ void CodeGen::emit_cpp(std::ofstream &file, const std::string& h) {
   for(auto e:entities) e->emit_declaration(file, false);
   file << std::endl;
   file << "void init() {" << std::endl;
+  file << std::endl;
+  file << "  // initialize entities" << std::endl;
   for(auto e:entities) e->emit_initialization(file);
+  file << std::endl;
+  file << "  // connect entities" << std::endl;
+  for(auto c:connections) {
+    auto client = c.first.first;
+    int ci = c.first.second;
+    auto manager = c.second.first;
+    int mi = c.second.second;
+    file << "  " << client->name << "[" << ci << "]" << client->etype->get_outer() << "->connect(";
+    file << manager->name << "[" << mi << "]" << manager->etype->get_inner() << ", ";
+    file << manager->name << "[" << mi << "]" << manager->etype->get_inner() << "->connect(";
+    file << client->name << "[" << ci << "]" << client->etype->get_outer() << "));" << std::endl;
+  }
+  file << std::endl;  
   file << "}" << std::endl;
   if(!space.empty()) file << "\n}" << std::endl;
 }
@@ -157,7 +172,7 @@ bool StatementCreate::decode(const char* line) {
   std::string name(cm[1]);
   std::string type_name(cm[2]);
   int size = 1; // default
-  if(cm[4].length() && !codegendb.parse_int(cm[4], size)) return false;
+  if(cm[3].length() && !codegendb.parse_int(cm[4], size)) return false;
   entitydb.create(name, type_name, size);
   return true;
 }
@@ -170,10 +185,56 @@ bool StatementNameSpace::decode(const char* line) {
   return true;
 }
 
-StatementConnect::StatementConnect() : StatementBase(R_LS+"connect"+R_VAR+R_SI+"->"+R_VAR+R_SI+R_SE) {}
+StatementConnect::StatementConnect() : StatementBase(R_LS+"connect"+R_VAR+R_RI+"->"+R_VAR+R_SI+R_SE) {}
 
 bool StatementConnect::decode(const char* line) {
   if(!match(line)) return false;
+
+  // get client
+  std::string client(cm[1]);
+  if(!entitydb.entities.count(client)) {
+    std::cerr << "[Decode] Fail to match `" << client << "' with a created entity." << std::endl;
+  }
+  auto client_entity = entitydb.entities[client];
+
+  // client range
+  int r0 = 0, r1 = 0;
+  if(cm[2].length()) { // has start range
+    if(!codegendb.parse_int(cm[3], r0)) return false;
+    if(r0 < 0 || r0 >= client_entity->size) {
+      std::cerr << "[Decode] " << cm[2] << " out of the valid range [" << client_entity->size-1 << ":0] of " << client << std::endl;
+      return false;
+    }
+
+    if(cm[4].length()) { // has end range
+      if(!codegendb.parse_int(cm[5], r1)) return false;
+      if(r0 < r1 || r1 >= client_entity->size) {
+        std::cerr << "[Decode] " << cm[2] << " out of the valid range [" << client_entity->size-1 << ":0] of " << client << std::endl;
+        return false;
+      }
+    } else r1 = r0;
+  } else { // no start range
+    r0 = client_entity->size-1;
+  }
+
+  // get manager
+  std::string manager(cm[6]);
+  if(!entitydb.entities.count(manager)) {
+    std::cerr << "[Decode] Fail to match `" << manager << "' with a created entity." << std::endl;
+  }
+  auto manager_entity = entitydb.entities[manager];
+
+  // manager index
+  int mi = 0;
+  if(cm[7].length() && !codegendb.parse_int(cm[8], mi)) return false;
+  if(mi < 0 || mi >= manager_entity->size) {
+    std::cerr << "[Decode] " << cm[7] << " out of the valid range [" << manager_entity->size-1 << ":0] of " << manager << std::endl;
+    return false;
+  }
+
+  for(int i=r1; i<=r0; i++)
+    codegendb.connections.push_back(std::make_pair(std::make_pair(client_entity, i), std::make_pair(manager_entity, mi)));
+
   return true;
 }
 
