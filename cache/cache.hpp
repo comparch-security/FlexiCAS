@@ -193,7 +193,8 @@ public:
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, bool EnMon,
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
-         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type>  // IDX <- IndexFuncBase
+         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type,  // IDX <- IndexFuncBase
+         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, RPC>::value>::type>  // RPC <- ReplaceFuncBase
 class CacheSkewed : public CacheBase
 {
 protected:
