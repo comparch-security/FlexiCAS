@@ -298,7 +298,7 @@ public:
       if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(meta->is_valid()) {
         // sync if necessary
-        if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
+        if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(meta->s(addr), meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()));
         if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict()); // writeback if dirty
         this->cache->replace_invalid(addr, ai, s, w);
       }
