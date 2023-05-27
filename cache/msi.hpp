@@ -93,7 +93,7 @@ namespace // file visibility
 
     // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
     static inline bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
-      return (is_probe(cmd) && probe_evict == get_action(cmd)) || meta->is_modified();
+      return (is_probe(cmd) && probe_evict == get_action(cmd)) || meta->is_modified() || (is_acquire(cmd) && acquire_write == get_action(cmd));
     }
 
     // check whether a permission upgrade is needed for the required action
