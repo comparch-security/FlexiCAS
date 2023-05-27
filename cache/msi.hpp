@@ -5,53 +5,6 @@
 #include <type_traits>
 #include "cache/coherence.hpp"
 
-/* Example: a two-level cache system
-     a 48-bit address system,
-     normal index,
-     LRU replacement policy,
-     MSI coherence protocol,
-     broadcasting.
-
-   L1: 64-set 8-way set-associative
-   L2(LLC): 1024-set 16-way skewed-cache with 2 partitions, attached with a pfc monitor
-
-code:
-  // initiate the L1 cache
-  typedef Data64B data_type;
-  typedef MetadataMSI<48, 6, 12> l1_metadata_type;
-  typedef IndexNorm<6, 6> l1_indexer_type;
-  typedef ReplaceLRU<6, 8> l1_replacer_type;
-  typedef CacheNorm<6, 8, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, false> l1_type;
-  typedef CoreInterfaceMSI<l1_metadata_type, data_type, false> l1_inner_type; // support core interface
-  typedef OuterPortMSI<l1_metadata_type, data_type> l1_outer_type;     // support reverse probe
-  typedef CoherentL1CacheNorm<l1_type, l1_outer_type, l1_inner_type> l1_cache_type;
-  l1_cache_type *l1 = new l1_cache_type("L1");
-
-  // initiate the llc
-  typedef MetadataMSI<48, 0, 6> llc_metadata_type;
-  typedef IndexSkewed<10, 6, 2> llc_indexer_type;
-  typedef ReplaceLRU<10, 8> llc_replacer_type;
-  typedef CacheSkewed<10, 8, 2, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, true> llc_type;
-  typedef InnerPortMSIBroadcast<llc_metadata_type, data_type, true> llc_inner_type;
-  typedef OuterPortMSIUncached<llc_metadata_type, data_type> llc_outer_type;
-  typedef CoherentCacheNorm<llc_type, llc_outer_type, llc_inner_type> llc_cache_type;
-  static llc_cache_type *llc = new llc_cache_type();
-
-  static SimpleMemoryModel<data_type> *mem = new SimpleMemoryModel<data_type>();
-
-  // connect the two levels
-  l1->outer->connect(llc->inner, llc->inner->connect(l1->outer));
-  llc->outer->connect(mem, mem->connect(llc->outer));
-
-  // attach PFC
-  auto pfc = new PFCMonitor();
-  llc->attach_monitor(pfc);
-
-  // We need to implement the DSL compiler to automatically generate these initialization code
-  // based on a user provide script defining the cache architecture
-*/
-
-
 namespace // file visibility
 {
   // MSI protocol
