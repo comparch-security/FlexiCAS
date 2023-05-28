@@ -41,7 +41,7 @@ struct CodeGen
 
   bool debug;
 
-  CodeGen();
+  void init();
   ~CodeGen();
 
   void add_header(const std::string& header) {

@@ -20,8 +20,7 @@ namespace {
   }
 }
 
-CodeGen::CodeGen() {
-  typedb.init();
+void CodeGen::init() {
 
   decoders.push_back(new StatementBlank);
   decoders.push_back(new StatementComment);
@@ -109,8 +108,6 @@ void CodeGen::emit_cpp(std::ofstream &file, const std::string& h) {
   file << "}" << std::endl;
   if(!space.empty()) file << "\n}" << std::endl;
 }
-
-CodeGen codegendb;
 
 bool StatementBase::match(const char* line) {
   if(!std::regex_match(line, cm, expression)) return false;

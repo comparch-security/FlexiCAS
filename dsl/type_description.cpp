@@ -1,7 +1,7 @@
 #include "dsl/type_description.hpp"
 #include "dsl/statement.hpp"
 
-void DescriptionDB::init() {
+DescriptionDB::DescriptionDB() {
   Description *descriptor;
   // adding types with no template parameters
   descriptor = new TypeData64B(); add("Data64B", descriptor); descriptor->emit_header();
@@ -42,8 +42,6 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   codegendb.type_declarations.push_back(descriptor);
   return true;
 }
-
-DescriptionDB typedb;
 
 void Description::emit_header() { codegendb.add_header("cache/cache.hpp"); }
 
@@ -253,7 +251,7 @@ bool TypeCoherentL1CacheNorm::set(std::list<std::string> &values) {
 }
   
 void TypeCoherentL1CacheNorm::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << CoreT << "," << isLLC << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << CoreT << "> " << this->name << ";" << std::endl;
 }
 
 void TypeIndexFuncBase::emit_header() { codegendb.add_header("cache/index.hpp"); }

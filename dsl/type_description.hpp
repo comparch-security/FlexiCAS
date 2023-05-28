@@ -18,7 +18,7 @@ struct DescriptionDB
   std::map<std::string, Description *> types;
   ~DescriptionDB();
 
-  void init();
+  DescriptionDB();
   bool create(const std::string &type_name, const std::string &base_name, std::list<std::string> &params);
 
   bool add(const std::string &name, Description *d) {

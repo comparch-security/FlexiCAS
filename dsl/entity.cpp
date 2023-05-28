@@ -11,7 +11,7 @@ void CacheEntity::emit_declaration(std::ofstream &file, bool hpp) {
 
 void CacheEntity::emit_initialization(std::ofstream &file) {
   file << "  for(int i=0; i<" << size << "; i++) "
-       << name << "[i] = new " << etype->name << "(\"" << name << "\" + \"_\" + std::to_string(i));" << std::endl;
+       << name << "[i] = new " << etype->name << "(std::string(\"" << name << "\") + \"_\" + std::to_string(i));" << std::endl;
 }
 
 EntityDB::~EntityDB() {
@@ -28,5 +28,3 @@ bool EntityDB::create(const std::string &name, const std::string &etype,  unsign
   codegendb.entities.push_back(e);
   return true;
 }
-
-EntityDB entitydb;

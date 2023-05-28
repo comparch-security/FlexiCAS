@@ -1,8 +1,15 @@
-#include "dsl/statement.hpp"
 #include "dsl/type_description.hpp"
+#include "dsl/entity.hpp"
+#include "dsl/statement.hpp"
 
+EntityDB entitydb;
+CodeGen codegendb;
+DescriptionDB typedb;
 
 int main(int argc, char* argv[]) {
+  // initialize gloable database
+  codegendb.init();
+
   // parsing the argument
   std::string cfg_fn;
   std::string cache_fn; // default name

@@ -10,6 +10,7 @@ template<typename DT,
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class SimpleMemoryModel : public CohMasterBase
 {
+  std::string name;
   std::unordered_map<uint64_t, char *> pages;
 
   void allocate(uint64_t ppn) {
@@ -19,7 +20,7 @@ class SimpleMemoryModel : public CohMasterBase
   }
   
 public:
-  SimpleMemoryModel() {}
+  SimpleMemoryModel(const std::string &n) : name(n) {}
   virtual ~SimpleMemoryModel() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {
