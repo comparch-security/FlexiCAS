@@ -13,7 +13,7 @@ const LLCTagOffset = 6;  // random index
 const LLCPartitionN = 2; // LLC skew partitions
 
 // optimal options
-const EnableMonitor = 0; // disable
+const EnableMonitor = false; // disable
 
 // initiate the L1 cache
 type data_type        = Data64B();

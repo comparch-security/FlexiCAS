@@ -32,6 +32,12 @@ void CodeGen::init() {
 
   decoders.push_back(new StatementError); // always the final one
 
+  // add boolean consts
+  consts["true"] = 1;
+  consts["TRUE"] = 1;
+  consts["false"] = 0;
+  consts["FALSE"] = 0;
+
   debug = false;
 }
 
@@ -48,24 +54,6 @@ bool CodeGen::parse_int(const std::string &param, int &rv) {
   try { rv = std::stoi(param); }
   catch(std::invalid_argument &e) {
     std::cerr << "[Integer] Fail to parse `" << param << "' into an integer." << std::endl;
-    return false;
-  }
-
-  return true;
-}
-
-bool CodeGen::parse_bool(const std::string &param, bool &rv) {
-  if(param == "true"  || param == "TRUE" || param == "T") { rv = true; return true; }
-  if(param == "false" || param == "FALSE" || param == "F") { rv = false; return true; }
-  
-  if(consts.count(param)) {
-    rv = consts[param];
-    return true;
-  }
-
-  try { rv = std::stoi(param); }
-  catch(std::invalid_argument &e) {
-    std::cerr << "[Integer] Fail to parse `" << param << "' into boolean." << std::endl;
     return false;
   }
 

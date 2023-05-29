@@ -52,7 +52,12 @@ struct CodeGen
   }
 
   bool parse_int(const std::string &param, int &rv);
-  bool parse_bool(const std::string &param, bool &rv);
+  bool parse_bool(const std::string &param, bool &rv) {
+    int int_rv;
+    bool succ = parse_int(param, int_rv);
+    rv = int_rv;
+    return succ;
+  }
 
   void emit_hpp(std::ofstream &file);
   void emit_cpp(std::ofstream &file, const std::string& h);
