@@ -168,6 +168,7 @@ public:
   virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
   virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
   virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual void replace_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
@@ -239,6 +240,13 @@ public:
   virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
     replacer[ai].invalid(s, w);
     if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+  }
+
+  virtual void replace_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict) {
+    if(evict) { // currently, we only care when the probe evict a block
+      replacer[ai].invalid(s, w);
+      if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+    }
   }
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){

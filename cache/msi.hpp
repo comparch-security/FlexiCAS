@@ -221,6 +221,7 @@ public:
 
       // update meta
       Policy::meta_after_probe_ack(cmd, meta);
+      this->cache->replace_probe(addr, ai, s, w, !meta->is_valid());
     }
   }
 };
