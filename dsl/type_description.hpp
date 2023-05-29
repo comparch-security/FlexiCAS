@@ -199,7 +199,7 @@ public: TypeCoreInterfaceBase(const std::string &name) : TypeInnerCohPortBase(na
 
 class TypeCoreInterfaceMSI : public TypeCoreInterfaceBase
 {
-  std::string MT, DT; bool isLLC;
+  std::string MT, DT; bool enableDelay, isLLC;
   const std::string tname;
 public:
   TypeCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("CoreInterfaceMSI") {}

@@ -203,19 +203,20 @@ void TypeInnerPortMSIBroadcast::emit(std::ofstream &file) {
 void TypeInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/msi.hpp"); }
 
 bool TypeCoreInterfaceMSI::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
+  if(values.size() != 4) {
+    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  if(!codegendb.parse_bool(*it, enableDelay)) return false; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   return true;
 }
   
 void TypeCoreInterfaceMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << enableDelay << "," << isLLC << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeCoreInterfaceMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }

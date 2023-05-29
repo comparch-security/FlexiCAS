@@ -13,7 +13,8 @@ const LLCTagOffset = 6;  // random index
 const LLCPartitionN = 2; // LLC skew partitions
 
 // optimal options
-const EnableMonitor = false; // disable
+const EnableDelay   = true;  // enable delay estimation
+const EnableMonitor = false; // disable pfc monitoring
 
 // initiate the L1 cache
 type data_type        = Data64B();
@@ -21,7 +22,7 @@ type l1_metadata_type = MetadataMSI(AddrWidth, L1IW, L1TagOffset);
 type l1_indexer_type  = IndexNorm(L1IW, BlockOffset);
 type l1_replacer_type = ReplaceLRU(L1IW, L1WN);
 type l1_type          = CacheNorm(L1IW, L1WN, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, EnableMonitor);
-type l1_inner_type    = CoreInterfaceMSI(l1_metadata_type, data_type, false);
+type l1_inner_type    = CoreInterfaceMSI(l1_metadata_type, data_type, EnableDelay, false);
 type l1_outer_type    = OuterPortMSI(l1_metadata_type, data_type);     // support reverse probe
 type l1_cache_type    = CoherentL1CacheNorm(l1_type, l1_outer_type, l1_inner_type);
 create l1 = l1_cache_type[8]; // 2 L1 caches

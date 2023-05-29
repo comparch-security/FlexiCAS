@@ -23,7 +23,7 @@ public:
   SimpleMemoryModel(const std::string &n) : name(n) {}
   virtual ~SimpleMemoryModel() {}
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
     if(!std::is_void<DT>::value) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
@@ -33,7 +33,7 @@ public:
     }
   }
 
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
     if(!std::is_void<DT>::value) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
@@ -44,7 +44,7 @@ public:
   }
 
 private:
-  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {} // hidden
+  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // hidden
 };
 
 #endif

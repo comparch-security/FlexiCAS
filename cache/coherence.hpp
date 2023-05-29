@@ -30,9 +30,9 @@ public:
 
   virtual void connect(CohMasterBase *h, uint32_t id) {coh = h; coh_id = id;}
 
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) = 0;
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) = 0;
-  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {} // may not implement if not supported
+  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
+  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -52,9 +52,9 @@ public:
 
   virtual uint32_t connect(CohClientBase *c) { coh.push_back(c); return coh.size() - 1;}
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) = 0;
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) = 0;
-  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {} // may not implement if not supported
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
+  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -65,17 +65,17 @@ public:
   CoreInterfaceBase() {}
   virtual ~CoreInterfaceBase() {}
 
-  virtual const CMDataBase *read(uint64_t addr) = 0;
-  virtual void write(uint64_t addr, const CMDataBase *data) = 0;
-  virtual void flush(uint64_t addr) = 0; // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
-  virtual void writeback(uint64_t addr) = 0; // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
-  virtual void writeback_invalidate() = 0; // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
+  virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) = 0;
+  virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) = 0;
+  virtual void flush(uint64_t addr, uint64_t *delay) = 0; // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
+  virtual void writeback(uint64_t addr, uint64_t *delay) = 0; // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
+  virtual void writeback_invalidate(uint64_t *delay) = 0; // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
 
 private:
   // hide and prohibit calling these functions
   virtual uint32_t connect(CohClientBase *c) { return 0;}
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {}
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {}
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
 };
 
 
