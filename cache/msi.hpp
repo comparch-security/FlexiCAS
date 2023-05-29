@@ -221,7 +221,7 @@ public:
 
       // update meta
       Policy::meta_after_probe_ack(cmd, meta);
-      this->cache->replace_probe(addr, ai, s, w, !meta->is_valid());
+      this->cache->hook_probe(addr, ai, s, w, !meta->is_valid(), delay);
     }
   }
 };
@@ -254,14 +254,14 @@ public:
         auto replace_addr = meta->addr(s);
         if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()), delay); // sync if necessary
         if(meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
-        this->cache->replace_invalid(replace_addr, ai, s, w);
+        this->cache->hook_invalid(replace_addr, ai, s, w, delay);
       }
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }
     // grant
     if(!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
     Policy::meta_after_acquire(cmd, meta);
-    this->cache->replace_read(addr, ai, s, w, hit);
+    this->cache->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
@@ -272,7 +272,7 @@ public:
     meta = this->cache->access(ai, s, w);
     if(!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data);
     Policy::meta_after_release(cmd, meta);
-    this->cache->replace_write(addr, ai, s, w, true);
+    this->cache->hook_write(addr, ai, s, w, true, delay);
   }
 };
 
@@ -313,7 +313,7 @@ class CoreInterfaceMSI : public CoreInterfaceBase
         // writeback if dirty
         if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict(), delay);
 
-        this->cache->replace_invalid(addr, ai, s, w);
+        this->cache->hook_invalid(addr, ai, s, w, delay);
       }
 
       // fetch the missing block
@@ -322,9 +322,9 @@ class CoreInterfaceMSI : public CoreInterfaceBase
 
     if(cmd == Policy::cmd_for_core_write()) {
       meta->to_dirty();
-      this->cache->replace_write(addr, ai, s, w, hit);
+      this->cache->hook_write(addr, ai, s, w, hit, delay);
     } else
-      this->cache->replace_read(addr, ai, s, w, hit);
+      this->cache->hook_read(addr, ai, s, w, hit, delay);
     return data;
   }
 

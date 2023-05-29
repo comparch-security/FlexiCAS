@@ -164,11 +164,11 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
-  // update replacer states and potentially link to reporter hooks
-  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
-  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
-  virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
-  virtual void replace_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict) = 0;
+  // hook interface for replacer state update, Monitor and delay estimation
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) = 0;
+  virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, uint64_t *delay) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
@@ -227,22 +227,22 @@ public:
     replacer[*ai].replace(*s, w);
   }
 
-  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
     if(EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
   }
 
-  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
     if(EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
   }
 
-  virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
+  virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
     replacer[ai].invalid(s, w);
     if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
   }
 
-  virtual void replace_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict) {
+  virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, uint64_t *delay) {
     if(evict) { // currently, we only care when the probe evict a block
       replacer[ai].invalid(s, w);
       if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
