@@ -13,6 +13,7 @@
 #include "util/monitor.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
+#include "cache/delay.hpp"
 
 class CMMetadataBase
 {
