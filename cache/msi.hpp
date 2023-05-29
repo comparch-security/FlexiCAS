@@ -310,8 +310,8 @@ class CoreInterfaceMSI : public CoreInterfaceBase
       if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
       if(meta->is_valid()) {
-        // writeback if dirty
         auto replace_addr = meta->addr(s);
+        // writeback if dirty
         if(meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict());
 
         this->cache->replace_invalid(replace_addr, ai, s, w);
