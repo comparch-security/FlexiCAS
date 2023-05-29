@@ -311,9 +311,10 @@ class CoreInterfaceMSI : public CoreInterfaceBase
 
       if(meta->is_valid()) {
         // writeback if dirty
-        if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict());
+        auto replace_addr = meta->addr(s);
+        if(meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict());
 
-        this->cache->replace_invalid(addr, ai, s, w);
+        this->cache->replace_invalid(replace_addr, ai, s, w);
       }
 
       // fetch the missing block
