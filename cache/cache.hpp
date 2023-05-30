@@ -173,6 +173,10 @@ public:
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
+  virtual uint32_t get_array_size() = 0;
+  virtual uint32_t get_set_size() = 0;
+  virtual uint32_t get_way_size() = 0;
+
   // monitor related
   bool attach_monitor(MonitorBase *m) {
     if(m->attach(id)) {
@@ -255,6 +259,10 @@ public:
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w){
     return arrays[ai]->get_data(s, w);
   }
+
+  virtual uint32_t get_array_size() { return P; }
+  virtual uint32_t get_set_size() { return 1ul<<IW; }
+  virtual uint32_t get_way_size() { return NW; }
 };
 
 // Normal set-associative cache

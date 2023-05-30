@@ -32,6 +32,7 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) = 0;
+  virtual void writeback_invalidate_req() = 0;
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
@@ -54,6 +55,7 @@ public:
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) = 0;
+  virtual void writeback_invalidate_resp() = 0;
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
@@ -76,6 +78,7 @@ private:
   virtual uint32_t connect(CohClientBase *c) { return 0;}
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {}
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd) {}
+  virtual void writeback_invalidate_resp() {}
 };
 
 
