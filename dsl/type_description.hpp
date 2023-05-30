@@ -123,7 +123,7 @@ public: TypeCacheBase(const std::string &name) : Description(name) { types.inser
 
 class TypeCacheSkewed : public TypeCacheBase
 {
-  int IW, NW, P; std::string MT, DT, IDX, RPC; bool EnMon;
+  int IW, NW, P; std::string MT, DT, IDX, RPC, DLY; bool EnMon;
   const std::string tname;
 public:
   TypeCacheSkewed(const std::string &name) : TypeCacheBase(name), tname("CacheSkewed") {}
@@ -133,7 +133,7 @@ public:
 
 class TypeCacheNorm : public TypeCacheBase
 {
-  int IW, NW; std::string MT, DT, IDX, RPC; bool EnMon;
+  int IW, NW; std::string MT, DT, IDX, RPC, DLY; bool EnMon;
   const std::string tname;
 public:
   TypeCacheNorm(const std::string &name) : TypeCacheBase(name), tname("CacheNorm") {}
@@ -315,6 +315,24 @@ class TypeReplaceLRU : public TypeReplaceFuncBase
   const std::string tname;
 public:
   TypeReplaceLRU(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceLRU") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+////////////////////////////// Delay ///////////////////////////////////////////////
+
+class TypeDelayBase : public Description {
+public:
+  TypeDelayBase(const std::string &name) : Description(name) { types.insert("DelayBase"); }
+  virtual void emit_header();
+};
+
+class TypeDelayL1 : public TypeDelayBase
+{
+  int dhit, dreplay, dtran;
+  const std::string tname;
+public:
+  TypeDelayL1(const std::string &name) : TypeDelayBase(name), tname("DelayL1") {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
