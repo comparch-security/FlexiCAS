@@ -32,6 +32,8 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "ReplaceFIFO")           descriptor = new TypeReplaceFIFO(type_name);
   if(base_name == "ReplaceLRU")            descriptor = new TypeReplaceLRU(type_name);
   if(base_name == "DelayL1")               descriptor = new TypeDelayL1(type_name);
+  if(base_name == "DelayCoherentCache")    descriptor = new TypeDelayCoherentCache(type_name);
+  if(base_name == "DelayMemory")           descriptor = new TypeDelayMemory(type_name);
 
   if(nullptr == descriptor) {
     std::cerr << "[Decode] Fail to match `" << base_name << "' with a known base type." << std::endl;
@@ -255,17 +257,18 @@ bool TypeCoherentL1CacheNorm::set(std::list<std::string> &values) {
 }
   
 bool TypeSimpleMemoryModel::set(std::list<std::string> &values) {
-  if(values.size() != 1) {
-    std::cerr << "[Mismatch] " << tname << " needs 1 parameters!" << std::endl;
+  if(values.size() != 2) {
+    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  DLY = *it; if(!this->check(tname, "DLY", *it, "DelayBase", true)) return false; it++;
   return true;
 }
 
 void TypeSimpleMemoryModel::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << DT << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << DT << "," << DLY << "> " << this->name << ";" << std::endl;
 }
 
 void TypeSimpleMemoryModel::emit_header() { codegendb.add_header("cache/memory.hpp"); }
@@ -370,4 +373,34 @@ bool TypeDelayL1::set(std::list<std::string> &values) {
 
 void TypeDelayL1::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << dhit << "," << dreplay << "," << dtran << "> " << this->name << ";" << std::endl;
+}
+
+bool TypeDelayCoherentCache::set(std::list<std::string> &values) {
+  if(values.size() != 3) {
+    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  if(!codegendb.parse_int(*it, dhit)) return false; it++;
+  if(!codegendb.parse_int(*it, dtranUp)) return false; it++;
+  if(!codegendb.parse_int(*it, dtranDown)) return false; it++;
+  return true;
+}
+
+void TypeDelayCoherentCache::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << dhit << "," << dtranUp << "," << dtranDown << "> " << this->name << ";" << std::endl;
+}
+
+bool TypeDelayMemory::set(std::list<std::string> &values) {
+  if(values.size() != 1) {
+    std::cerr << "[Mismatch] " << tname << " needs 1 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  if(!codegendb.parse_int(*it, dtran)) return false; it++;
+  return true;
+}
+
+void TypeDelayMemory::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << dtran << "> " << this->name << ";" << std::endl;
 }

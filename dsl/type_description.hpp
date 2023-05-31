@@ -243,7 +243,7 @@ public:
 
 class TypeSimpleMemoryModel : public TypeCoreInterfaceBase
 {
-  std::string DT;
+  std::string DT, DLY;
   const std::string tname;
 public:
   TypeSimpleMemoryModel(const std::string &name) : TypeCoreInterfaceBase(name), tname("SimpleMemoryModel") {}
@@ -333,6 +333,26 @@ class TypeDelayL1 : public TypeDelayBase
   const std::string tname;
 public:
   TypeDelayL1(const std::string &name) : TypeDelayBase(name), tname("DelayL1") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+class TypeDelayCoherentCache : public TypeDelayBase
+{
+  int dhit, dtranUp, dtranDown;
+  const std::string tname;
+public:
+  TypeDelayCoherentCache(const std::string &name) : TypeDelayBase(name), tname("DelayCoherentCache") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+class TypeDelayMemory : public TypeDelayBase
+{
+  int dtran;
+  const std::string tname;
+public:
+  TypeDelayMemory(const std::string &name) : TypeDelayBase(name), tname("DelayMemory") {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
