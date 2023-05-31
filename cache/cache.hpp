@@ -109,7 +109,7 @@ public:
     size_t num = nset * NW;
     meta.resize(num);
     for(auto &m:meta) m = new MT();
-    if(!std::is_void<DT>::value) {
+    if constexpr (!std::is_void<DT>::value) {
       data.resize(num);
       for(auto &d:data) d = new DT();
     }
@@ -117,7 +117,7 @@ public:
 
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
-    if(!std::is_void<DT>::value) for(auto d:data) delete d;
+    if constexpr (!std::is_void<DT>::value) for(auto d:data) delete d;
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
@@ -131,7 +131,12 @@ public:
   }
 
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*NW + w]; }
-  virtual CMDataBase * get_data(uint32_t s, uint32_t w) { return std::is_void<DT>::value ? nullptr : data[s*NW + w]; }
+  virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
+    if constexpr (std::is_void<DT>::value) {
+      return nullptr;
+    } else
+      return data[s*NW + w];
+  }
 };
 
 //////////////// define cache ////////////////////
@@ -211,11 +216,11 @@ public:
   {
     arrays.resize(P);
     for(auto &a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
-    if(!(std::is_void<DLY>::value)) timer = new DLY();
+    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
   }
 
   virtual ~CacheSkewed() {
-    if(!std::is_void<DLY>::value) delete timer;
+    if constexpr (!std::is_void<DLY>::value) delete timer;
   }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
@@ -228,7 +233,8 @@ public:
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
-    *ai = P==1 ? 0 : (cm_get_random_uint32() % P);
+    if constexpr (P==1) *ai = 0;
+    else                *ai = (cm_get_random_uint32() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
   }
@@ -236,27 +242,27 @@ public:
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
     if(EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
-    if(!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
+    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
-    if(EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
-    if(!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
+    if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
     replacer[ai].invalid(s, w);
-    if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
-    if(!std::is_void<DLY>::value) timer->invalid(addr, ai, s, w, delay);
+    if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+    if constexpr (!std::is_void<DLY>::value) timer->invalid(addr, ai, s, w, delay);
   }
 
   virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, uint64_t *delay) {
     if(evict) { // currently, we only care when the probe evict a block
       replacer[ai].invalid(s, w);
-      if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
     }
-    if(!std::is_void<DLY>::value) timer->probe(addr, ai, s, w, evict, delay);
+    if constexpr (!std::is_void<DLY>::value) timer->probe(addr, ai, s, w, evict, delay);
   }
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){

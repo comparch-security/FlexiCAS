@@ -21,18 +21,18 @@ namespace // file visibility
     // Release: [0] evict / [1] writeback (keep modified)
     // Probe: [0] evict / [1] writeback (keep shared)
 
-    static const uint32_t acquire_msg = 1 << 8;
-    static const uint32_t release_msg = 2 << 8;
-    static const uint32_t probe_msg = 3 << 8;
+    constexpr static uint32_t acquire_msg = 1 << 8;
+    constexpr static uint32_t release_msg = 2 << 8;
+    constexpr static uint32_t probe_msg = 3 << 8;
 
-    static const uint32_t acquire_read = 0;
-    static const uint32_t acquire_write = 1;
+    constexpr static uint32_t acquire_read = 0;
+    constexpr static uint32_t acquire_write = 1;
 
-    static const uint32_t release_evict = 0;
-    static const uint32_t release_writeback = 1;
+    constexpr static uint32_t release_evict = 0;
+    constexpr static uint32_t release_writeback = 1;
 
-    static const uint32_t probe_evict = 0;
-    static const uint32_t probe_writeback = 1;
+    constexpr static uint32_t probe_evict = 0;
+    constexpr static uint32_t probe_writeback = 1;
 
   public:
     static inline bool is_acquire(uint32_t cmd) {return (cmd & 0x0ff00ul) == acquire_msg; }
@@ -159,7 +159,7 @@ class MetadataMSI : public MetadataMSIBase
 {
 protected:
   uint64_t     tag   : AW-TOfst;
-  static const uint64_t mask = (1ull << (AW-TOfst)) - 1;
+  constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
 
 public:
   MetadataMSI() : tag(0) {}
@@ -207,7 +207,10 @@ public:
     uint32_t ai, s, w;
     if(this->cache->hit(addr, &ai, &s, &w)) {
       auto meta = this->cache->access(ai, s, w); // oddly here, `this->' is required by the g++ 11.3.0 @wsong83
-      CMDataBase *data = std::is_void<DT>::value ? nullptr : this->cache->get_data(ai, s, w);
+      CMDataBase *data = nullptr;
+      if constexpr (!std::is_void<DT>::value) {
+        data = this->cache->get_data(ai, s, w);
+      }
 
       // sync if necessary
       if(Policy::need_sync(cmd, meta)) this->inner->probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay);
@@ -215,7 +218,7 @@ public:
       // writeback if dirty
       if(meta->is_dirty()) { // dirty, writeback
         meta_outer->to_dirty();
-        if(!std::is_void<DT>::value) data_outer->copy(data);
+        if constexpr (!std::is_void<DT>::value) data_outer->copy(data);
         meta->to_clean();
       }
 
@@ -242,14 +245,14 @@ public:
     bool hit;
     if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
-      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay); // sync if necessary
       if(Policy::need_promote(cmd, meta) && !isLLC) outer->acquire_req(addr, meta, data, cmd, delay); // promote permission if needed
     } else { // miss
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
-      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(meta->is_valid()) {
         auto replace_addr = meta->addr(s);
         if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()), delay); // sync if necessary
@@ -259,7 +262,7 @@ public:
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }
     // grant
-    if(!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
+    if constexpr (!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
     Policy::meta_after_acquire(cmd, meta);
     this->cache->hook_read(addr, ai, s, w, hit, delay);
   }
@@ -270,7 +273,7 @@ public:
     auto h = this->cache->hit(addr, &ai, &s, &w);
     assert(h); // must hit
     meta = this->cache->access(ai, s, w);
-    if(!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data);
+    if constexpr (!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data);
     Policy::meta_after_release(cmd, meta);
     this->cache->hook_write(addr, ai, s, w, true, delay);
   }
@@ -301,13 +304,13 @@ class CoreInterfaceMSI : public CoreInterfaceBase
     bool hit;
     if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
-      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(Policy::need_promote(cmd, meta) && !isLLC) outer->acquire_req(addr, meta, data, cmd, delay);
     } else { // miss
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
-      if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
       if(meta->is_valid()) {
         // writeback if dirty
@@ -335,7 +338,7 @@ public:
 
   virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
     auto m_data = access(addr, Policy::cmd_for_core_write(), EnableDelay ? delay : nullptr);
-    if(!std::is_void<DT>::value) m_data->copy(data);
+    if constexpr (!std::is_void<DT>::value) m_data->copy(data);
   }
 
   virtual void flush(uint64_t addr, uint64_t *delay) {

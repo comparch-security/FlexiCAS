@@ -24,7 +24,7 @@ public:
   virtual ~SimpleMemoryModel() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    if(!std::is_void<DT>::value) {
+    if constexpr (!std::is_void<DT>::value) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       if(!pages.count(ppn)) allocate(ppn);
@@ -34,7 +34,7 @@ public:
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    if(!std::is_void<DT>::value) {
+    if constexpr (!std::is_void<DT>::value) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       assert(pages.count(ppn));
