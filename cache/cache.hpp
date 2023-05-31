@@ -173,8 +173,8 @@ public:
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
-  virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) = 0;
-  virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, uint64_t *delay) = 0;
+  virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) = 0;
+  virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, bool writeback, uint64_t *delay) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
@@ -251,18 +251,18 @@ public:
     if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
+  virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) {
     replacer[ai].invalid(s, w);
     if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
-    if constexpr (!std::is_void<DLY>::value) timer->invalid(addr, ai, s, w, delay);
+    if constexpr (!std::is_void<DLY>::value) timer->invalid(addr, ai, s, w, writeback, delay);
   }
 
-  virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, uint64_t *delay) {
+  virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, bool writeback, uint64_t *delay) {
     if(evict) { // currently, we only care when the probe evict a block
       replacer[ai].invalid(s, w);
       if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
     }
-    if constexpr (!std::is_void<DLY>::value) timer->probe(addr, ai, s, w, evict, delay);
+    if constexpr (!std::is_void<DLY>::value) timer->probe(addr, ai, s, w, writeback, delay);
   }
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){

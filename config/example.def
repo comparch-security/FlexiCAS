@@ -21,7 +21,7 @@ type data_type        = Data64B();
 type l1_metadata_type = MetadataMSI(AddrWidth, L1IW, L1TagOffset);
 type l1_indexer_type  = IndexNorm(L1IW, BlockOffset);
 type l1_replacer_type = ReplaceLRU(L1IW, L1WN);
-type l1_delay_type    = DelayL1(1, 3, 4); // 1 cycle hit, 3 cycles for replay, and 4 cycles for block transfer
+type l1_delay_type    = DelayL1(1, 3, 8); // 1 cycle hit, 3 cycles for replay, and 8 cycles for block transfer
 type l1_type          = CacheNorm(L1IW, L1WN, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, l1_delay_type, EnableMonitor);
 type l1_inner_type    = CoreInterfaceMSI(l1_metadata_type, data_type, EnableDelay, false);
 type l1_outer_type    = OuterPortMSI(l1_metadata_type, data_type);     // support reverse probe
@@ -32,14 +32,16 @@ create l1 = l1_cache_type[8]; // 2 L1 caches
 type llc_metadata_type = MetadataMSI(AddrWidth, 0, LLCTagOffset);
 type llc_indexer_type  = IndexSkewed(LLCIW, BlockOffset, LLCPartitionN);
 type llc_replacer_type = ReplaceLRU(LLCIW, LLCWN);
-type llc_type          = CacheSkewed(LLCIW, LLCWN, LLCPartitionN, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, void, EnableMonitor);
+type llc_delay_type    = DelayCoherentCache(5, 20, 40); // 5 cycles for hit, 20 cycles for grant to inner, and 40 cycles for writeback to outer
+type llc_type          = CacheSkewed(LLCIW, LLCWN, LLCPartitionN, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, llc_delay_type, EnableMonitor);
 type llc_inner_type    = InnerPortMSIBroadcast(llc_metadata_type, data_type, true);
 type llc_outer_type    = OuterPortMSIUncached(llc_metadata_type, data_type);
 type llc_cache_type    = CoherentCacheNorm(llc_type, llc_outer_type, llc_inner_type);
 create llc = llc_cache_type[4]; // shared llc
 
 // initiate memory
-type memory_type       = SimpleMemoryModel(data_type);
+type memory_delay_type = DelayMemory(100); // 100 cycles for grant to inner
+type memory_type       = SimpleMemoryModel(data_type, memory_delay_type);
 create mem = memory_type;
 
 // connect the two levels
