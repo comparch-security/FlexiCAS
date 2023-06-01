@@ -386,20 +386,19 @@ public:
   }
 
   virtual void flush(uint64_t addr, uint64_t *delay) {
-    uint32_t ai, s, w;
-    bool hit, writeback;
-    CMMetadataBase *meta = nullptr;
-    CMDataBase *data = nullptr;
-    if(hit = this->cache->hit(addr, &ai, &s, &w)){
-      meta = this->cache->access(ai, s, w);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
-      if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_flush_evict(), delay);
-
-      this->cache->hook_invalid(addr, ai, s, w, writeback, delay);
-    }
-    else{
-      if constexpr (!isLLC) outer->writeback_req(addr, meta, data, Policy::cmd_for_flush_evict(), delay);
+    if constexpr (isLLC) {
+      uint32_t ai, s, w;
+      bool hit, writeback;
+      CMMetadataBase *meta = nullptr;
+      CMDataBase *data = nullptr;
+      if(hit = this->cache->hit(addr, &ai, &s, &w)){
+        meta = this->cache->access(ai, s, w);
+        if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+        if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_evict(), delay);
+      }
+      this->cache->hook_invalid(addr, ai, s, w, hit, writeback, delay);  // ToDo: hook api change
+    } else {
+      outer->writeback_req(addr, nullptr, nullptr, Policy::cmd_for_flush_evict(), delay);
     }
   }
 
