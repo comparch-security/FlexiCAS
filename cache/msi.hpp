@@ -320,9 +320,10 @@ class CoreInterfaceMSI : public CoreInterfaceBase
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
 
       if(meta->is_valid()) {
+        auto replace_addr = meta->addr(s);
         // writeback if dirty
-        if(meta->is_dirty()) outer->writeback_req(meta->addr(s), meta, data, Policy::cmd_for_evict(), delay);
-        this->cache->hook_invalid(addr, ai, s, w, writeback, delay);
+        if(meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay);
+        this->cache->hook_invalid(replace_addr, ai, s, w, writeback, delay);
       }
 
       // fetch the missing block
