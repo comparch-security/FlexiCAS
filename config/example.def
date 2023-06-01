@@ -26,7 +26,7 @@ type l1_type          = CacheNorm(L1IW, L1WN, l1_metadata_type, data_type, l1_in
 type l1_inner_type    = CoreInterfaceMSI(l1_metadata_type, data_type, EnableDelay, false);
 type l1_outer_type    = OuterPortMSI(l1_metadata_type, data_type);     // support reverse probe
 type l1_cache_type    = CoherentL1CacheNorm(l1_type, l1_outer_type, l1_inner_type);
-create l1 = l1_cache_type[8]; // 2 L1 caches
+create l1 = l1_cache_type[8]; // 8 L1 caches
 
 // initiate the llc
 type llc_metadata_type = MetadataMSI(AddrWidth, 0, LLCTagOffset);
