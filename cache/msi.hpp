@@ -216,9 +216,6 @@ public:
     coh->writeback_resp(addr, data, Policy::attach_id(cmd, this->coh_id));
     Policy::meta_after_writeback(cmd, meta);
   }
-  virtual void writeback_invalidate_req(){
-    coh->writeback_invalidate_resp();
-  }
 };
 
 // full MSI Outer port
@@ -321,32 +318,6 @@ public:
       this->cache->replace_write(addr, ai, s, w, true);
     }
   }
-
-  virtual void writeback_invalidate_resp(){
-    uint32_t P = this->cache->get_array_size();
-    uint32_t nset = this->cache->get_set_size();
-    uint32_t nway = this->cache->get_way_size();
-    CMMetadataBase *meta = nullptr;
-    CMDataBase *data = nullptr;
-    uint32_t ai, s, w;
-    for(ai = 0; ai < P; ai++){
-      for(s = 0; s < nset; s++){
-        for(w = 0; w < nway; w++){
-          meta = this->cache->access(ai, s, w);
-          if(meta->is_valid()) {
-            auto addr = meta->addr(s);
-            if(!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
-            if(Policy::need_sync(Policy::cmd_for_flush_evict(), meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_flush_evict()));
-            if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_flush_evict());
-
-            this->cache->replace_invalid(addr, ai, s, w);
-          }
-        }
-      }
-    }
-    if(!isLLC) outer->writeback_invalidate_req(); 
-  }
 };
 
 // full MSI inner port (broadcasting hub, snoop)
@@ -440,24 +411,6 @@ public:
       if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_flush_writeback());
     }
   }
-
-  virtual void writeback_invalidate() {
-    uint32_t P = this->cache->get_array_size();
-    uint32_t nset = this->cache->get_set_size();
-    uint32_t nway = this->cache->get_way_size();
-    CMMetadataBase *meta = nullptr;
-    uint32_t ai, s, w;
-    for(ai = 0; ai < P; ai++){
-      for(s = 0; s < nset; s++){
-        for(w = 0; w < nway; w++){
-          meta = this->cache->access(ai, s, w);
-          if(meta->is_valid() && meta->is_dirty()) flush(meta->addr(s));
-        }
-      }
-    }
-    if(!isLLC) outer->writeback_invalidate_req();
-  }
-
 };
 
 #endif

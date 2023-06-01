@@ -45,7 +45,6 @@ public:
 
 private:
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd) {} // hidden
-  virtual void writeback_invalidate_resp() {}
 };
 
 #endif
