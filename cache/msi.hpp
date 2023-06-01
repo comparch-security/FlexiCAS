@@ -84,6 +84,7 @@ namespace // file visibility
 
     // command to evict a cache block from this cache
     static inline uint32_t cmd_for_evict() { return attach_id(release_msg | release_evict, -1); } // eviction needs no coh_id
+    static inline uint32_t cmd_for_writeback() { return attach_id(release_msg | release_writeback, -1); } // writeback needs no coh_id
     static inline uint32_t cmd_for_flush_evict() { return attach_id(flush_msg | flush_evict, -1);}
     static inline uint32_t cmd_for_flush_writeback() { return attach_id(flush_msg | flush_writeback, -1);}
 
@@ -120,13 +121,6 @@ namespace // file visibility
       if(is_release(cmd)){
         meta->to_clean();
         if(release_evict == get_action(cmd)) meta->to_invalid();
-      }
-      else{
-        assert(is_flush(cmd));
-        if(meta != nullptr){
-          meta->to_clean();
-          if(flush_evict == get_action(cmd)) meta->to_invalid();
-        }
       }
     }
 
@@ -410,15 +404,19 @@ public:
   }
 
   virtual void writeback(uint64_t addr, uint64_t *delay) {
-    uint32_t ai, s, w;
-    bool hit;
-    CMMetadataBase *meta = nullptr;
-    CMDataBase *data = nullptr;
-    if(hit = this->cache->hit(addr, &ai, &s, &w)){
-      meta = this->cache->access(ai, s, w);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
-      if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_flush_writeback(), delay);
+    if constexpr (isLLC) {
+      uint32_t ai, s, w;
+      bool writeback;
+      CMMetadataBase *meta = nullptr;
+      CMDataBase *data = nullptr;
+      if(hit = this->cache->hit(addr, &ai, &s, &w)){
+        meta = this->cache->access(ai, s, w);
+        if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+        if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_writeback(), delay);
+      }
+      this->cache->hook_writeback(addr, ai, s, w, hit, writeback, delay); // ToDo: need to add this new type of hook
+    } else {
+      outer->writeback_req(addr, nullptr, nullptr, Policy::cmd_for_flush_writeback(), delay); // let LLC do the job
     }
   }
 
