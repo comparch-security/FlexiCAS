@@ -288,34 +288,26 @@ public:
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = this->cache->hit(addr, &ai, &s, &w);
-    if(Policy::need_flush(cmd)){
-      if(hit){
-        meta = this->cache->access(ai, s, w);
-        if constexpr (std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-        
-        if(data_inner != nullptr){
-          data->copy(data_inner);
-          Policy::meta_after_release(cmd, meta);
-          this->cache->hook_write(addr, ai, s, w, true, delay);
-        }
-        else
-          probe_req(addr, meta, data, Policy::cmd_for_sync(cmd));
-
-        if(meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
-        if(Policy::attach_id(cmd, -1) == Policy::cmd_for_flush_evict())
-          this->cache->hook_invalid(addr, ai, s, w);
-      }
-      else{
-        if(!isLLC) outer->writeback_req(addr, meta, data, cmd, delay);
-      }
-    }
-    else{
+    bool hit, writeback = false;
+    if(Policy::is_release(cmd)) {
+      hit = this->cache->hit(addr, &ai, &s, &w);
       assert(hit); // must hit
       meta = this->cache->access(ai, s, w);
       if constexpr (std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data_inner);
       Policy::meta_after_release(cmd, meta);
-      this->cache->hook_write(addr, ai, s, w, true, delay);
+      this->cache->hook_write(addr, ai, s, w, hit, delay);
+    } else {
+      assert(Policy::is_flush(cmd));
+      if constexpr (isLLC) {
+        if(hit = this->cache->hit(addr, &ai, &s, &w)){
+          meta = this->cache->access(ai, s, w);
+          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+          if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
+        }
+        this->cache->hook_invalid(addr, ai, s, w, hit, writeback, delay);  // ToDo: hook api change
+      } else {
+        outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
+      }
     }
   }
 };
@@ -388,7 +380,7 @@ public:
   virtual void flush(uint64_t addr, uint64_t *delay) {
     if constexpr (isLLC) {
       uint32_t ai, s, w;
-      bool hit, writeback;
+      bool hit, writeback = false;
       CMMetadataBase *meta = nullptr;
       CMDataBase *data = nullptr;
       if(hit = this->cache->hit(addr, &ai, &s, &w)){
@@ -405,7 +397,7 @@ public:
   virtual void writeback(uint64_t addr, uint64_t *delay) {
     if constexpr (isLLC) {
       uint32_t ai, s, w;
-      bool writeback;
+      bool writeback = false;
       CMMetadataBase *meta = nullptr;
       CMDataBase *data = nullptr;
       if(hit = this->cache->hit(addr, &ai, &s, &w)){
