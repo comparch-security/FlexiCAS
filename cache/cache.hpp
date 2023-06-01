@@ -13,6 +13,7 @@
 #include "util/monitor.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
+#include "cache/delay.hpp"
 
 class CMMetadataBase
 {
@@ -108,7 +109,7 @@ public:
     size_t num = nset * NW;
     meta.resize(num);
     for(auto &m:meta) m = new MT();
-    if(!std::is_void<DT>::value) {
+    if constexpr (!std::is_void<DT>::value) {
       data.resize(num);
       for(auto &d:data) d = new DT();
     }
@@ -116,7 +117,7 @@ public:
 
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
-    if(!std::is_void<DT>::value) for(auto d:data) delete d;
+    if constexpr (!std::is_void<DT>::value) for(auto d:data) delete d;
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
@@ -130,7 +131,12 @@ public:
   }
 
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*NW + w]; }
-  virtual CMDataBase * get_data(uint32_t s, uint32_t w) { return std::is_void<DT>::value ? nullptr : data[s*NW + w]; }
+  virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
+    if constexpr (std::is_void<DT>::value) {
+      return nullptr;
+    } else
+      return data[s*NW + w];
+  }
 };
 
 //////////////// define cache ////////////////////
@@ -164,11 +170,11 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
-  // update replacer states and potentially link to reporter hooks
-  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
-  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
-  virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
-  virtual void replace_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict) = 0;
+  // hook interface for replacer state update, Monitor and delay estimation
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) = 0;
+  virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, bool writeback, uint64_t *delay) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
@@ -191,16 +197,18 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, bool EnMon,
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon,
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type,  // IDX <- IndexFuncBase
-         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, RPC>::value>::type>  // RPC <- ReplaceFuncBase
+         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, RPC>::value>::type,  // RPC <- ReplaceFuncBase
+         typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
 class CacheSkewed : public CacheBase
 {
 protected:
   IDX indexer;     // index resolver
   RPC replacer[P]; // replacer
+  DLY *timer;      // delay estimator
 
 public:
   CacheSkewed(std::string name = "")
@@ -208,9 +216,12 @@ public:
   {
     arrays.resize(P);
     for(auto &a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
+    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
   }
 
-  virtual ~CacheSkewed() {}
+  virtual ~CacheSkewed() {
+    if constexpr (!std::is_void<DLY>::value) delete timer;
+  }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
@@ -222,31 +233,36 @@ public:
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
-    *ai = P==1 ? 0 : (cm_get_random_uint32() % P);
+    if constexpr (P==1) *ai = 0;
+    else                *ai = (cm_get_random_uint32() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
   }
 
-  virtual void replace_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
     if(EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void replace_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
-    if(EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
+    if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void replace_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
+  virtual void hook_invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) {
     replacer[ai].invalid(s, w);
-    if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+    if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+    if constexpr (!std::is_void<DLY>::value) timer->invalid(addr, ai, s, w, writeback, delay);
   }
 
-  virtual void replace_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict) {
+  virtual void hook_probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool evict, bool writeback, uint64_t *delay) {
     if(evict) { // currently, we only care when the probe evict a block
       replacer[ai].invalid(s, w);
-      if(EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
     }
+    if constexpr (!std::is_void<DLY>::value) timer->probe(addr, ai, s, w, writeback, delay);
   }
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
@@ -258,7 +274,7 @@ public:
 };
 
 // Normal set-associative cache
-template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, bool EnMon>
-using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, EnMon>;
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
 
 #endif

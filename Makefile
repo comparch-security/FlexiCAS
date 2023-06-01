@@ -1,7 +1,7 @@
 
 MAKE = make
 CXX = g++
-CXXFLAGS = --std=c++11 -O2 -I. -fPIC
+CXXFLAGS = --std=c++17 -O2 -I. -fPIC
 
 CONFIG ?= example
 

@@ -123,7 +123,7 @@ public: TypeCacheBase(const std::string &name) : Description(name) { types.inser
 
 class TypeCacheSkewed : public TypeCacheBase
 {
-  int IW, NW, P; std::string MT, DT, IDX, RPC; bool EnMon;
+  int IW, NW, P; std::string MT, DT, IDX, RPC, DLY; bool EnMon;
   const std::string tname;
 public:
   TypeCacheSkewed(const std::string &name) : TypeCacheBase(name), tname("CacheSkewed") {}
@@ -133,7 +133,7 @@ public:
 
 class TypeCacheNorm : public TypeCacheBase
 {
-  int IW, NW; std::string MT, DT, IDX, RPC; bool EnMon;
+  int IW, NW; std::string MT, DT, IDX, RPC, DLY; bool EnMon;
   const std::string tname;
 public:
   TypeCacheNorm(const std::string &name) : TypeCacheBase(name), tname("CacheNorm") {}
@@ -199,7 +199,7 @@ public: TypeCoreInterfaceBase(const std::string &name) : TypeInnerCohPortBase(na
 
 class TypeCoreInterfaceMSI : public TypeCoreInterfaceBase
 {
-  std::string MT, DT; bool isLLC;
+  std::string MT, DT; bool enableDelay, isLLC;
   const std::string tname;
 public:
   TypeCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("CoreInterfaceMSI") {}
@@ -243,7 +243,7 @@ public:
 
 class TypeSimpleMemoryModel : public TypeCoreInterfaceBase
 {
-  std::string DT;
+  std::string DT, DLY;
   const std::string tname;
 public:
   TypeSimpleMemoryModel(const std::string &name) : TypeCoreInterfaceBase(name), tname("SimpleMemoryModel") {}
@@ -315,6 +315,44 @@ class TypeReplaceLRU : public TypeReplaceFuncBase
   const std::string tname;
 public:
   TypeReplaceLRU(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceLRU") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+////////////////////////////// Delay ///////////////////////////////////////////////
+
+class TypeDelayBase : public Description {
+public:
+  TypeDelayBase(const std::string &name) : Description(name) { types.insert("DelayBase"); }
+  virtual void emit_header();
+};
+
+class TypeDelayL1 : public TypeDelayBase
+{
+  int dhit, dreplay, dtran;
+  const std::string tname;
+public:
+  TypeDelayL1(const std::string &name) : TypeDelayBase(name), tname("DelayL1") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+class TypeDelayCoherentCache : public TypeDelayBase
+{
+  int dhit, dtranUp, dtranDown;
+  const std::string tname;
+public:
+  TypeDelayCoherentCache(const std::string &name) : TypeDelayBase(name), tname("DelayCoherentCache") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+class TypeDelayMemory : public TypeDelayBase
+{
+  int dtran;
+  const std::string tname;
+public:
+  TypeDelayMemory(const std::string &name) : TypeDelayBase(name), tname("DelayMemory") {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
