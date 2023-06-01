@@ -411,6 +411,11 @@ public:
       if(meta->is_dirty()) outer->writeback_req(addr, meta, data, Policy::cmd_for_flush_writeback());
     }
   }
+
+  virtual void writeback_invalidate() {
+    assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
+  }
+
 };
 
 #endif
