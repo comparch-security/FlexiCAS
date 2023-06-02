@@ -103,10 +103,10 @@ protected:
   std::vector<DT *> data;   // data array, could be null
 
 public:
-  const uint32_t nset = 1ul<<IW;  // number of sets
+  static constexpr uint32_t nset = 1ul<<IW;  // number of sets
 
   CacheArrayNorm(std::string name = "") : CacheArrayBase(name) {
-    size_t num = nset * NW;
+    constexpr size_t num = nset * NW;
     meta.resize(num);
     for(auto &m:meta) m = new MT();
     if constexpr (!std::is_void<DT>::value) {
@@ -241,7 +241,7 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
-    if(EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
+    if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
     if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
   }
 
