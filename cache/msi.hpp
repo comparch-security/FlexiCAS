@@ -4,6 +4,7 @@
 #include <cassert>
 #include <type_traits>
 #include "cache/coherence.hpp"
+#include "cache/llchash.hpp"
 
 namespace // file visibility
 {
@@ -178,6 +179,27 @@ public:
   }
 };
 
+template<typename HT,
+         typename = typename std::enable_if<std::is_base_of<LLCHashBase, HT>::value>::type > // HT <- LLCHashBase
+class SliceDispatcher : public CohMasterBase
+{
+protected:
+    std::vector<CohMasterBase*> cohm;
+    HT *hasher;
+public:
+    SliceDispatcher() { hasher = new HT(1); }
+    virtual ~SliceDispatcher() { delete hasher; }
+    virtual void connect(CohMasterBase *c) { 
+      cohm.push_back(c); 
+      hasher->set_nllc(cohm.size()); 
+    }
+    virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
+      this->cohm[hasher->hash(addr)]->acquire_resp(addr, data, cmd, delay);
+    }
+    virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
+      this->cohm[hasher->hash(addr)]->writeback_resp(addr, data, cmd, delay);
+    }
+};
 
 // uncached MSI outer port:
 //   no support for reverse probe as if there is no internal cache
