@@ -6,8 +6,8 @@ class DelayBase
 public:
   virtual void read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
   virtual void write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
-  virtual void invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) = 0;
-  virtual void probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) = 0;
+  // probe, invalidate and writeback
+  virtual void manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
 };
 
 // L1 delay estimation
@@ -26,12 +26,8 @@ public:
     *delay += hit ? dhit : dhit + dreplay;
   }
 
-  virtual void invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) {
-    *delay += writeback ? dhit + dtran : dhit;
-  }
-
-  virtual void probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) {
-    *delay += writeback ? dhit + dtran : dhit;
+  virtual void manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+    *delay += (hit && writeback) ? dhit + dtran : dhit;
   }
 };
 
@@ -50,12 +46,8 @@ public:
   // write delay is hidden
   virtual void write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {}
 
-  virtual void invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) {
-    *delay += writeback ? dhit + dtranDown : dhit;
-  }
-
-  virtual void probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) {
-    *delay += writeback ? dhit + dtranDown : dhit;
+  virtual void manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+    *delay += (hit && writeback) ? dhit + dtranDown : dhit;
   }
 };
 
@@ -73,8 +65,7 @@ public:
 
 private:
   // hidden
-  virtual void invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) {}
-  virtual void probe(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool writeback, uint64_t *delay) {}
+  virtual void manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {}
 };
 
 #endif
