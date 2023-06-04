@@ -8,10 +8,10 @@
 /////////////////////////////////
 // base class
 
-class LLCHashBase
+class LLCHashBase  // @wsong83 LLCHash or just SliceHash ?
 {
 protected:
-  uint32_t nllc;
+  uint32_t nllc; // @wsong83 convert to template const expression?
 public:
   LLCHashBase(uint32_t nllc) : nllc(nllc) {}
   virtual void set_nllc(uint32_t size) { nllc = size; }

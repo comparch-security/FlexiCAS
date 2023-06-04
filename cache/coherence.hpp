@@ -3,6 +3,7 @@
 
 #include <type_traits>
 #include "cache/cache.hpp"
+#include "cache/llchash.hpp"
 
 class OuterCohPortBase;
 class InnerCohPortBase;
@@ -130,5 +131,32 @@ template<typename CacheT, typename OuterT, typename CoreT,
          typename = typename std::enable_if<std::is_base_of<CoreInterfaceBase, CoreT>::value>::type> // CoreInterfaceBase <= CoreT
 using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
+/////////////////////////////////
+// Slice dispatcher needed normally needed for sliced LLC
+
+// generic dispatcher
+// NLLC: number of LLC slices
+// HT: hasher type
+template<int NLLC, typename HT,
+         typename = typename std::enable_if<std::is_base_of<LLCHashBase, HT>::value>::type > // HT <- LLCHashBase
+class SliceDispatcher : public CohMasterBase
+{
+protected:
+  std::vector<CohMasterBase*> cohm;
+  HT hasher;
+public:
+  SliceDispatcher() : hasher(NLLC) {}
+  virtual ~SliceDispatcher() {}
+  virtual void connect(CohMasterBase *c) {
+    cohm.push_back(c);
+    hasher->set_nllc(cohm.size());
+  }
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
+    this->cohm[hasher->hash(addr)]->acquire_resp(addr, data, cmd, delay);
+  }
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
+    this->cohm[hasher->hash(addr)]->writeback_resp(addr, data, cmd, delay);
+  }
+};
 
 #endif
