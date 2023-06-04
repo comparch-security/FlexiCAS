@@ -14,16 +14,18 @@ namespace // file visibility
     // coherence-id msg-type action
     //---------------------------------------
     // msg type:
-    // [1] Acquire [2] Release (writeback) [3] Probe
+    // [1] Acquire [2] Release (writeback) [3] Probe [4] Flush
     //---------------------------------------
     // action:
     // Acquire: fetch for [0] read / [1] write
     // Release: [0] evict / [1] writeback (keep modified)
     // Probe: [0] evict / [1] writeback (keep shared)
+    // Flush: [0] evict / [1] writeback 
 
     constexpr static uint32_t acquire_msg = 1 << 8;
     constexpr static uint32_t release_msg = 2 << 8;
     constexpr static uint32_t probe_msg = 3 << 8;
+    constexpr static uint32_t flush_msg = 4 << 8;
 
     constexpr static uint32_t acquire_read = 0;
     constexpr static uint32_t acquire_write = 1;
@@ -34,10 +36,15 @@ namespace // file visibility
     constexpr static uint32_t probe_evict = 0;
     constexpr static uint32_t probe_writeback = 1;
 
+    constexpr static uint32_t flush_evict = 0;
+    constexpr static uint32_t flush_writeback = 1;
   public:
     static inline bool is_acquire(uint32_t cmd) {return (cmd & 0x0ff00ul) == acquire_msg; }
     static inline bool is_release(uint32_t cmd) {return (cmd & 0x0ff00ul) == release_msg; }
     static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
+    static inline bool is_flush(uint32_t cmd)   {return (cmd & 0x0ff00ul) == flush_msg; }
+    static inline bool is_evict(uint32_t cmd)   {return (is_probe(cmd) && probe_evict == get_action(cmd)) ||
+                                                        (is_flush(cmd) && flush_evict == get_action(cmd)); }
     static inline uint32_t get_id(uint32_t cmd) {return cmd >> 16; }
     static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
 
@@ -63,22 +70,24 @@ namespace // file visibility
 
       // set whether the probe will purge the block from inner caches
       if((is_acquire(cmd) && acquire_read == get_action(cmd)) ||
-         (is_probe(cmd)   && probe_writeback == get_action(cmd))) // need to purge
+         (is_probe(cmd)   && probe_writeback == get_action(cmd)) || // need to purge
+         (is_flush(cmd) && flush_writeback == get_action(cmd))) 
         return rv | probe_writeback;
       else {
         assert((is_acquire(cmd) && acquire_write == get_action(cmd)) ||
                (is_probe(cmd)   && probe_evict == get_action(cmd))  ||
-               (is_release(cmd) && release_evict == get_action(cmd)));
+               (is_release(cmd) && release_evict == get_action(cmd)) ||
+               (is_flush(cmd)) && flush_evict == get_action(cmd));
         return rv | probe_evict;
       }
     }
 
-    // command to evict a cache block from this cache
-    static inline uint32_t cmd_for_evict() { return attach_id(release_msg | release_evict, -1); } // eviction needs no coh_id
-
-    // command for core interface to read/write a cache block
-    static inline uint32_t cmd_for_core_read() { return acquire_msg | acquire_read; }
-    static inline uint32_t cmd_for_core_write() { return acquire_msg | acquire_write; }
+    static inline constexpr uint32_t cmd_for_evict()           { return release_msg | release_evict;     }
+    static inline constexpr uint32_t cmd_for_writeback()       { return release_msg | release_writeback; }
+    static inline constexpr uint32_t cmd_for_flush_evict()     { return flush_msg   | flush_evict;       }
+    static inline constexpr uint32_t cmd_for_flush_writeback() { return flush_msg   | flush_writeback;   }
+    static inline constexpr uint32_t cmd_for_core_read()       { return acquire_msg | acquire_read;      }
+    static inline constexpr uint32_t cmd_for_core_write()      { return acquire_msg | acquire_write;     }
 
     // set the meta after processing an acquire
     static inline void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta) {
@@ -106,9 +115,10 @@ namespace // file visibility
 
     // set the metadata after a block is written back
     static inline void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta) {
-      assert(is_release(cmd)); // must be an acquire
-      meta->to_clean();
-      if(release_evict == get_action(cmd)) meta->to_invalid();
+      if(is_release(cmd)){
+        meta->to_clean();
+        if(release_evict == get_action(cmd)) meta->to_invalid();
+      }
     }
 
     // set the meta after the block is released
@@ -170,8 +180,8 @@ public:
   virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0; }
   virtual uint64_t addr(uint32_t s) const {
     uint64_t addr = tag << TOfst;
-    if(IW > 0) {
-      uint32_t index_mask = (1 << IW) - 1;
+    if constexpr (IW > 0) {
+      constexpr uint32_t index_mask = (1 << IW) - 1;
       addr |= (s & index_mask) << (TOfst - IW);
     }
     return addr;
@@ -205,7 +215,7 @@ class OuterPortMSI : public OuterPortMSIUncached<MT, DT>
 public:
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, uint32_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
-    bool writeback;
+    bool hit, writeback = false;
     if(this->cache->hit(addr, &ai, &s, &w)) {
       auto meta = this->cache->access(ai, s, w); // oddly here, `this->' is required by the g++ 11.3.0 @wsong83
       CMDataBase *data = nullptr;
@@ -225,8 +235,8 @@ public:
 
       // update meta
       Policy::meta_after_probe_ack(cmd, meta);
-      this->cache->hook_probe(addr, ai, s, w, !meta->is_valid(), writeback, delay);
     }
+    this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
   }
 };
 
@@ -248,9 +258,11 @@ public:
       meta = this->cache->access(ai, s, w);
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay); // sync if necessary
-      if(Policy::need_promote(cmd, meta) && !isLLC) {  // promote permission if needed
-        outer->acquire_req(addr, meta, data, cmd, delay);
-        hit = false;
+      if constexpr (!isLLC) {
+        if(Policy::need_promote(cmd, meta)) {  // promote permission if needed
+          outer->acquire_req(addr, meta, data, cmd, delay);
+          hit = false;
+        }
       }
     } else { // miss
       // get the way to be replaced
@@ -261,7 +273,7 @@ public:
         auto replace_addr = meta->addr(s);
         if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()), delay); // sync if necessary
         if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
-        this->cache->hook_invalid(replace_addr, ai, s, w, writeback, delay);
+        this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
       }
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }
@@ -271,15 +283,27 @@ public:
     this->cache->hook_read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    uint32_t ai, s, w;
-    CMMetadataBase *meta;
-    auto h = this->cache->hit(addr, &ai, &s, &w);
-    assert(h); // must hit
-    meta = this->cache->access(ai, s, w);
-    if constexpr (!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data);
-    Policy::meta_after_release(cmd, meta);
-    this->cache->hook_write(addr, ai, s, w, true, delay);
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd, uint64_t *delay) {
+    if (isLLC || Policy::is_release(cmd)) {
+      uint32_t ai, s, w;
+      bool writeback, hit = this->cache->hit(addr, &ai, &s, &w); assert(hit); // must hit
+      CMMetadataBase *meta = this->cache->access(ai, s, w);
+      CMDataBase *data = nullptr;
+      if constexpr (std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if(Policy::is_release(cmd)) {
+        if constexpr (std::is_void<DT>::value) data->copy(data_inner);
+        Policy::meta_after_release(cmd, meta);
+        this->cache->hook_write(addr, ai, s, w, hit, delay);
+      } else {
+        assert(Policy::is_flush(cmd));
+        probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay);
+        if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
+        this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
+      }
+    } else {
+      assert(Policy::is_flush(cmd) && !isLLC);
+      outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
+    }
   }
 };
 
@@ -309,25 +333,23 @@ class CoreInterfaceMSI : public CoreInterfaceBase
     if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-      if(Policy::need_promote(cmd, meta) && !isLLC) {
-        outer->acquire_req(addr, meta, data, cmd, delay);
-        hit = false;
+      if constexpr (!isLLC) {
+        if(Policy::need_promote(cmd, meta)) {
+          outer->acquire_req(addr, meta, data, cmd, delay);
+          hit = false;
+        }
       }
     } else { // miss
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       meta = this->cache->access(ai, s, w);
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-
       if(meta->is_valid()) {
         auto replace_addr = meta->addr(s);
-        // writeback if dirty
-        if(meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay);
-        this->cache->hook_invalid(replace_addr, ai, s, w, writeback, delay);
+        if(meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
+        this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
       }
-
-      // fetch the missing block
-      outer->acquire_req(addr, meta, data, cmd, delay);
+      outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }
 
     if(cmd == Policy::cmd_for_core_write()) {
@@ -336,6 +358,23 @@ class CoreInterfaceMSI : public CoreInterfaceBase
     } else
       this->cache->hook_read(addr, ai, s, w, hit, delay);
     return data;
+  }
+
+  inline void manage(uint64_t addr, uint32_t cmd, uint64_t *delay) {
+    if constexpr (isLLC) {
+      uint32_t ai, s, w;
+      bool hit, writeback = false;
+      CMMetadataBase *meta = nullptr;
+      CMDataBase *data = nullptr;
+      if(hit = this->cache->hit(addr, &ai, &s, &w)){
+        meta = this->cache->access(ai, s, w);
+        if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+        if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
+      }
+      this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
+    } else {
+      outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
+    }
   }
 
 public:
@@ -348,14 +387,8 @@ public:
     if constexpr (!std::is_void<DT>::value) m_data->copy(data);
   }
 
-  virtual void flush(uint64_t addr, uint64_t *delay) {
-    assert(nullptr == "Error: L1.flush(addr) is not implemented yet!");
-  }
-
-  virtual void writeback(uint64_t addr, uint64_t *delay) {
-    assert(nullptr == "Error: L1.writeback(addr) is not implemented yet!");
-  }
-
+  virtual void flush(uint64_t addr, uint64_t *delay)     { manage(addr, Policy::cmd_for_flush_evict(),     delay); }
+  virtual void writeback(uint64_t addr, uint64_t *delay) { manage(addr, Policy::cmd_for_flush_writeback(), delay); }
   virtual void writeback_invalidate(uint64_t *delay) {
     assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
   }
