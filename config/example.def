@@ -54,8 +54,7 @@ type llc_type          = CacheSkewed(LLCIW, LLCWN, LLCPartitionN, llc_metadata_t
 type llc_inner_type    = InnerPortMSIBroadcast(llc_metadata_type, data_type, true);
 type llc_outer_type    = OuterPortMSIUncached(llc_metadata_type, data_type);
 type llc_cache_type    = CoherentCacheNorm(llc_type, llc_outer_type, llc_inner_type);
-create llc = llc_cache_type;
-//create llc = llc_cache_type[4]; // 4 shared llc slices
+create llc = llc_cache_type[4]; // 4 shared llc slices
 
 // LLC dispatcher
 type llc_hash_func       = LLCHashHash();
@@ -72,7 +71,7 @@ connect l1[1:0] -> l2[0];
 connect l1[3:2] -> l2[1];
 connect l1[5:4] -> l2[2];
 connect l1[7:6] -> l2[3];
-connect l2 -> llc;
+dispatch llc_dispatcher: l2 -> llc;
 connect llc -> mem;
 
 // toDo: attach PFC

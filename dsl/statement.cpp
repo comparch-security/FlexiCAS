@@ -30,6 +30,7 @@ void CodeGen::init() {
   decoders.push_back(new StatementTypeDef);
   decoders.push_back(new StatementCreate);
   decoders.push_back(new StatementConnect);
+  decoders.push_back(new StatementDispatch);
 
   decoders.push_back(new StatementError); // always the final one
 
@@ -92,6 +93,35 @@ void CodeGen::emit_cpp(std::ofstream &file, const std::string& h) {
     file << manager->name << "[" << mi << "]" << manager->etype->get_inner() << ", ";
     file << manager->name << "[" << mi << "]" << manager->etype->get_inner() << "->connect(";
     file << client->name << "[" << ci << "]" << client->etype->get_outer() << "));" << std::endl;
+  }
+
+  file << std::endl;
+  file << "  // connect by dispatch" << std::endl;
+  for(auto c:dispatch_outer) {
+    auto dispatcher = c.first;
+    auto manager = c.second.first;
+    int mi = c.second.second;
+    file << "  " << dispatcher->name << "[0]->connect(";
+    file << manager->name << "[" << mi << "]" << manager->etype->get_inner() << ");" << std::endl;
+  }
+  for(auto c:dispatch_connections) {
+    auto dispatcher = std::get<0>(c);
+    auto client = std::get<1>(c).first;
+    int ci = std::get<1>(c).second;
+    auto manager = std::get<2>(c).first;
+    int mi = std::get<2>(c).second;
+    file << "  " << client->name << "[" << ci << "]" << client->etype->get_outer() << "->connect(";
+    file << dispatcher->name << "[0] , ";
+    file << manager->name << "[" << mi << "]" << manager->etype->get_inner() << "->connect(";
+    file << client->name << "[" << ci << "]" << client->etype->get_outer() << "));" << std::endl;
+  }
+  for(auto c:dispatch_inner) {
+    auto client = c.first.first;
+    int ci = c.first.second;
+    auto manager = c.second.first;
+    int mi = c.second.second;
+    file << "  " << manager->name << "[" << mi << "]" << manager->etype->get_inner() << "->connect(";
+    file << client->name << "[" << ci << "]" << client->etype->get_outer() << ");" << std::endl;
   }
   file << std::endl;  
   file << "}" << std::endl;
@@ -234,6 +264,86 @@ bool StatementConnect::decode(const char* line) {
 
   for(int i=r1; i<=r0; i++)
     codegendb.connections.push_back(std::make_pair(std::make_pair(client_entity, i), std::make_pair(manager_entity, mi)));
+
+  return true;
+}
+
+StatementDispatch::StatementDispatch() : StatementBase(R_LS+"dispatch"+R_VAR+":"+R_VAR+R_RI+"->"+R_VAR+R_RI+R_SE) {}
+
+bool StatementDispatch::decode(const char* line) {
+  if(!match(line)) return false;
+
+  // get dispatcher
+  std::string dispatcher(cm[1]);
+  if(!entitydb.entities.count(dispatcher)) {
+    std::cerr << "[Decode] Fail to match `" << dispatcher << "' with a created entity." << std::endl;
+  }
+  auto dispatcher_entity = entitydb.entities[dispatcher];
+
+  // get client
+  std::string client(cm[2]);
+  if(!entitydb.entities.count(client)) {
+    std::cerr << "[Decode] Fail to match `" << client << "' with a created entity." << std::endl;
+  }
+  auto client_entity = entitydb.entities[client];
+
+  // get client range
+  int c0 = 0, c1 = 0;
+  if(cm[3].length()) { // has start range
+    if(!codegendb.parse_int(cm[4], c0)) return false;
+    if(c0 < 0 || c0 >= client_entity->size) {
+      std::cerr << "[Decode] " << cm[3] << " out of the valid range [" << client_entity->size-1 << ":0] of " << client << std::endl;
+      return false;
+    }
+
+    if(cm[5].length()) { // has end range
+      if(!codegendb.parse_int(cm[6], c1)) return false;
+      if(c0 < c1 || c1 >= client_entity->size) {
+        std::cerr << "[Decode] " << cm[3] << " out of the valid range [" << client_entity->size-1 << ":0] of " << client << std::endl;
+        return false;
+      }
+    } else c1 = c0;
+  } else { // no start range
+    c0 = client_entity->size-1;
+  }
+
+  // get manager
+  std::string manager(cm[7]);
+  if(!entitydb.entities.count(manager)) {
+    std::cerr << "[Decode] Fail to match `" << manager << "' with a created entity." << std::endl;
+  }
+  auto manager_entity = entitydb.entities[manager];
+
+  // get client range
+  int m0 = 0, m1 = 0;
+  if(cm[8].length()) { // has start range
+    if(!codegendb.parse_int(cm[9], m0)) return false;
+    if(m0 < 0 || m0 >= manager_entity->size) {
+      std::cerr << "[Decode] " << cm[8] << " out of the valid range [" << manager_entity->size-1 << ":0] of " << manager << std::endl;
+      return false;
+    }
+
+    if(cm[10].length()) { // has end range
+      if(!codegendb.parse_int(cm[11], m1)) return false;
+      if(m0 < m1 || m1 >= manager_entity->size) {
+        std::cerr << "[Decode] " << cm[8] << " out of the valid range [" << manager_entity->size-1 << ":0] of " << manager << std::endl;
+        return false;
+      }
+    } else m1 = m0;
+  } else { // no start range
+    m0 = manager_entity->size-1;
+  }
+
+  // add to emitter
+  for(int i=m1; i<=m0; i++)
+    codegendb.dispatch_outer.push_back(std::make_pair(dispatcher_entity, std::make_pair(manager_entity, i)));
+
+  for(int i=c1; i<=c0; i++)
+    codegendb.dispatch_connections.push_back(std::make_tuple(dispatcher_entity, std::make_pair(client_entity, i), std::make_pair(manager_entity, m1)));
+
+  for(int i=m1+1; i<=m0; i++)
+    for(int j=c1+1; j<=c0; j++)
+      codegendb.dispatch_inner.push_back(std::make_pair(std::make_pair(client_entity, i), std::make_pair(manager_entity, j)));
 
   return true;
 }
