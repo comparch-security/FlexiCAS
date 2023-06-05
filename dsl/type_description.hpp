@@ -260,7 +260,7 @@ class TypeSimpleMemoryModel : public TypeInnerCohPortBase
   const std::string tname;
 public:
   TypeSimpleMemoryModel(const std::string &name) : TypeInnerCohPortBase(name), tname("SimpleMemoryModel") {}
-  virtual bool set(std::list<std::string> &values);  
+  virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
@@ -330,6 +330,41 @@ public:
   TypeReplaceLRU(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceLRU") {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
+};
+
+////////////////////////////// hasher and dispatcher ///////////////////////////////////////////////
+
+class TypeLLCHashBase : public Description {
+public:
+  TypeLLCHashBase(const std::string &name) : Description(name) { types.insert("LLCHashBase"); }
+  virtual void emit_header();
+};
+
+class TypeLLCHashNorm : public TypeLLCHashBase {
+  const std::string tname;
+public:
+  TypeLLCHashNorm(const std::string &name) : TypeLLCHashBase(name), tname("LLCHashNorm") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+class TypeLLCHashHash : public TypeLLCHashBase {
+  const std::string tname;
+public:
+  TypeLLCHashHash(const std::string &name) : TypeLLCHashBase(name), tname("LLCHashHash") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+class TypeSliceDispatcher : public TypeInnerCohPortBase
+{
+  int NLLC; std::string HT;
+  const std::string tname;
+public:
+  TypeSliceDispatcher(const std::string &name) : TypeInnerCohPortBase(name), tname("SliceDispatcher") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
 };
 
 ////////////////////////////// Delay ///////////////////////////////////////////////

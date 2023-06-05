@@ -142,20 +142,20 @@ template<int NLLC, typename HT,
 class SliceDispatcher : public CohMasterBase
 {
 protected:
+  const std::string name;
   std::vector<CohMasterBase*> cohm;
   HT hasher;
 public:
-  SliceDispatcher() : hasher(NLLC) {}
+  SliceDispatcher(const std::string &n) : name(n), hasher(NLLC) {}
   virtual ~SliceDispatcher() {}
   virtual void connect(CohMasterBase *c) {
     cohm.push_back(c);
-    hasher->set_nllc(cohm.size());
   }
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
-    this->cohm[hasher->hash(addr)]->acquire_resp(addr, data, cmd, delay);
+    this->cohm[hasher.hash(addr)]->acquire_resp(addr, data, cmd, delay);
   }
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
-    this->cohm[hasher->hash(addr)]->writeback_resp(addr, data, cmd, delay);
+    this->cohm[hasher.hash(addr)]->writeback_resp(addr, data, cmd, delay);
   }
 };
 

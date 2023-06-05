@@ -57,6 +57,11 @@ type llc_cache_type    = CoherentCacheNorm(llc_type, llc_outer_type, llc_inner_t
 create llc = llc_cache_type;
 //create llc = llc_cache_type[4]; // 4 shared llc slices
 
+// LLC dispatcher
+type llc_hash_func       = LLCHashHash();
+type llc_dispatcher_type = SliceDispatcher(4, llc_hash_func);
+create llc_dispatcher    = llc_dispatcher_type;
+
 // initiate memory
 type memory_delay_type = DelayMemory(100); // 100 cycles for grant to inner
 type memory_type       = SimpleMemoryModel(data_type, memory_delay_type);
