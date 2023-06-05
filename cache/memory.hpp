@@ -12,7 +12,7 @@ template<typename DT, typename DLY,
 class SimpleMemoryModel : public CohMasterBase
 {
 protected:
-  std::string name;
+  const std::string name;
   std::unordered_map<uint64_t, char *> pages;
   DLY *timer;      // delay estimator
 

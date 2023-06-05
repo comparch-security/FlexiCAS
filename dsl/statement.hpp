@@ -9,6 +9,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <cstring>
+#include <tuple>
 
 // base class for processing a statement
 struct StatementBase
@@ -38,6 +39,9 @@ struct CodeGen
   std::list<CacheEntity *> entities;
   std::map<std::string, int> consts;
   std::list<std::pair<std::pair<CacheEntity *, int>, std::pair<CacheEntity *, int> > > connections;
+  std::list<std::pair<CacheEntity *, std::pair<CacheEntity *, int> > > dispatch_outer;
+  std::list<std::tuple<CacheEntity *, std::pair<CacheEntity *, int>, std::pair<CacheEntity *, int> > > dispatch_connections;
+  std::list<std::pair<std::pair<CacheEntity *, int>, std::pair<CacheEntity *, int> > > dispatch_inner;
 
   bool debug;
 
@@ -75,6 +79,7 @@ GEN_STATEMENT(TypeVoid);
 GEN_STATEMENT(TypeDef);
 GEN_STATEMENT(Create);
 GEN_STATEMENT(Connect);
+GEN_STATEMENT(Dispatch);
 GEN_STATEMENT(Error);
 
 #undef GEN_STATEMENT

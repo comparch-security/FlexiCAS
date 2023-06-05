@@ -32,6 +32,9 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "IndexRandom")           descriptor = new TypeIndexRandom(type_name);
   if(base_name == "ReplaceFIFO")           descriptor = new TypeReplaceFIFO(type_name);
   if(base_name == "ReplaceLRU")            descriptor = new TypeReplaceLRU(type_name);
+  if(base_name == "LLCHashNorm")           descriptor = new TypeLLCHashNorm(type_name);
+  if(base_name == "LLCHashHash")           descriptor = new TypeLLCHashHash(type_name);
+  if(base_name == "SliceDispatcher")       descriptor = new TypeSliceDispatcher(type_name);
   if(base_name == "DelayL1")               descriptor = new TypeDelayL1(type_name);
   if(base_name == "DelayCoherentCache")    descriptor = new TypeDelayCoherentCache(type_name);
   if(base_name == "DelayMemory")           descriptor = new TypeDelayMemory(type_name);
@@ -369,6 +372,41 @@ bool TypeReplaceLRU::set(std::list<std::string> &values) {
 void TypeReplaceLRU::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
 }  
+
+void TypeLLCHashBase::emit_header() { codegendb.add_header("cache/llchash.hpp"); }
+
+bool TypeLLCHashNorm::set(std::list<std::string> &values) {
+  return true;
+}
+
+void TypeLLCHashNorm::emit(std::ofstream &file) {
+  file << "typedef " << tname << " " << this->name << ";" << std::endl;
+}
+
+bool TypeLLCHashHash::set(std::list<std::string> &values) {
+  return true;
+}
+
+void TypeLLCHashHash::emit(std::ofstream &file) {
+  file << "typedef " << tname << " " << this->name << ";" << std::endl;
+}
+
+bool TypeSliceDispatcher::set(std::list<std::string> &values) {
+  if(values.size() != 2) {
+    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  if(!codegendb.parse_int(*it, NLLC)) return false; it++;
+  HT = *it;  if(!this->check(tname, "HT", *it, "LLCHashBase", false)) return false; it++;
+  return true;
+}
+
+void TypeSliceDispatcher::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << NLLC << "," << HT << "> " << this->name << ";" << std::endl;
+}
+
+void TypeSliceDispatcher::emit_header() { codegendb.add_header("cache/coherence.hpp"); }
 
 void TypeDelayBase::emit_header() { codegendb.add_header("cache/delay.hpp"); }
 

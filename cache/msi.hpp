@@ -188,7 +188,6 @@ public:
   }
 };
 
-
 // uncached MSI outer port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
