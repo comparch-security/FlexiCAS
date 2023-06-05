@@ -13,6 +13,7 @@ DescriptionDB::~DescriptionDB() {
 
 bool DescriptionDB::create(const std::string &type_name, const std::string &base_name, std::list<std::string> &params) {
   Description *descriptor = nullptr;
+  if(base_name == "void")                  descriptor = new TypeVoid(type_name);
   if(base_name == "MetadataMSI")           descriptor = new TypeMetadataMSI(type_name);
   if(base_name == "Data64B")               descriptor = new TypeData64B(type_name);
   if(base_name == "CacheArrayNorm")        descriptor = new TypeCacheArrayNorm(type_name);
@@ -47,6 +48,18 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
 }
 
 void Description::emit_header() { codegendb.add_header("cache/cache.hpp"); }
+
+bool TypeVoid::set(std::list<std::string> &values) {
+  if(values.size() != 0) {
+    std::cerr << "[Mismatch] " << tname << " has no parameter!" << std::endl;
+    return false;
+  }
+  return true;
+}
+
+void TypeVoid::emit(std::ofstream &file) {
+  file << "typedef " << tname << " " << this->name << ";" << std::endl;
+}
 
 bool TypeMetadataMSI::set(std::list<std::string> &values) {
   if(values.size() != 3) {

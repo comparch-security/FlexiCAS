@@ -26,6 +26,7 @@ void CodeGen::init() {
   decoders.push_back(new StatementComment);
   decoders.push_back(new StatementNameSpace);
   decoders.push_back(new StatementConst);
+  decoders.push_back(new StatementTypeVoid);
   decoders.push_back(new StatementTypeDef);
   decoders.push_back(new StatementCreate);
   decoders.push_back(new StatementConnect);
@@ -118,6 +119,20 @@ StatementComment::StatementComment() : StatementBase(R_LS+R_SE) {}
 bool StatementComment::decode(const char* line) {
   return match(line); // doing nothing
 }
+
+StatementTypeVoid::StatementTypeVoid() : StatementBase(R_LS+"type"+R_VAR+"="+"\\s*void\\s*"+R_SE) {}
+
+bool StatementTypeVoid::decode(const char* line) {
+  if(!match(line)) return false;
+  std::list<std::string> params;
+  if(typedb.create(cm[1], "void", params)) return true;
+
+  // report as failed to decode
+  std::cerr << "[Decode] Cannot decode: type " << cm[1] << " = " << "void";
+  std::cerr << std::endl;
+  return false;
+}
+
 
 StatementTypeDef::StatementTypeDef() : StatementBase(R_LS+"type"+R_VAR+"="+R_VAR+R_ARGL+R_SE) {}
 

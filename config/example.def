@@ -16,8 +16,10 @@ const LLCPartitionN = 2; // LLC skew partitions
 const EnableDelay   = true;  // enable delay estimation
 const EnableMonitor = false; // disable pfc monitoring
 
-// initiate the L1 cache
+// do we simulate data
+// type data_type        = void;
 type data_type        = Data64B();
+
 type l1_metadata_type = MetadataMSI(AddrWidth, L1IW, L1TagOffset);
 type l1_indexer_type  = IndexNorm(L1IW, BlockOffset);
 type l1_replacer_type = ReplaceLRU(L1IW, L1WN);
