@@ -41,7 +41,10 @@ public:
   std::set<std::string> types; // list the types matching this description
 
   bool check(const std::string& tname, const std::string& param, const std::string& value, const std::string& constraint, bool allow_void) {
-    if(allow_void && value == "void") return true;
+    if(allow_void) {
+      if (value == "void") return true;
+      if (typedb.types.count(value) && typedb.types[value]->comply("void")) return true;
+    }
     if(!typedb.types.count(value)) {
       std::cerr << "[Undefined Type] " << tname << "'" << param << ": `" << value << "' is not defined!" << std::endl;
       return false;
@@ -64,6 +67,16 @@ public:
   virtual std::string get_inner() { return std::string(); }
 
 };
+
+////////////////////////////// Data Types ///////////////////////////////////////////////
+
+class TypeVoid : public Description {
+  const std::string tname;
+public: TypeVoid(const std::string &name) : Description(name), tname("void") { types.insert("void"); }
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
 
 ////////////////////////////// Data Types ///////////////////////////////////////////////
 
