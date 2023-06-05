@@ -254,12 +254,12 @@ public:
 
 ////////////////////////////// Memory ///////////////////////////////////////////////
 
-class TypeSimpleMemoryModel : public TypeCoreInterfaceBase
+class TypeSimpleMemoryModel : public TypeInnerCohPortBase
 {
   std::string DT, DLY;
   const std::string tname;
 public:
-  TypeSimpleMemoryModel(const std::string &name) : TypeCoreInterfaceBase(name), tname("SimpleMemoryModel") {}
+  TypeSimpleMemoryModel(const std::string &name) : TypeInnerCohPortBase(name), tname("SimpleMemoryModel") {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
   virtual void emit_header();
