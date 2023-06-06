@@ -146,7 +146,7 @@ protected:
   std::vector<CohMasterBase*> cohm;
   HT hasher;
 public:
-  SliceDispatcher(const std::string &n) : name(n), hasher(NLLC) {}
+  SliceDispatcher(const std::string &n) : name(n) {}
   virtual ~SliceDispatcher() {}
   virtual void connect(CohMasterBase *c) {
     cohm.push_back(c);

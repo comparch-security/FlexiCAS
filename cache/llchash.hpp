@@ -4,31 +4,30 @@
 #include <unordered_map>
 #include <cstdint>
 #include <cassert>
+#include <type_traits>
 
 /////////////////////////////////
 // base class
 
 class LLCHashBase  // @wsong83 LLCHash or just SliceHash ?
 {
-protected:
-  const uint32_t nllc; // @wsong83 convert to template const expression?
 public:
-  LLCHashBase(uint32_t nllc) : nllc(nllc) {}
   virtual uint32_t operator () (uint64_t addr) = 0;
 };
 
 /////////////////////////////////
 // normal (no hash)
-
+template<int NLLC, int BlkOfst>
 class LLCHashNorm : public LLCHashBase
 {
 public:
-  LLCHashNorm(uint32_t nllc) : LLCHashBase(nllc) {}
-  virtual uint32_t operator () (uint64_t addr) { return (addr >> 6) % nllc; }
+  virtual uint32_t operator () (uint64_t addr) { return (addr >> BlkOfst) % NLLC; }
 };
 
 /////////////////////////////////
-// hash
+// Inel complex address scheme
+template<int NLLC,
+         typename = typename std::enable_if<NLLC <= 8 && NLLC == ((~NLLC + 1) & NLLC)>::type > // NLLC <= 8 and is power of 2
 class LLCHashHash : public LLCHashBase
 {
   uint32_t addr_xor(uint64_t mask, uint64_t addr) {
@@ -43,20 +42,11 @@ class LLCHashHash : public LLCHashBase
   }
 
 public:
-  LLCHashHash(uint32_t nllc) : LLCHashBase(nllc) {}
-
   uint32_t virtual operator () (uint64_t addr) {
-    switch(nllc) {
-    case 2:
-      return addr_xor(0x15f575440, addr);
-    case 4:
-      return (addr_xor(0x6b5faa880, addr) << 1) | addr_xor(0x35f575440, addr);
-    case 8:
-      return (addr_xor(0x3cccc93100, addr) << 2) |
-             (addr_xor(0x2eb5faa880, addr) << 1) |
-             addr_xor(0x1b5f575400, addr);
-    }
-    return 0;
+    if constexpr (NLLC == 2) return addr_xor(0x15f575440, addr);
+    if constexpr (NLLC == 4) return (addr_xor(0x6b5faa880,  addr) << 1) |  addr_xor(0x35f575440,  addr);
+    if constexpr (NLLC == 8) return (addr_xor(0x3cccc93100, addr) << 2) | (addr_xor(0x2eb5faa880, addr) << 1) | addr_xor(0x1b5f575400, addr);
+    return 0; // NLLC == 1
   }
 };
 
