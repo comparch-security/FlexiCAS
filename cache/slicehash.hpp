@@ -1,5 +1,5 @@
-#ifndef CM_CACHE_LLCHASH_HPP_
-#define CM_CACHE_LLCHASH_HPP_
+#ifndef CM_CACHE_SLICEHASH_HPP_
+#define CM_CACHE_SLICEHASH_HPP_
 
 #include <unordered_map>
 #include <cstdint>
@@ -9,7 +9,7 @@
 /////////////////////////////////
 // base class
 
-class LLCHashBase  // @wsong83 LLCHash or just SliceHash ?
+class SliceHashBase
 {
 public:
   virtual uint32_t operator () (uint64_t addr) = 0;
@@ -18,17 +18,17 @@ public:
 /////////////////////////////////
 // normal (no hash)
 template<int NLLC, int BlkOfst>
-class LLCHashNorm : public LLCHashBase
+class SliceHashNorm : public SliceHashBase
 {
 public:
   virtual uint32_t operator () (uint64_t addr) { return (addr >> BlkOfst) % NLLC; }
 };
 
 /////////////////////////////////
-// Inel complex address scheme
+// Inel complex address scheme (CAS)
 template<int NLLC,
          typename = typename std::enable_if<NLLC <= 8 && NLLC == ((~NLLC + 1) & NLLC)>::type > // NLLC <= 8 and is power of 2
-class LLCHashHash : public LLCHashBase
+class SliceHashIntelCAS : public SliceHashBase
 {
   uint32_t addr_xor(uint64_t mask, uint64_t addr) {
     auto rv = mask & addr;
@@ -43,9 +43,9 @@ class LLCHashHash : public LLCHashBase
 
 public:
   uint32_t virtual operator () (uint64_t addr) {
-    if constexpr (NLLC == 2) return addr_xor(0x15f575440, addr);
-    if constexpr (NLLC == 4) return (addr_xor(0x6b5faa880,  addr) << 1) |  addr_xor(0x35f575440,  addr);
-    if constexpr (NLLC == 8) return (addr_xor(0x3cccc93100, addr) << 2) | (addr_xor(0x2eb5faa880, addr) << 1) | addr_xor(0x1b5f575400, addr);
+    if constexpr (NLLC == 2) return  addr_xor(0x15f575440ull,  addr);
+    if constexpr (NLLC == 4) return (addr_xor(0x6b5faa880ull,  addr) << 1) |  addr_xor(0x35f575440ull,  addr);
+    if constexpr (NLLC == 8) return (addr_xor(0x3cccc93100ull, addr) << 2) | (addr_xor(0x2eb5faa880ull, addr) << 1) | addr_xor(0x1b5f575400ull, addr);
     return 0; // NLLC == 1
   }
 };

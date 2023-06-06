@@ -3,7 +3,7 @@
 
 #include <type_traits>
 #include "cache/cache.hpp"
-#include "cache/llchash.hpp"
+#include "cache/slicehash.hpp"
 
 class OuterCohPortBase;
 class InnerCohPortBase;
@@ -135,10 +135,9 @@ using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 // Slice dispatcher needed normally needed for sliced LLC
 
 // generic dispatcher
-// NLLC: number of LLC slices
 // HT: hasher type
-template<int NLLC, typename HT,
-         typename = typename std::enable_if<std::is_base_of<LLCHashBase, HT>::value>::type > // HT <- LLCHashBase
+template<typename HT,
+         typename = typename std::enable_if<std::is_base_of<SliceHashBase, HT>::value>::type > // HT <- SliceHashBase
 class SliceDispatcher : public CohMasterBase
 {
 protected:

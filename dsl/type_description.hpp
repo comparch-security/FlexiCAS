@@ -334,31 +334,33 @@ public:
 
 ////////////////////////////// hasher and dispatcher ///////////////////////////////////////////////
 
-class TypeLLCHashBase : public Description {
+class TypeSliceHashBase : public Description {
 public:
-  TypeLLCHashBase(const std::string &name) : Description(name) { types.insert("LLCHashBase"); }
+  TypeSliceHashBase(const std::string &name) : Description(name) { types.insert("SliceHashBase"); }
   virtual void emit_header();
 };
 
-class TypeLLCHashNorm : public TypeLLCHashBase {
+class TypeSliceHashNorm : public TypeSliceHashBase {
+  int NLLC, BlkOfst;
   const std::string tname;
 public:
-  TypeLLCHashNorm(const std::string &name) : TypeLLCHashBase(name), tname("LLCHashNorm") {}
+  TypeSliceHashNorm(const std::string &name) : TypeSliceHashBase(name), tname("SliceHashNorm") {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
 
-class TypeLLCHashHash : public TypeLLCHashBase {
+class TypeSliceHashIntelCAS : public TypeSliceHashBase {
+  int NLLC;
   const std::string tname;
 public:
-  TypeLLCHashHash(const std::string &name) : TypeLLCHashBase(name), tname("LLCHashHash") {}
+  TypeSliceHashIntelCAS(const std::string &name) : TypeSliceHashBase(name), tname("SliceHashIntelCAS") {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
 
 class TypeSliceDispatcher : public TypeInnerCohPortBase
 {
-  int NLLC; std::string HT;
+  std::string HT;
   const std::string tname;
 public:
   TypeSliceDispatcher(const std::string &name) : TypeInnerCohPortBase(name), tname("SliceDispatcher") {}

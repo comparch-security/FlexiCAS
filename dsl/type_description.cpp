@@ -32,8 +32,8 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "IndexRandom")           descriptor = new TypeIndexRandom(type_name);
   if(base_name == "ReplaceFIFO")           descriptor = new TypeReplaceFIFO(type_name);
   if(base_name == "ReplaceLRU")            descriptor = new TypeReplaceLRU(type_name);
-  if(base_name == "LLCHashNorm")           descriptor = new TypeLLCHashNorm(type_name);
-  if(base_name == "LLCHashHash")           descriptor = new TypeLLCHashHash(type_name);
+  if(base_name == "SliceHashNorm")         descriptor = new TypeSliceHashNorm(type_name);
+  if(base_name == "SliceHashIntelCAS")     descriptor = new TypeSliceHashIntelCAS(type_name);
   if(base_name == "SliceDispatcher")       descriptor = new TypeSliceDispatcher(type_name);
   if(base_name == "DelayL1")               descriptor = new TypeDelayL1(type_name);
   if(base_name == "DelayCoherentCache")    descriptor = new TypeDelayCoherentCache(type_name);
@@ -373,37 +373,49 @@ void TypeReplaceLRU::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
 }  
 
-void TypeLLCHashBase::emit_header() { codegendb.add_header("cache/llchash.hpp"); }
+void TypeSliceHashBase::emit_header() { codegendb.add_header("cache/slicehash.hpp"); }
 
-bool TypeLLCHashNorm::set(std::list<std::string> &values) {
-  return true;
-}
-
-void TypeLLCHashNorm::emit(std::ofstream &file) {
-  file << "typedef " << tname << " " << this->name << ";" << std::endl;
-}
-
-bool TypeLLCHashHash::set(std::list<std::string> &values) {
-  return true;
-}
-
-void TypeLLCHashHash::emit(std::ofstream &file) {
-  file << "typedef " << tname << " " << this->name << ";" << std::endl;
-}
-
-bool TypeSliceDispatcher::set(std::list<std::string> &values) {
+bool TypeSliceHashNorm::set(std::list<std::string> &values) {
   if(values.size() != 2) {
     std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
   if(!codegendb.parse_int(*it, NLLC)) return false; it++;
-  HT = *it;  if(!this->check(tname, "HT", *it, "LLCHashBase", false)) return false; it++;
+  if(!codegendb.parse_int(*it, BlkOfst)) return false; it++;
+  return true;
+}
+
+void TypeSliceHashNorm::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << NLLC << "," << BlkOfst << "> " << this->name << ";" << std::endl;
+}
+
+bool TypeSliceHashIntelCAS::set(std::list<std::string> &values) {
+  if(values.size() != 1) {
+    std::cerr << "[Mismatch] " << tname << " needs 1 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  if(!codegendb.parse_int(*it, NLLC)) return false; it++;
+  return true;
+}
+
+void TypeSliceHashIntelCAS::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << NLLC << "> " << this->name << ";" << std::endl;
+}
+
+bool TypeSliceDispatcher::set(std::list<std::string> &values) {
+  if(values.size() != 1) {
+    std::cerr << "[Mismatch] " << tname << " needs 1 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  HT = *it;  if(!this->check(tname, "HT", *it, "SliceHashBase", false)) return false; it++;
   return true;
 }
 
 void TypeSliceDispatcher::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << NLLC << "," << HT << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << HT << "> " << this->name << ";" << std::endl;
 }
 
 void TypeSliceDispatcher::emit_header() { codegendb.add_header("cache/coherence.hpp"); }
