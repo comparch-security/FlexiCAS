@@ -152,10 +152,10 @@ public:
     cohm.push_back(c);
   }
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
-    this->cohm[hasher.hash(addr)]->acquire_resp(addr, data, cmd, delay);
+    this->cohm[hasher(addr)]->acquire_resp(addr, data, cmd, delay);
   }
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
-    this->cohm[hasher.hash(addr)]->writeback_resp(addr, data, cmd, delay);
+    this->cohm[hasher(addr)]->writeback_resp(addr, data, cmd, delay);
   }
 };
 

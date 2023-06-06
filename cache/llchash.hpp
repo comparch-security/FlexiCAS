@@ -11,12 +11,10 @@
 class LLCHashBase  // @wsong83 LLCHash or just SliceHash ?
 {
 protected:
-  uint32_t nllc; // @wsong83 convert to template const expression?
+  const uint32_t nllc; // @wsong83 convert to template const expression?
 public:
   LLCHashBase(uint32_t nllc) : nllc(nllc) {}
-  virtual void set_nllc(uint32_t size) { nllc = size; }
-  virtual uint32_t hash(uint64_t addr) = 0;
-  virtual ~LLCHashBase() {}
+  virtual uint32_t operator () (uint64_t addr) = 0;
 };
 
 /////////////////////////////////
@@ -26,8 +24,7 @@ class LLCHashNorm : public LLCHashBase
 {
 public:
   LLCHashNorm(uint32_t nllc) : LLCHashBase(nllc) {}
-  virtual uint32_t hash(uint64_t addr) { return (addr >> 6) % nllc; }
-  virtual ~LLCHashNorm() {}
+  virtual uint32_t operator () (uint64_t addr) { return (addr >> 6) % nllc; }
 };
 
 /////////////////////////////////
@@ -35,46 +32,32 @@ public:
 class LLCHashHash : public LLCHashBase
 {
   uint32_t addr_xor(uint64_t mask, uint64_t addr) {
-    uint64_t m = mask & addr;
-    uint32_t rv = 0;
-    for(auto i=0; i<64; i++) {
-      rv ^= (m & 0x1);
-      m >>= 1;
-    }
+    auto rv = mask & addr;
+    rv = (rv >> 32) ^ (rv & 0x0ffffffffull);
+    rv = (rv >> 16) ^ (rv & 0x0ffffull);
+    rv = (rv >>  8) ^ (rv & 0x0ffull);
+    rv = (rv >>  4) ^ (rv & 0x0full);
+    rv = (rv >>  2) ^ (rv & 0x03ull);
+    rv = (rv >>  1) ^ (rv & 0x01ull);
     return rv;
   }
 
-  std::unordered_map<uint64_t, uint32_t> hash_cache;
-  
 public:
   LLCHashHash(uint32_t nllc) : LLCHashBase(nllc) {}
 
-  uint32_t virtual hash(uint64_t addr) {
-    uint32_t rv = 0;
-    if(hash_cache.count(addr)) return hash_cache[addr];
-
+  uint32_t virtual operator () (uint64_t addr) {
     switch(nllc) {
     case 2:
-      rv = addr_xor(0x15f575440, addr);
-      break;
+      return addr_xor(0x15f575440, addr);
     case 4:
-      rv = (addr_xor(0x6b5faa880, addr) << 1) | addr_xor(0x35f575440, addr);
-      break;
+      return (addr_xor(0x6b5faa880, addr) << 1) | addr_xor(0x35f575440, addr);
     case 8:
-      rv = (addr_xor(0x3cccc93100, addr) << 2) |
-           (addr_xor(0x2eb5faa880, addr) << 1) |
-            addr_xor(0x1b5f575400, addr);
-      break;
-    default:
-      //std::cout << "LLCHash: unsupport number of LLCs!";
-      assert(0 == "LLCHash: unsupport number of LLCs!");
-      return 0xffff;
+      return (addr_xor(0x3cccc93100, addr) << 2) |
+             (addr_xor(0x2eb5faa880, addr) << 1) |
+             addr_xor(0x1b5f575400, addr);
     }
-    hash_cache[addr] = rv;
-    return rv;
+    return 0;
   }
-    
-  virtual ~LLCHashHash() {}
 };
 
 #endif
