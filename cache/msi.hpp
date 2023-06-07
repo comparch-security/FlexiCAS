@@ -270,7 +270,7 @@ public:
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(meta->is_valid()) {
         auto replace_addr = meta->addr(s);
-        if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()), delay); // sync if necessary
+        if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, Policy::cmd_for_sync(Policy::attach_id(Policy::cmd_for_evict(), -1)), delay); // sync if necessary
         if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
         this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
       }
@@ -288,9 +288,10 @@ public:
       bool writeback, hit = this->cache->hit(addr, &ai, &s, &w); assert(hit); // must hit
       CMMetadataBase *meta = this->cache->access(ai, s, w);
       CMDataBase *data = nullptr;
-      if constexpr (std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if constexpr (
+        !std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(Policy::is_release(cmd)) {
-        if constexpr (std::is_void<DT>::value) data->copy(data_inner);
+        if constexpr (!std::is_void<DT>::value) data->copy(data_inner);
         Policy::meta_after_release(cmd, meta);
         this->cache->hook_write(addr, ai, s, w, hit, delay);
       } else {
