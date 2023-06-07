@@ -296,7 +296,7 @@ public:
         this->cache->hook_write(addr, ai, s, w, hit, delay);
       } else {
         assert(Policy::is_flush(cmd));
-        probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay);
+        probe_req(addr, meta, data, Policy::cmd_for_sync(Policy::attach_id(cmd, -1)), delay);
         if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
         this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
       }
