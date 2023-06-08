@@ -288,9 +288,9 @@ public:
       bool writeback, hit = this->cache->hit(addr, &ai, &s, &w); assert(hit); // must hit
       CMMetadataBase *meta = this->cache->access(ai, s, w);
       CMDataBase *data = nullptr;
-      if constexpr (std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(Policy::is_release(cmd)) {
-        if constexpr (std::is_void<DT>::value) data->copy(data_inner);
+        if constexpr (!std::is_void<DT>::value) data->copy(data_inner);
         Policy::meta_after_release(cmd, meta);
         this->cache->hook_write(addr, ai, s, w, hit, delay);
       } else {
