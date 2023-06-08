@@ -66,19 +66,17 @@ namespace // file visibility
 
     // generate the command for reverse probe
     static inline uint32_t cmd_for_sync(uint32_t cmd) {
-      uint32_t rv = attach_id(probe_msg, get_id(cmd));
-
-      // set whether the probe will purge the block from inner caches
-      if((is_acquire(cmd) && acquire_read == get_action(cmd)) ||
-         (is_probe(cmd)   && probe_writeback == get_action(cmd)) || // need to purge
-         (is_flush(cmd) && flush_writeback == get_action(cmd))) 
-        return rv | probe_writeback;
-      else {
+      if(is_acquire(cmd) && acquire_read == get_action(cmd)) {
+        return attach_id(probe_msg | probe_writeback, get_id(cmd));
+      } else if ((is_probe(cmd)   && probe_writeback == get_action(cmd)) ||
+                 (is_flush(cmd) && flush_writeback == get_action(cmd))) {
+        return attach_id(probe_msg | probe_writeback, -1);
+      } else {
         assert((is_acquire(cmd) && acquire_write == get_action(cmd)) ||
                (is_probe(cmd)   && probe_evict == get_action(cmd))  ||
                (is_release(cmd) && release_evict == get_action(cmd)) ||
                (is_flush(cmd)) && flush_evict == get_action(cmd));
-        return rv | probe_evict;
+        return attach_id(probe_msg | probe_evict, -1);
       }
     }
 
