@@ -343,7 +343,7 @@ class CoreInterfaceMSI : public CoreInterfaceBase
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if(meta->is_valid()) {
         auto replace_addr = meta->addr(s);
-        if(meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
+        if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
         this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
       }
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
