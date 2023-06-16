@@ -283,10 +283,10 @@ public:
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd, uint64_t *delay) {
     if (isLLC || Policy::is_release(cmd)) {
       uint32_t ai, s, w;
-      bool writeback, hit = this->cache->hit(addr, &ai, &s, &w); // must hit
+      bool writeback, hit = this->cache->hit(addr, &ai, &s, &w); 
       CMMetadataBase *meta = nullptr;
       if(Policy::is_release(cmd)) {
-        assert(hit);
+        assert(hit); // must hit
         meta = this->cache->access(ai, s ,w);
         if constexpr (!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data_inner);
         Policy::meta_after_release(cmd, meta);
