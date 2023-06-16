@@ -283,19 +283,24 @@ public:
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd, uint64_t *delay) {
     if (isLLC || Policy::is_release(cmd)) {
       uint32_t ai, s, w;
-      bool writeback, hit = this->cache->hit(addr, &ai, &s, &w); assert(hit); // must hit
-      CMMetadataBase *meta = this->cache->access(ai, s, w);
-      CMDataBase *data = nullptr;
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      bool writeback, hit = this->cache->hit(addr, &ai, &s, &w); // must hit
+      CMMetadataBase *meta = nullptr;
       if(Policy::is_release(cmd)) {
-        if constexpr (!std::is_void<DT>::value) data->copy(data_inner);
+        assert(hit);
+        meta = this->cache->access(ai, s ,w);
+        if constexpr (!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data_inner);
         Policy::meta_after_release(cmd, meta);
         this->cache->hook_write(addr, ai, s, w, hit, delay);
       } else {
         assert(Policy::is_flush(cmd));
-        probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay);
-        if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
-        this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
+        if(hit){
+          CMDataBase *data = nullptr; 
+          meta = this->cache->access(ai, s ,w);
+          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+          probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay);
+          if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
+          this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
+        }
       }
     } else {
       assert(Policy::is_flush(cmd) && !isLLC);

@@ -240,13 +240,13 @@ public:
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    if(hit) replacer[ai].access(s, w);
+    replacer[ai].access(s, w);
     if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
     if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    if(hit) replacer[ai].access(s, w);
+    replacer[ai].access(s, w);
     if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
     if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
   }
