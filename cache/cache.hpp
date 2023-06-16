@@ -15,14 +15,18 @@
 #include "cache/replace.hpp"
 #include "cache/delay.hpp"
 
+class CMDataBase;
+
 class CMMetadataBase
 {
 public:
   // implement a totally useless base class
   virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
   virtual void reset() {}                                   // reset the metadata
-  virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
+  virtual void init(uint64_t addr) {}                     // initialize the meta for addr
+  virtual void init(uint64_t addr, CMDataBase* data) {}  // initialize the meta for addr, only useful for mirage
   virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
+  virtual CMDataBase* get_data() { return nullptr; } // return meta's data, only useful for mirage
 
   virtual void to_invalid() {}       // change state to invalid
   virtual void to_shared() {}        // change to shared
@@ -51,6 +55,11 @@ public:
   virtual void write(uint64_t *wdata) {} // write the whole cache block
   virtual void copy(const CMDataBase *block) {} // copy the content of block
 
+  virtual bool is_valid() { return false; } // only useful for mirage
+  virtual void to_invalid() {} // only useful for mirage
+  virtual void init(CMMetadataBase* meta) {} // only useful for mirage
+  virtual CMMetadataBase* get_meta() { return nullptr; } // only useful for mirage
+
   virtual ~CMDataBase() {}
 };
 
@@ -70,6 +79,31 @@ public:
   virtual void write(uint64_t *wdata) { for(int i=0; i<8; i++) data[i] = wdata[i]; }
   virtual void copy(const CMDataBase *m_block) {
     auto block = static_cast<const Data64B *>(m_block);
+    for(int i=0; i<8; i++) data[i] = block->data[i];
+  }
+};
+
+class MirageData64B : public Data64B
+{
+protected:
+  unsigned int state : 1; // 0 : invalid, 1 : valid
+  uint64_t data[8];
+  CMMetadataBase* meta;
+
+public:
+  MirageData64B() : Data64B(), state(0), meta(nullptr) {}
+  virtual ~MirageData64B() {} 
+
+  virtual bool is_valid() { return state == 1; }
+  virtual void to_invalid() { state = 0; meta = nullptr;}
+  virtual void init(CMMetadataBase* m) { state = 1; meta = m; }
+  virtual CMMetadataBase* get_meta() { return meta; }
+  virtual void reset() { for(auto d:data) d = 0; meta = nullptr; }
+  virtual uint64_t read(unsigned int index) const { return data[index]; }
+  virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) { data[index] = (data[index] & (~wmask)) | (wdata & wmask); }
+  virtual void write(uint64_t *wdata) { for(int i=0; i<8; i++) data[i] = wdata[i]; }
+  virtual void copy(const CMDataBase *m_block) {
+    auto block = static_cast<const MirageData64B *>(m_block);
     for(int i=0; i<8; i++) data[i] = block->data[i];
   }
 };
@@ -139,6 +173,41 @@ public:
   }
 };
 
+// base class for a mirage data cache array:
+class MirageDataCacheArrayBase 
+{
+protected:
+  const std::string name;
+public:
+  MirageDataCacheArrayBase(std::string name = "") : name(name) {}
+  virtual ~MirageDataCacheArrayBase() {}
+
+  virtual CMDataBase* replace() = 0;
+
+};
+
+template<int IW, int NW, int P, typename DT>
+class MirageDataCacheArray : public MirageDataCacheArrayBase
+{
+protected:
+  std::vector<DT *> data;
+public:
+  static constexpr uint32_t nset = 1ul<<IW;  // number of sets
+  MirageDataCacheArray(std::string name = "") : MirageDataCacheArrayBase(name) {
+    constexpr size_t num = nset * NW * P; 
+    data.resize(num);
+    for(auto &d:data) d = new DT();
+  }
+  virtual ~MirageDataCacheArray() { for(auto d: data) delete d; }
+
+  virtual CMDataBase* replace(){
+    constexpr size_t num = nset * NW * P; 
+    uint32_t idx = cm_get_random_uint32() % num;
+    return data[idx];
+  }
+
+};
+
 //////////////// define cache ////////////////////
 
 // base class for a cache
@@ -190,6 +259,9 @@ public:
 
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors.clear(); }
+
+  // only useful for mirage 
+  virtual CMDataBase* replace_data() { return nullptr; } 
 };
 
 // Skewed Cache
@@ -270,5 +342,24 @@ public:
 // Normal set-associative cache
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
+
+
+// Mirage 
+// IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions
+template<int IW, int NW, int EW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
+class CacheMirage : public CacheSkewed<IW, NW+EW, 2, MT, DT, IDX, RPC, DLY, EnMon>
+{
+protected:
+  MirageDataCacheArrayBase* data_array;
+  constexpr static uint32_t P = 2;
+public:
+  CacheMirage(std::string name = "") : CacheSkewed<IW, NW+EW, P, MT, DT, IDX, RPC, DLY, EnMon>(name) {
+    data_array = new MirageDataCacheArray<IW, NW, P, DT>;
+  }
+  virtual ~CacheMirage() {
+    delete data_array;
+  }
+  virtual CMDataBase* replace_data() { return data_array->replace(); }
+};
 
 #endif
