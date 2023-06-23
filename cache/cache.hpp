@@ -21,8 +21,15 @@ public:
   // implement a totally useless base class
   virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
   virtual void reset() {}                                   // reset the metadata
-  virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
-  virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
+  virtual void init(uint64_t addr) {}                     // initialize the meta for addr
+  virtual uint64_t addr(uint32_t s) const { return 0; }              // assemble the block address from the metadata
+
+  virtual void init(uint32_t ds, uint32_t dw) {} // initialize index for data, only useful for mirage
+  virtual void index(uint32_t* ds, uint32_t* dw) {} 
+  virtual void bind(CMMetadataBase* meta) {} // initialize pointer, only useful for mirage
+  virtual CMMetadataBase* data() { return nullptr; } // return meta pointer to data meta, only useful for mirage
+  virtual CMMetadataBase* meta() { return nullptr; } // return data pointer to meta, only useful for mirage
+
 
   virtual void to_invalid() {}       // change state to invalid
   virtual void to_shared() {}        // change to shared
@@ -41,6 +48,24 @@ public:
   virtual ~CMMetadataBase() {}
 };
 
+class MirageDataMeta : public CMMetadataBase
+{
+protected:
+  unsigned int state : 1; // 0: invalid, 1: valid
+  CMMetadataBase* meta; // data's pointer to meta
+  uint32_t ds, dw; // data's index in data array
+
+public:
+  MirageDataMeta() : meta(nullptr), state(0), ds(0), dw(0) {}
+  virtual void init(uint32_t d_s, uint32_t d_w) { ds = d_s; dw = d_w; }
+  virtual void bind(CMMetadataBase* m) { meta = m; state = 1;}
+  virtual void index(uint32_t* d_s, uint32_t* d_w) { *d_s = ds; *d_w = dw; }
+  virtual void to_invalid() { meta = nullptr; state = 0; }
+  virtual bool is_valid() { return state == 1; }
+  
+  virtual ~MirageDataMeta() {}
+};
+
 class CMDataBase
 {
 public:
@@ -51,6 +76,7 @@ public:
   virtual void write(uint64_t *wdata) {} // write the whole cache block
   virtual void copy(const CMDataBase *block) {} // copy the content of block
 
+  virtual bool is_valid() const { return false; }
   virtual ~CMDataBase() {}
 };
 
@@ -139,6 +165,21 @@ public:
   }
 };
 
+// IW: index width, NW: number of ways, MT: metadata type, DT: data type 
+template<int IW, int NW, typename MT, typename DT,
+         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type, // MT <- CMMetadataBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
+class MirageDataCacheArray : public CacheArrayNorm<IW, NW, MT, DT>
+{
+public:
+  MirageDataCacheArray(std::string name = "") : CacheArrayNorm<IW, NW, MT, DT>(name) {
+    constexpr size_t num = (this->nset) * NW;
+    for(int i = 0; i < this->nset; i++)
+      for(int j = 0; j < NW; j++)
+        this->meta[i*NW + j]->init(i, j);
+  }
+};
+
 //////////////// define cache ////////////////////
 
 // base class for a cache
@@ -178,6 +219,11 @@ public:
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
+
+  virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w) { return nullptr; } // only useful for mirage
+  virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) { return nullptr; }  // only useful for mirage
+
+  virtual void replace_data(uint32_t *ds, uint32_t *dw) {} // only useful for mirage
 
   // monitor related
   bool attach_monitor(MonitorBase *m) {
@@ -270,5 +316,42 @@ public:
 // Normal set-associative cache
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
+
+// Mirage 
+// IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions
+template<int IW, int NW, int EW, typename MT, typename DT, typename DTMT,typename IDX, typename RPC, typename DLY, bool EnMon>
+
+class CacheMirage : public CacheSkewed<IW, NW+EW, 2, MT, void, IDX, RPC, DLY, EnMon>
+{
+protected:
+  constexpr static uint32_t P = 2;
+public:
+  CacheMirage(std::string name = "")
+    : CacheSkewed<IW, NW+EW, P, MT, void, IDX, RPC, DLY, EnMon>(name)
+  {
+    this->arrays.resize(P+1);
+    this->arrays[P] = new CacheArrayNorm<IW*P,NW,DTMT,DT>;
+  }
+
+  virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w){
+    return this->arrays[P]->get_meta(d_s, d_w);
+  }
+
+  virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) {
+    return this->arrays[P]->get_data(d_s, d_w);
+  }
+
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w){
+    uint32_t d_s, d_w;
+    this->arrays[ai]->get_meta(s, w)->data()->index(&d_s, &d_w);
+    return this->arrays[P]->get_data(d_s, d_w);
+  }
+
+  virtual void replace_data(uint32_t *d_s, uint32_t *d_w) { // only useful for mirage{
+    *d_s =  cm_get_random_uint32() % (IW*P);
+    *d_w =  cm_get_random_uint32() % NW;
+  }
+
+};
 
 #endif
