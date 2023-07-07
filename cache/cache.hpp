@@ -26,10 +26,10 @@ public:
 
   virtual void init(uint32_t ds, uint32_t dw) {} // initialize index for data, only useful for mirage
   virtual void index(uint32_t* ds, uint32_t* dw) {} 
-  virtual void bind(CMMetadataBase* meta) {} // initialize pointer, only useful for mirage
-  virtual CMMetadataBase* data() { return nullptr; } // return meta pointer to data meta, only useful for mirage
-  virtual CMMetadataBase* meta() { return nullptr; } // return data pointer to meta, only useful for mirage
-
+  virtual void bind(uint32_t ai, uint32_t s, uint32_t w) {} // initialize data meta pointer, only useful for mirage
+  virtual void bind(uint32_t ds, uint32_t dw) {} // initialize meta pointer, only useful for mirage
+  virtual void data(uint32_t* ds, uint32_t *dw) {} // return meta pointer to data meta, only useful for mirage
+  virtual void meta(uint32_t* ai, uint32_t* s, uint32_t *w) {} // return data pointer to meta, only useful for mirage
 
   virtual void to_invalid() {}       // change state to invalid
   virtual void to_shared() {}        // change to shared
@@ -51,17 +51,15 @@ public:
 class MirageDataMeta : public CMMetadataBase
 {
 protected:
-  unsigned int state : 1; // 0: invalid, 1: valid
-  CMMetadataBase* meta; // data's pointer to meta
-  uint32_t ds, dw; // data's index in data array
+  bool state; // false: invalid, true: valid
+  uint32_t mai, ms, mw; // data meta pointer to meta
 
 public:
-  MirageDataMeta() : meta(nullptr), state(0), ds(0), dw(0) {}
-  virtual void init(uint32_t d_s, uint32_t d_w) { ds = d_s; dw = d_w; }
-  virtual void bind(CMMetadataBase* m) { meta = m; state = 1;}
-  virtual void index(uint32_t* d_s, uint32_t* d_w) { *d_s = ds; *d_w = dw; }
-  virtual void to_invalid() { meta = nullptr; state = 0; }
-  virtual bool is_valid() { return state == 1; }
+  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
+  virtual void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
+  virtual void meta(uint32_t* ai, uint32_t* s, uint32_t* w) { *ai = mai; *s = ms; *w = mw; }
+  virtual void to_invalid() { state = false; }
+  virtual bool is_valid() const { return state; }
   
   virtual ~MirageDataMeta() {}
 };
@@ -210,6 +208,7 @@ public:
                    ) = 0;
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
+  virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w) {} // only useful for mirage
 
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
@@ -218,12 +217,12 @@ public:
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) { return nullptr;} // not implement in mirage
 
   virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w) { return nullptr; } // only useful for mirage
   virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) { return nullptr; }  // only useful for mirage
 
-  virtual void replace_data(uint32_t *ds, uint32_t *dw) {} // only useful for mirage
+  virtual void replace_data(uint64_t addr, uint32_t *ds, uint32_t *dw) {} // only useful for mirage
 
   // monitor related
   bool attach_monitor(MonitorBase *m) {
@@ -319,37 +318,96 @@ using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
 
 // Mirage 
 // IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions
-template<int IW, int NW, int EW, typename MT, typename DT, typename DTMT,typename IDX, typename RPC, typename DLY, bool EnMon>
+// MT: metadata type, DT: data type (void if not in use), DTMT: data meta type 
+// IDX: indexer type, RPC: replacer type
+// DIDX: data indexer type, DRPC: data replacer type
+// EnMon: whether to enable monitoring
+template<int IW, int NW, int EW, int P, typename MT, typename DT, typename DTMT, typename IDX, typename DIDX, typename DRPC, typename RPC, typename DLY, bool EnMon>
 
-class CacheMirage : public CacheSkewed<IW, NW+EW, 2, MT, void, IDX, RPC, DLY, EnMon>
+class CacheMirage : public CacheBase
 {
 protected:
-  constexpr static uint32_t P = 2;
+  IDX indexer;     // index resolver
+  RPC replacer[P]; // replacer
+  DLY *timer;      // delay estimator
+  DIDX d_indexer;  // data index resolver
+  DRPC d_replacer; // data replacer
+
 public:
   CacheMirage(std::string name = "")
-    : CacheSkewed<IW, NW+EW, P, MT, void, IDX, RPC, DLY, EnMon>(name)
+    : CacheBase(name)
   {
-    this->arrays.resize(P+1);
-    this->arrays[P] = new CacheArrayNorm<IW*P,NW,DTMT,DT>;
+    arrays.resize(P+1);
+    for(int i = 0; i < P; i++)  arrays[i] = new CacheArrayNorm<IW,NW+EW,MT,void>(); 
+    arrays[P] = new CacheArrayNorm<IW,NW,DTMT,DT>();
+    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
+  }
+
+  virtual ~CacheMirage() {
+    if constexpr (!std::is_void<DLY>::value) delete timer;
+  }
+
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+    for(*ai=0; *ai<P; (*ai)++) {
+      *s = indexer.index(addr, *ai);
+      for(*w=0; *w<NW; (*w)++)
+        if(access(*ai, *s, *w)->match(addr)) return true;
+    }
+    return false;
+  }
+
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
+    if constexpr (P==1) *ai = 0;
+    else                *ai = (cm_get_random_uint32() % P);
+    *s = indexer.index(addr, *ai);
+    replacer[*ai].replace(*s, w);
+  }
+
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    replacer[ai].access(s, w);
+    if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
+  }
+
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    replacer[ai].access(s, w);
+    if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
+  }
+
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+    if(hit && evict) {
+      replacer[ai].invalid(s, w);
+      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+    }
+    if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
+  }
+
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
+    return arrays[ai]->get_meta(s, w);
   }
 
   virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w){
-    return this->arrays[P]->get_meta(d_s, d_w);
+    return arrays[P]->get_meta(d_s, d_w);
   }
 
   virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) {
-    return this->arrays[P]->get_data(d_s, d_w);
+    return arrays[P]->get_data(d_s, d_w);
   }
 
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w){
-    uint32_t d_s, d_w;
-    this->arrays[ai]->get_meta(s, w)->data()->index(&d_s, &d_w);
-    return this->arrays[P]->get_data(d_s, d_w);
+  virtual void bind(uint32_t ai, uint32_t s, uint32_t w, uint32_t ds, uint32_t dw){
+    access(ai, s, w)->bind(ds, dw);
+    access(ds, dw)->bind(ai, s, w);
   }
 
-  virtual void replace_data(uint32_t *d_s, uint32_t *d_w) { // only useful for mirage{
-    *d_s =  cm_get_random_uint32() % (IW*P);
-    *d_w =  cm_get_random_uint32() % NW;
+  virtual void replace_data(uint64_t addr, uint32_t *d_s, uint32_t *d_w) { 
+    *d_s =  d_indexer.index(addr, 0);
+    d_replacer.replace(*d_s, d_w); 
+  }
+
+  virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w){
+    *s = indexer.index(addr, ai);
+    replacer[ai].replace(*s, w);
   }
 
 };
