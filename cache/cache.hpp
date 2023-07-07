@@ -8,6 +8,8 @@
 #include <set>
 #include <map>
 #include <vector>
+#include <utility>
+
 
 #include "util/random.hpp"
 #include "util/monitor.hpp"
@@ -24,8 +26,6 @@ public:
   virtual void init(uint64_t addr) {}                     // initialize the meta for addr
   virtual uint64_t addr(uint32_t s) const { return 0; }              // assemble the block address from the metadata
 
-  virtual void init(uint32_t ds, uint32_t dw) {} // initialize index for data, only useful for mirage
-  virtual void index(uint32_t* ds, uint32_t* dw) {} 
   virtual void bind(uint32_t ai, uint32_t s, uint32_t w) {} // initialize data meta pointer, only useful for mirage
   virtual void bind(uint32_t ds, uint32_t dw) {} // initialize meta pointer, only useful for mirage
   virtual void data(uint32_t* ds, uint32_t *dw) {} // return meta pointer to data meta, only useful for mirage
@@ -163,21 +163,6 @@ public:
   }
 };
 
-// IW: index width, NW: number of ways, MT: metadata type, DT: data type 
-template<int IW, int NW, typename MT, typename DT,
-         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type, // MT <- CMMetadataBase
-         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
-class MirageDataCacheArray : public CacheArrayNorm<IW, NW, MT, DT>
-{
-public:
-  MirageDataCacheArray(std::string name = "") : CacheArrayNorm<IW, NW, MT, DT>(name) {
-    constexpr size_t num = (this->nset) * NW;
-    for(int i = 0; i < this->nset; i++)
-      for(int j = 0; j < NW; j++)
-        this->meta[i*NW + j]->init(i, j);
-  }
-};
-
 //////////////// define cache ////////////////////
 
 // base class for a cache
@@ -209,6 +194,8 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
   virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w) {} // only useful for mirage
+  virtual void replace(uint64_t addr, std::vector<std::pair<uint32_t, uint32_t> > &location) {} // only useful for mirage,Obtain idle locations in each skew
+
 
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
@@ -219,10 +206,10 @@ public:
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) { return nullptr;} // not implement in mirage
 
-  virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w) { return nullptr; } // only useful for mirage
+  virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w) { return nullptr; } // only useful for mirage, obtain data meta
   virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) { return nullptr; }  // only useful for mirage
 
-  virtual void replace_data(uint64_t addr, uint32_t *ds, uint32_t *dw) {} // only useful for mirage
+  virtual void replace_data(uint64_t addr, uint32_t *ds, uint32_t *dw) {} // only useful for mirage, obtain replace's data
 
   // monitor related
   bool attach_monitor(MonitorBase *m) {
@@ -395,11 +382,6 @@ public:
     return arrays[P]->get_data(d_s, d_w);
   }
 
-  virtual void bind(uint32_t ai, uint32_t s, uint32_t w, uint32_t ds, uint32_t dw){
-    access(ai, s, w)->bind(ds, dw);
-    access(ds, dw)->bind(ai, s, w);
-  }
-
   virtual void replace_data(uint64_t addr, uint32_t *d_s, uint32_t *d_w) { 
     *d_s =  d_indexer.index(addr, 0);
     d_replacer.replace(*d_s, d_w); 
@@ -410,6 +392,15 @@ public:
     replacer[ai].replace(*s, w);
   }
 
+  virtual void replace(uint64_t addr, std::vector<std::pair<uint32_t, uint32_t> > &location) {
+    uint32_t s, w;
+    location.resize(P);
+    for(uint32_t ai = 0; ai < P; ai++){
+      s = indexer.index(addr, ai);
+      replacer[ai].replace(s, &w);
+      location[ai] = std::make_pair(s, w);
+    }
+  }
 };
 
 #endif

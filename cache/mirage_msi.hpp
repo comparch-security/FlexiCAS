@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <type_traits>
+#include <stack>
 #include "cache/coherence.hpp"
 
 namespace // file visibility
@@ -267,35 +268,90 @@ public:
       }
     } else { // miss
       // get the way to be replaced
-      CMMetadataBase* data_meta;
-      this->cache->replace(addr, &ai, &s, &w);
-      meta = this->cache->access(ai, s, w);
-      if(meta->is_valid()) {
-        auto replace_addr = meta->addr(s);
-        meta->data(&ds, &dw);
-        if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
-        data_meta = this->cache->access(ds, dw);
-        if(MiragePolicy::need_sync(MiragePolicy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, MiragePolicy::cmd_for_sync(MiragePolicy::cmd_for_evict()), delay); // sync if necessary
-        if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
-        this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
+      std::stack<uint64_t> addr_stack;
+      std::vector<std::pair<uint32_t, uint32_t> > location;
+      std::vector<CMMetadataBase*> array_meta;
+      std::unordered_set<uint64_t> remapped;
+      std::vector<uint32_t> free_location;
+      CMMetadataBase *mmeta, *data_meta, *data_mmeta;
+      uint32_t P; uint32_t relocation = 0; 
+      uint32_t m_ai, m_s, m_w, m_ds, m_dw;
+      uint64_t addrr = addr;
+      ai = 0; 
+      this->cache->replace(addr, location);
+      P = location.size();
+      for(auto l : location) {
+        meta = this->cache->access(ai++, l.first, l.second);
+        if(!meta->is_valid()) free_location.push_back(ai-1);
+        array_meta.push_back(meta);
+      }
+      if(free_location.size() >= 1){
+        ai = free_location[cm_get_random_uint32() % free_location.size()];
+        meta = array_meta[ai]; s = location[ai].first; w = location[ai].second;
       }
       else{
-        this->cache->replace_data(addr, &ds, &dw);
-        if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
-        data_meta = this->cache->access(ds, dw);
-        if(data_meta->is_valid()){
-          uint32_t r_ai, r_s, r_w;
-          data_meta->meta(&r_ai, &r_s, &r_w);
-          CMMetadataBase* replace_meta = this->cache->access(r_ai, r_s, r_w);
-          auto replace_addr = replace_meta->addr(s);
-          assert(this->cache->hit(replace_addr, &r_ai, &r_s, &r_w));
-          if(MiragePolicy::need_sync(MiragePolicy::cmd_for_evict(), replace_meta)) probe_req(replace_addr, replace_meta, data, MiragePolicy::cmd_for_sync(MiragePolicy::cmd_for_evict()), delay); // sync if necessary
-          if(writeback = replace_meta->is_dirty()) outer->writeback_req(replace_addr, replace_meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
-          this->cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
+        ai = cm_get_random_uint32()%P;
+        meta = array_meta[ai]; s = location[ai].first; w = location[ai].second;
+        while(meta->is_valid() && relocation < 5){
+          relocation++;
+          addr = meta->addr(s); 
+          this->cache->replace(addr, (ai+1) % P, &s, &w);
+          mmeta = this->cache->access((ai+1) % P, s, w);
+          if(remapped.count(mmeta->addr(s))) break; // Prevent duplicate relocation during cuckoo relocation
+          remapped.insert(addr);
+          addr_stack.push(addr);
+          meta = mmeta;
+          ai = (ai+1) % P;
         }
-        meta->bind(ds, dw);
-        data_meta->bind(ai, s, w);
+        meta->data(&ds, &dw);
+        data_meta = this->cache->access(ds, dw);
+        if(meta->is_valid()) {
+          auto replace_addr = meta->addr(s);
+          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
+          if(MiragePolicy::need_sync(MiragePolicy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, MiragePolicy::cmd_for_sync(MiragePolicy::cmd_for_evict()), delay); // sync if necessary
+          if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
+          this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
+        }
+        while(addr_stack.size()>=1){
+          addr = addr_stack.top();
+          addr_stack.pop();
+          this->cache->replace(addr, (ai-1)%P, &m_s, &m_w);
+          mmeta = this->cache->access((ai-1)%P, m_s, m_w);
+          mmeta->data(&m_ds, &m_dw);
+          data_mmeta = this->cache->access(m_ds, m_dw);
+          assert(addr == mmeta->addr(m_s));
+          meta->init(addr); meta->bind(m_ds, m_dw); data_mmeta->bind(ai, s, w);
+          if(mmeta->is_dirty()) { meta->to_dirty(); mmeta->to_clean();} 
+          if(mmeta->is_shared()) 
+            meta->to_shared();
+          else
+            meta->to_modified();
+          mmeta->to_invalid();
+          this->cache->hook_manage(addr, (ai-1)%P, m_s, m_w, true, true, false, delay);
+          this->cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
+            
+          ai = (ai-1) % P;
+          s = m_s;
+          w = m_w;
+          meta = mmeta;
+        }
+        addr = addrr;
       }
+      this->cache->replace_data(addr, &ds, &dw);
+      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
+      data_meta = this->cache->access(ds, dw);
+      if(data_meta->is_valid()){
+        uint32_t r_ai, r_s, r_w;
+        data_meta->meta(&r_ai, &r_s, &r_w);
+        CMMetadataBase* replace_meta = this->cache->access(r_ai, r_s, r_w);
+        auto replace_addr = replace_meta->addr(s);
+        assert(this->cache->hit(replace_addr, &r_ai, &r_s, &r_w));
+        if(MiragePolicy::need_sync(MiragePolicy::cmd_for_evict(), replace_meta)) probe_req(replace_addr, replace_meta, data, MiragePolicy::cmd_for_sync(MiragePolicy::cmd_for_evict()), delay); // sync if necessary
+        if(writeback = replace_meta->is_dirty()) outer->writeback_req(replace_addr, replace_meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
+        this->cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
+      }
+      meta->bind(ds, dw);
+      data_meta->bind(ai, s, w);
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }
     // grant
