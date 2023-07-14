@@ -48,22 +48,6 @@ public:
   virtual ~CMMetadataBase() {}
 };
 
-class MirageDataMeta : public CMMetadataBase
-{
-protected:
-  bool state; // false: invalid, true: valid
-  uint32_t mai, ms, mw; // data meta pointer to meta
-
-public:
-  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
-  virtual void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
-  virtual void meta(uint32_t* ai, uint32_t* s, uint32_t* w) { *ai = mai; *s = ms; *w = mw; }
-  virtual void to_invalid() { state = false; }
-  virtual bool is_valid() const { return state; }
-  
-  virtual ~MirageDataMeta() {}
-};
-
 class CMDataBase
 {
 public:
@@ -194,8 +178,7 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
   virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w) {} // only useful for mirage
-  virtual void replace(uint64_t addr, std::vector<std::pair<uint32_t, uint32_t> > &location) {} // only useful for mirage,Obtain idle locations in each skew
-
+  virtual void replace(uint64_t addr, std::vector<std::pair<uint32_t, uint32_t> > &location) {} // only useful for mirage, obtain free locations in each skew
 
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
@@ -303,104 +286,5 @@ public:
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
 
-// Mirage 
-// IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions
-// MT: metadata type, DT: data type (void if not in use), DTMT: data meta type 
-// IDX: indexer type, RPC: replacer type
-// DIDX: data indexer type, DRPC: data replacer type
-// EnMon: whether to enable monitoring
-template<int IW, int NW, int EW, int P, typename MT, typename DT, typename DTMT, typename IDX, typename DIDX, typename DRPC, typename RPC, typename DLY, bool EnMon>
-
-class CacheMirage : public CacheBase
-{
-protected:
-  IDX indexer;     // index resolver
-  RPC replacer[P]; // replacer
-  DLY *timer;      // delay estimator
-  DIDX d_indexer;  // data index resolver
-  DRPC d_replacer; // data replacer
-
-public:
-  CacheMirage(std::string name = "")
-    : CacheBase(name)
-  {
-    arrays.resize(P+1);
-    for(int i = 0; i < P; i++)  arrays[i] = new CacheArrayNorm<IW,NW+EW,MT,void>(); 
-    arrays[P] = new CacheArrayNorm<IW,NW,DTMT,DT>();
-    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
-  }
-
-  virtual ~CacheMirage() {
-    if constexpr (!std::is_void<DLY>::value) delete timer;
-  }
-
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
-    for(*ai=0; *ai<P; (*ai)++) {
-      *s = indexer.index(addr, *ai);
-      for(*w=0; *w<NW; (*w)++)
-        if(access(*ai, *s, *w)->match(addr)) return true;
-    }
-    return false;
-  }
-
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
-    if constexpr (P==1) *ai = 0;
-    else                *ai = (cm_get_random_uint32() % P);
-    *s = indexer.index(addr, *ai);
-    replacer[*ai].replace(*s, w);
-  }
-
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    replacer[ai].access(s, w);
-    if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
-  }
-
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    replacer[ai].access(s, w);
-    if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
-  }
-
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
-    if(hit && evict) {
-      replacer[ai].invalid(s, w);
-      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
-    }
-    if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
-  }
-
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
-    return arrays[ai]->get_meta(s, w);
-  }
-
-  virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w){
-    return arrays[P]->get_meta(d_s, d_w);
-  }
-
-  virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) {
-    return arrays[P]->get_data(d_s, d_w);
-  }
-
-  virtual void replace_data(uint64_t addr, uint32_t *d_s, uint32_t *d_w) { 
-    *d_s =  d_indexer.index(addr, 0);
-    d_replacer.replace(*d_s, d_w); 
-  }
-
-  virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w){
-    *s = indexer.index(addr, ai);
-    replacer[ai].replace(*s, w);
-  }
-
-  virtual void replace(uint64_t addr, std::vector<std::pair<uint32_t, uint32_t> > &location) {
-    uint32_t s, w;
-    location.resize(P);
-    for(uint32_t ai = 0; ai < P; ai++){
-      s = indexer.index(addr, ai);
-      replacer[ai].replace(s, &w);
-      location[ai] = std::make_pair(s, w);
-    }
-  }
-};
 
 #endif

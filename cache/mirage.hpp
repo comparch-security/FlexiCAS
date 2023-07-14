@@ -137,6 +137,130 @@ namespace // file visibility
     }
   };
 }
+
+class MirageDataMeta : public CMMetadataBase
+{
+protected:
+  bool state; // false: invalid, true: valid
+  uint32_t mai, ms, mw; // data meta pointer to meta
+
+public:
+  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
+  virtual void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
+  virtual void meta(uint32_t* ai, uint32_t* s, uint32_t* w) { *ai = mai; *s = ms; *w = mw; }
+  virtual void to_invalid() { state = false; }
+  virtual bool is_valid() const { return state; }
+  
+  virtual ~MirageDataMeta() {}
+};
+
+// Mirage 
+// IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions
+// MT: metadata type, DT: data type (void if not in use), DTMT: data meta type 
+// MIDX: indexer type, MRPC: replacer type
+// DIDX: data indexer type, DRPC: data replacer type
+// EnMon: whether to enable monitoring
+template<int IW, int NW, int EW, int P, typename MT, typename DT, typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon,
+         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
+         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
+         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, DTMT>::value>::type,  // DTMT <- MirageDataMeta
+         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, MIDX>::value>::type,  // MIDX <- IndexFuncBase
+         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, MRPC>::value>::type,  // MRPC <- ReplaceFuncBase
+         typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
+class CacheMirage : public CacheBase
+{
+// see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
+protected:
+  MIDX m_indexer;     // meta index resolver
+  MRPC m_replacer[P]; // meta replacer
+  DLY *timer;       // delay estimator
+  DIDX d_indexer;   // data index resolver
+  DRPC d_replacer;  // data replacer
+
+public:
+  CacheMirage(std::string name = "")
+    : CacheBase(name)
+  { 
+    // CacheMirage has P+1 CacheArray
+    arrays.resize(P+1);
+    for(int i = 0; i < P; i++)  arrays[i] = new CacheArrayNorm<IW,NW+EW,MT,void>();  // The first P CacheArrays only have Meta without Data
+    arrays[P] = new CacheArrayNorm<IW,NW,DTMT,DT>(); // The last CacheArray has a global data (see mirage paper), and its meta (DTMT) holds a pointer from data to meta
+    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
+  }
+
+  virtual ~CacheMirage() {
+    if constexpr (!std::is_void<DLY>::value) delete timer;
+  }
+
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+    for(*ai=0; *ai<P; (*ai)++) {
+      *s = m_indexer.index(addr, *ai);
+      for(*w=0; *w<NW; (*w)++)
+        if(access(*ai, *s, *w)->match(addr)) return true;
+    }
+    return false;
+  }
+
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
+    if constexpr (P==1) *ai = 0;
+    else                *ai = (cm_get_random_uint32() % P);
+    *s = m_indexer.index(addr, *ai);
+    m_replacer[*ai].replace(*s, w);
+  }
+
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    m_replacer[ai].access(s, w);
+    if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
+  }
+
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    m_replacer[ai].access(s, w);
+    if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
+  }
+
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+    if(hit && evict) {
+      m_replacer[ai].invalid(s, w);
+      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+    }
+    if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
+  }
+
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
+    return arrays[ai]->get_meta(s, w);
+  }
+
+  virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w){
+    return arrays[P]->get_meta(d_s, d_w);
+  }
+
+  virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) {
+    return arrays[P]->get_data(d_s, d_w);
+  }
+
+  virtual void replace_data(uint64_t addr, uint32_t *d_s, uint32_t *d_w) { 
+    *d_s =  d_indexer.index(addr, 0);
+    d_replacer.replace(*d_s, d_w); 
+  }
+
+  virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w){
+    *s = m_indexer.index(addr, ai);
+    m_replacer[ai].replace(*s, w);
+  }
+
+  virtual void replace(uint64_t addr, std::vector<std::pair<uint32_t, uint32_t> > &location) {
+    uint32_t s, w;
+    location.resize(P);
+    for(uint32_t ai = 0; ai < P; ai++){
+      s = m_indexer.index(addr, ai);
+      m_replacer[ai].replace(s, &w);
+      location[ai] = std::make_pair(s, w);
+    }
+  }
+};
+
 // metadata supporting MSI coherency
 class MirageMetadataMSIBase : public CMMetadataBase
 {
@@ -243,7 +367,7 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT, bool isLLC,
+template<int RW, typename MT, typename DT, bool isLLC,
          typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageInnerPortMSIUncached : public InnerCohPortBase
@@ -289,19 +413,21 @@ public:
         ai = free_location[cm_get_random_uint32() % free_location.size()];
         meta = array_meta[ai]; s = location[ai].first; w = location[ai].second;
       }
-      else{
+      else{ // If all the skews have no free space
         ai = cm_get_random_uint32()%P;
         meta = array_meta[ai]; s = location[ai].first; w = location[ai].second;
-        while(meta->is_valid() && relocation < 5){
+        while(meta->is_valid() && relocation < RW){
           relocation++;
           addr = meta->addr(s); 
-          this->cache->replace(addr, (ai+1) % P, &s, &w);
-          mmeta = this->cache->access((ai+1) % P, s, w);
+          this->cache->replace(addr, (ai+1) % P, &m_s, &m_w);
+          mmeta = this->cache->access((ai+1) % P, m_s, m_w);
           if(remapped.count(mmeta->addr(s))) break; // Prevent duplicate relocation during cuckoo relocation
           remapped.insert(addr);
           addr_stack.push(addr);
           meta = mmeta;
           ai = (ai+1) % P;
+          s = m_s;
+          w = m_w;
         }
         meta->data(&ds, &dw);
         data_meta = this->cache->access(ds, dw);
@@ -315,8 +441,8 @@ public:
         while(addr_stack.size()>=1){
           addr = addr_stack.top();
           addr_stack.pop();
-          this->cache->replace(addr, (ai-1)%P, &m_s, &m_w);
-          mmeta = this->cache->access((ai-1)%P, m_s, m_w);
+          this->cache->replace(addr, (ai-1+P)%P, &m_s, &m_w);
+          mmeta = this->cache->access((ai-1+P)%P, m_s, m_w);
           mmeta->data(&m_ds, &m_dw);
           data_mmeta = this->cache->access(m_ds, m_dw);
           assert(addr == mmeta->addr(m_s));
@@ -327,10 +453,10 @@ public:
           else
             meta->to_modified();
           mmeta->to_invalid();
-          this->cache->hook_manage(addr, (ai-1)%P, m_s, m_w, true, true, false, delay);
+          this->cache->hook_manage(addr, (ai-1+P)%P, m_s, m_w, true, true, false, delay);
           this->cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
             
-          ai = (ai-1) % P;
+          ai = (ai-1+P) % P;
           s = m_s;
           w = m_w;
           meta = mmeta;
@@ -378,7 +504,8 @@ public:
         if(hit) {
           CMDataBase *data = nullptr;
           meta = this->cache->access(ai, s, w);
-          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+          meta->data(&ds, &dw);
+          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
           probe_req(addr, meta, data, MiragePolicy::cmd_for_sync(cmd), delay);
           if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
         }
@@ -392,8 +519,8 @@ public:
 };
 
 // full MSI inner port (broadcasting hub, snoop)
-template<typename MT, typename DT, bool isLLC>
-class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<MT, DT, isLLC>
+template<int RW, typename MT, typename DT, bool isLLC>
+class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<RW, MT, DT, isLLC>
 {
 public:
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
@@ -404,18 +531,20 @@ public:
 };
 
 // MSI core interface:
-template<typename MT, typename DT, bool EnableDelay, bool isLLC,
+template<int RW, typename MT, typename DT, bool EnableDelay, bool isLLC,
          typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageCoreInterfaceMSI : public CoreInterfaceBase
 {
   inline CMDataBase *access(uint64_t addr, uint32_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
+    uint32_t ds, dw;
     CMMetadataBase *meta;
     CMDataBase *data = nullptr;
     bool hit, writeback;
     if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
       meta = this->cache->access(ai, s, w);
+      meta->data(&ds, &dw);
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if constexpr (!isLLC) {
         if(MiragePolicy::need_promote(cmd, meta)) {
@@ -425,17 +554,90 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
       }
     } else { // miss
       // get the way to be replaced
-      this->cache->replace(addr, &ai, &s, &w);
-      meta = this->cache->access(ai, s, w);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-      if(meta->is_valid()) {
-        auto replace_addr = meta->addr(s);
-        if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
-        this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
+      std::stack<uint64_t> addr_stack;
+      std::vector<std::pair<uint32_t, uint32_t> > location;
+      std::vector<CMMetadataBase*> array_meta;
+      std::unordered_set<uint64_t> remapped;
+      std::vector<uint32_t> free_location;
+      CMMetadataBase *mmeta, *data_meta, *data_mmeta;
+      uint32_t P; uint32_t relocation = 0; 
+      uint32_t m_ai, m_s, m_w, m_ds, m_dw;
+      uint64_t addrr = addr;
+      ai = 0; 
+      this->cache->replace(addr, location);
+      P = location.size();
+      for(auto l : location) {
+        meta = this->cache->access(ai++, l.first, l.second);
+        if(!meta->is_valid()) free_location.push_back(ai-1);
+        array_meta.push_back(meta);
       }
+      if(free_location.size() >= 1){
+        ai = free_location[cm_get_random_uint32() % free_location.size()];
+        meta = array_meta[ai]; s = location[ai].first; w = location[ai].second;
+      }
+      else{
+        ai = cm_get_random_uint32()%P;
+        meta = array_meta[ai]; s = location[ai].first; w = location[ai].second;
+        while(meta->is_valid() && relocation < RW){
+          relocation++;
+          addr = meta->addr(s); 
+          this->cache->replace(addr, (ai+1) % P, &s, &w);
+          mmeta = this->cache->access((ai+1) % P, s, w);
+          if(remapped.count(mmeta->addr(s))) break; // Prevent duplicate relocation during cuckoo relocation
+          remapped.insert(addr);
+          addr_stack.push(addr);
+          meta = mmeta;
+          ai = (ai+1) % P;
+        }
+        meta->data(&ds, &dw);
+        data_meta = this->cache->access(ds, dw);
+        if(meta->is_valid()) {
+          auto replace_addr = meta->addr(s);
+          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
+          if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
+          this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
+        }
+        while(addr_stack.size()>=1){
+          addr = addr_stack.top();
+          addr_stack.pop();
+          this->cache->replace(addr, (ai-1+P)%P, &m_s, &m_w);
+          mmeta = this->cache->access((ai-1+P)%P, m_s, m_w);
+          mmeta->data(&m_ds, &m_dw);
+          data_mmeta = this->cache->access(m_ds, m_dw);
+          assert(addr == mmeta->addr(m_s));
+          meta->init(addr); meta->bind(m_ds, m_dw); data_mmeta->bind(ai, s, w);
+          if(mmeta->is_dirty()) { meta->to_dirty(); mmeta->to_clean();} 
+          if(mmeta->is_shared()) 
+            meta->to_shared();
+          else
+            meta->to_modified();
+          mmeta->to_invalid();
+          this->cache->hook_manage(addr, (ai-1+P)%P, m_s, m_w, true, true, false, delay);
+          this->cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
+            
+          ai = (ai-1+P) % P;
+          s = m_s;
+          w = m_w;
+          meta = mmeta;
+        }
+        addr = addrr;
+      }
+      this->cache->replace_data(addr, &ds, &dw);
+      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
+      data_meta = this->cache->access(ds, dw);
+      if(data_meta->is_valid()){
+        uint32_t r_ai, r_s, r_w;
+        data_meta->meta(&r_ai, &r_s, &r_w);
+        CMMetadataBase* replace_meta = this->cache->access(r_ai, r_s, r_w);
+        auto replace_addr = replace_meta->addr(s);
+        assert(this->cache->hit(replace_addr, &r_ai, &r_s, &r_w));
+        if(writeback = replace_meta->is_dirty()) outer->writeback_req(replace_addr, replace_meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
+        this->cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
+      }
+      meta->bind(ds, dw);
+      data_meta->bind(ai, s, w);
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }
-
     if(cmd == MiragePolicy::cmd_for_core_write()) {
       meta->to_dirty();
       this->cache->hook_write(addr, ai, s, w, hit, delay);
