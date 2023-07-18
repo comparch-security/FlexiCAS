@@ -21,6 +21,9 @@ public:
   virtual ~ReplaceFuncBase() {}
 };
 
+/////////////////////////////////
+// FIFO replacement
+// IW: index width, NW: number of ways
 template<int IW, int NW>
 class ReplaceFIFO : public ReplaceFuncBase
 {
@@ -53,6 +56,9 @@ public:
   }
 };
 
+/////////////////////////////////
+// LRU replacement
+// IW: index width, NW: number of ways
 template<int IW, int NW>
 class ReplaceLRU : public ReplaceFIFO<IW, NW>
 {
