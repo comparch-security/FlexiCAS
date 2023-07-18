@@ -113,9 +113,9 @@ namespace // file visibility
 
     // set the metadata after a block is written back
     static inline void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta) {
-      if(is_release(cmd)){
+      if(is_release(cmd) || (is_flush(cmd) && meta != nullptr)){
         meta->to_clean();
-        if(release_evict == get_action(cmd)) meta->to_invalid();
+        if(release_evict == get_action(cmd) || flush_evict == get_action(cmd)) meta->to_invalid();
       }
     }
 
