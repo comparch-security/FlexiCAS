@@ -250,7 +250,7 @@ public:
     d_replacer.replace(*d_s, d_w); 
   }
 
-  virtual void replace(bool init, uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w){
+  virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w){
     *s = m_indexer.index(addr, ai);
     m_replacer[ai].replace(*s, w);
   }
