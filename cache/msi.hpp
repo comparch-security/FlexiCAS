@@ -113,9 +113,9 @@ namespace // file visibility
 
     // set the metadata after a block is written back
     static inline void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta) {
-      if(is_release(cmd)){
+      if(is_release(cmd) || (is_flush(cmd) && meta != nullptr)){
         meta->to_clean();
-        if(release_evict == get_action(cmd)) meta->to_invalid();
+        if(release_evict == get_action(cmd) || flush_evict == get_action(cmd)) meta->to_invalid();
       }
     }
 
@@ -213,7 +213,7 @@ public:
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, uint32_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     bool hit, writeback = false;
-    if(this->cache->hit(addr, &ai, &s, &w)) {
+    if(hit = this->cache->hit(addr, &ai, &s, &w)) {
       auto meta = this->cache->access(ai, s, w); // oddly here, `this->' is required by the g++ 11.3.0 @wsong83
       CMDataBase *data = nullptr;
       if constexpr (!std::is_void<DT>::value) {

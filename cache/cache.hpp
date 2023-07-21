@@ -175,10 +175,11 @@ public:
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w
                    ) = 0;
+  virtual bool hit(uint64_t addr) = 0;
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
   virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w) {} // only useful for mirage
-  virtual void replace(uint64_t addr, std::vector<std::pair<uint32_t, uint32_t> > &location) {} // only useful for mirage, obtain free locations in each skew
+  virtual void replace(uint64_t addr, std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > &location) {} // only useful for mirage, obtain free locations in each skew
 
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
@@ -193,6 +194,8 @@ public:
   virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) { return nullptr; }  // only useful for mirage
 
   virtual void replace_data(uint64_t addr, uint32_t *ds, uint32_t *dw) {} // only useful for mirage, obtain replace's data
+
+  virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
 
   // monitor related
   bool attach_monitor(MonitorBase *m) {
@@ -247,6 +250,11 @@ public:
     return false;
   }
 
+  virtual bool hit(uint64_t addr){
+    uint32_t ai, s, w;
+    return hit(addr, &ai, &s, &w);
+  }
+
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
     if constexpr (P==1) *ai = 0;
     else                *ai = (cm_get_random_uint32() % P);
@@ -279,6 +287,13 @@ public:
   }
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w){
     return arrays[ai]->get_data(s, w);
+  }
+
+  virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
+    for(int i=0; i<P; i++) 
+      if(indexer.index(addrA, i) == indexer.index(addrB, i)) 
+        return true;
+    return false;
   }
 };
 

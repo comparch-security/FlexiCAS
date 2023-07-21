@@ -16,11 +16,14 @@ protected:
 public:
   ReplaceFuncBase(uint32_t nset) : nset(nset) {};
   virtual uint32_t replace(uint32_t s, uint32_t *w) = 0;
-  virtual void access(uint32_t s, uint32_t w) = 0;
-  virtual void invalid(uint32_t s, uint32_t w) = 0;
+  virtual void access(uint32_t s, uint32_t w) {}
+  virtual void invalid(uint32_t s, uint32_t w) {}
   virtual ~ReplaceFuncBase() {}
 };
 
+/////////////////////////////////
+// FIFO replacement
+// IW: index width, NW: number of ways
 template<int IW, int NW>
 class ReplaceFIFO : public ReplaceFuncBase
 {
@@ -53,6 +56,9 @@ public:
   }
 };
 
+/////////////////////////////////
+// LRU replacement
+// IW: index width, NW: number of ways
 template<int IW, int NW>
 class ReplaceLRU : public ReplaceFIFO<IW, NW>
 {
@@ -75,6 +81,9 @@ public:
   }
 };
 
+/////////////////////////////////
+// Random replacement
+// IW: index width, NW: number of ways
 template<int IW, int NW>
 class ReplaceRandom : public ReplaceFuncBase
 {
@@ -104,4 +113,20 @@ public:
   }
 };
 
+/////////////////////////////////
+// Mirage Random replacement
+// IW: index width, NW: number of ways
+template<int IW, int NW>
+class ReplaceFullRandom : public ReplaceFuncBase
+{
+public:
+  ReplaceFullRandom() : ReplaceFuncBase(1ul<<IW) {}
+  virtual ~ReplaceFullRandom() {}
+
+  virtual uint32_t replace(uint32_t s, uint32_t *w){
+    *w = cm_get_random_uint32() % NW;
+    return 0;
+  }
+
+};
 #endif
