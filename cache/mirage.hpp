@@ -165,7 +165,9 @@ template<int IW, int NW, int EW, int P, typename MT, typename DT, typename DTMT,
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, DTMT>::value>::type,  // DTMT <- MirageDataMeta
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, MIDX>::value>::type,  // MIDX <- IndexFuncBase
+         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, DIDX>::value>::type,  // DIDX <- IndexFuncBase
          typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, MRPC>::value>::type,  // MRPC <- ReplaceFuncBase
+         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, DRPC>::value>::type,  // MRPC <- ReplaceFuncBase
          typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
 class CacheMirage : public CacheBase
 {
@@ -184,7 +186,7 @@ public:
     // CacheMirage has P+1 CacheArray
     arrays.resize(P+1);
     for(int i = 0; i < P; i++)  arrays[i] = new CacheArrayNorm<IW,NW+EW,MT,void>();  // The first P CacheArrays only have Meta without Data
-    arrays[P] = new CacheArrayNorm<IW,NW,DTMT,DT>(); // The last CacheArray has a global data (see mirage paper), and its meta (DTMT) holds a pointer from data to meta
+    arrays[P] = new CacheArrayNorm<IW,P*NW,DTMT,DT>(); // The last CacheArray has a global data (see mirage paper), and its meta (DTMT) holds a pointer from data to meta
     if constexpr (!std::is_void<DLY>::value) timer = new DLY();
   }
 
@@ -383,7 +385,7 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<int RW, typename MT, typename DT, bool isLLC,
+template<typename MT, typename DT, bool isLLC, bool enableRelocation, int RW,
          typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageInnerPortMSIUncached : public InnerCohPortBase
@@ -441,7 +443,7 @@ public:
         ai = cm_get_random_uint32()%P;
         s = location[ai].first.first; w = location[ai].first.second;
         meta = this->cache->access(ai, s, w);
-        while(meta->is_valid() && relocation < RW){
+        while(enableRelocation && meta->is_valid() && relocation < RW){
           relocation++;
           addr = meta->addr(s); 
           this->cache->replace(addr, (ai+1) % P, &m_s, &m_w);
@@ -551,7 +553,7 @@ public:
 };
 
 // full MSI inner port (broadcasting hub, snoop)
-template<int RW, typename MT, typename DT, bool isLLC>
+template<typename MT, typename DT, bool isLLC, bool enableRelocation, int RW>
 class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<RW, MT, DT, isLLC>
 {
 public:
@@ -563,7 +565,7 @@ public:
 };
 
 // MSI core interface:
-template<int RW, typename MT, typename DT, bool EnableDelay, bool isLLC,
+template<typename MT, typename DT, bool EnableDelay, bool isLLC, bool enableRelocation, int RW, 
          typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageCoreInterfaceMSI : public CoreInterfaceBase
@@ -618,7 +620,7 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
         ai = cm_get_random_uint32()%P;
         s = location[ai].first.first; w = location[ai].first.second;
         meta = this->cache->access(ai, s, w);
-        while(meta->is_valid() && relocation < RW){
+        while(enableRelocation && meta->is_valid() && relocation < RW){
           relocation++;
           addr = meta->addr(s); 
           this->cache->replace(addr, (ai+1) % P, &s, &w);

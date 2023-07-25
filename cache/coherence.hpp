@@ -112,8 +112,6 @@ public:
   bool attach_monitor(MonitorBase *m) { return cache->attach_monitor(m); }
   // support run-time assign/reassign mointors
   void detach_monitor() { cache->detach_monitor(); }
-  
-  CacheBase* get_cache() { return cache; } // Temporary use for testing mirage;
 };
 
 
@@ -136,11 +134,9 @@ public:
   virtual ~CoherentL1CacheBase() {}
 
   virtual const CMDataBase* read(uint64_t addr, uint64_t* delay) = 0;
-  virtual const CMDataBase *read(uint64_t addr) = 0;
   virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) = 0;
   virtual void flush(uint64_t addr, uint64_t *delay) = 0;
   virtual void writeback(uint64_t addr, uint64_t *delay) = 0;
-  virtual bool hit(uint64_t addr) = 0;
 };
 // Normal L1 coherent cache
 template<typename CacheT, typename OuterT, typename CoreT,
@@ -151,15 +147,9 @@ public:
   CoherentL1CacheNorm(std::string name = "") : CoherentL1CacheBase(new CacheT(), new OuterT(), new CoreT(), name) {}
   virtual ~CoherentL1CacheNorm() {}
   const CMDataBase* read(uint64_t addr, uint64_t* delay) { return (dynamic_cast<CoreInterfaceBase*>(this->inner))->read(addr, delay); }
-  const CMDataBase* read(uint64_t addr) { return read(addr, nullptr); }
   void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) { (dynamic_cast<CoreInterfaceBase*>(this->inner))->write(addr, data, delay); }
   virtual void flush(uint64_t addr, uint64_t *delay) { (dynamic_cast<CoreInterfaceBase*>(this->inner))->flush(addr, delay); }
   virtual void writeback(uint64_t addr, uint64_t *delay) { (dynamic_cast<CoreInterfaceBase*>(this->inner))->writeback(addr, delay); }
-  virtual bool hit(uint64_t addr) {
-    uint32_t ai, s, w;
-    return this->cache->hit(addr, &ai, &s, &w);
-  }
-
 };
 
 /////////////////////////////////

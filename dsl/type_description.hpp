@@ -98,6 +98,28 @@ public:
   virtual void emit_header();
 };
 
+class TypeMirageMetadataMSIBase : public TypeCMMetadataBase {
+public: TypeMirageMetadataMSIBase(const std::string &name) : TypeCMMetadataBase(name) { types.insert("MirageMetadataMSIBase"); }
+};
+
+class TypeMirageMetadataMSI : public TypeMirageMetadataMSIBase {
+  int AW, IW, TOfst;
+  const std::string tname;
+public:
+  TypeMirageMetadataMSI(const std::string &name) : TypeMirageMetadataMSIBase(name), tname("MirageMetadataMSI") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
+class TypeMirageDataMeta : public TypeCMMetadataBase{
+  const std::string tname;
+public: TypeMirageDataMeta(const std::string &name) : TypeCMMetadataBase(name), tname("MirageDataMeta") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();  
+};
+
 class TypeCMDataBase : public Description {
 public: TypeCMDataBase(const std::string &name) : Description(name) { types.insert("CMDataBase"); }
 };
@@ -154,6 +176,17 @@ public:
   virtual void emit(std::ofstream &file);
 };
 
+class TypeCacheMirage : public TypeCacheBase
+{
+  int IW, NW, EW, P; std::string MT, DT, MTDT, MIDX, DIDX, MRPC, DRPC, DLY; bool EnMon;
+  const std::string tname;
+public:
+  TypeCacheMirage(const std::string &name) : TypeCacheBase(name), tname("CacheMirage") {}
+  virtual bool set(std::list<std::string> &values); 
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
 ////////////////////////////// Coherent Cache ///////////////////////////////////////////////
 
 class TypeOuterCohPortBase : public Description {
@@ -179,6 +212,7 @@ public:
   virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
+
 
 class TypeInnerCohPortBase : public Description {
 public: TypeInnerCohPortBase(const std::string &name) : Description(name) { types.insert("InnerCohPortBase"); types.insert("CohMasterBase"); }
@@ -216,6 +250,60 @@ class TypeCoreInterfaceMSI : public TypeCoreInterfaceBase
   const std::string tname;
 public:
   TypeCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("CoreInterfaceMSI") {}
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
+class TypeMirageOuterPortMSIUncached : public TypeOuterCohPortBase
+{
+  std::string MT, DT;
+  const std::string tname;
+public:
+  TypeMirageOuterPortMSIUncached(const std::string &name) : TypeOuterCohPortBase(name), tname("MirageOuterPortMSIUncached") {}
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
+class TypeMirageOuterPortMSI : public TypeOuterCohPortBase {
+  std::string MT, DT;
+  const std::string tname;
+public:
+  TypeMirageOuterPortMSI(const std::string &name) : TypeOuterCohPortBase(name), tname("MirageOuterPortMSI") {}
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
+class TypeMirageInnerPortMSIUncached : public TypeInnerCohPortBase
+{
+  std::string MT, DT; bool isLLC, enableRelocation; int RW;
+  const std::string tname;
+public:
+  TypeMirageInnerPortMSIUncached(const std::string &name) : TypeInnerCohPortBase(name), tname("MirageInnerPortMSIUncached") {}
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
+class TypeMirageInnerPortMSIBroadcast : public TypeInnerCohPortBase
+{
+  std::string MT, DT; bool isLLC, enableRelocation; int RW;
+  const std::string tname;
+public:
+  TypeMirageInnerPortMSIBroadcast(const std::string &name) : TypeInnerCohPortBase(name), tname("MirageInnerPortMSIBroadcast") {}
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
+class TypeMirageCoreInterfaceMSI : public TypeCoreInterfaceBase
+{
+  std::string MT, DT; bool enableDelay, isLLC, enableRelocation; int RW;
+  const std::string tname;
+public:
+  TypeMirageCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("MirageCoreInterfaceMSI") {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
   virtual void emit_header();
@@ -328,6 +416,26 @@ class TypeReplaceLRU : public TypeReplaceFuncBase
   const std::string tname;
 public:
   TypeReplaceLRU(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceLRU") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+class TypeReplaceRandom : public TypeReplaceFuncBase
+{
+  int IW, NW;
+  const std::string tname;
+public:
+  TypeReplaceRandom(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceRandom") {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+class TypeReplaceCompleteRandom : public TypeReplaceFuncBase
+{
+  int IW, NW;
+  const std::string tname;
+public:
+  TypeReplaceCompleteRandom(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceCompleteRandom") {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };

@@ -117,11 +117,11 @@ public:
 // Mirage Random replacement
 // IW: index width, NW: number of ways
 template<int IW, int NW>
-class ReplaceFullRandom : public ReplaceFuncBase
+class ReplaceCompleteRandom : public ReplaceFuncBase
 {
 public:
-  ReplaceFullRandom() : ReplaceFuncBase(1ul<<IW) {}
-  virtual ~ReplaceFullRandom() {}
+  ReplaceCompleteRandom() : ReplaceFuncBase(1ul<<IW) {}
+  virtual ~ReplaceCompleteRandom() {}
 
   virtual uint32_t replace(uint32_t s, uint32_t *w){
     *w = cm_get_random_uint32() % NW;
