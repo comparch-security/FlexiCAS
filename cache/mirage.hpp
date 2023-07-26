@@ -6,10 +6,10 @@
 #include <stack>
 #include "cache/coherence.hpp"
 
-namespace // file visibility
+namespace Mirage// file visibility
 {
   // MirageMSI protocol
-  class MiragePolicy {
+  class Policy {
     // definition of command:
     // [31  :   16] [15 : 8] [7 :0]
     // coherence-id msg-type action
@@ -341,12 +341,12 @@ class MirageOuterPortMSIUncached : public OuterCohPortBase
 {
 public:
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    coh->acquire_resp(addr, data, MiragePolicy::attach_id(cmd, this->coh_id), delay);
-    MiragePolicy::meta_after_grant(cmd, meta, addr);
+    coh->acquire_resp(addr, data, Mirage::Policy::attach_id(cmd, this->coh_id), delay);
+    Mirage::Policy::meta_after_grant(cmd, meta, addr);
   }
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMMetadataBase *data_meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    coh->writeback_resp(addr, data, MiragePolicy::attach_id(cmd, this->coh_id), delay);
-    MiragePolicy::meta_after_writeback(cmd, meta, data_meta);
+    coh->writeback_resp(addr, data, Mirage::Policy::attach_id(cmd, this->coh_id), delay);
+    Mirage::Policy::meta_after_writeback(cmd, meta, data_meta);
   }
 };
 
@@ -366,7 +366,7 @@ public:
       }
 
       // sync if necessary
-      if(MiragePolicy::need_sync(cmd, meta)) this->inner->probe_req(addr, meta, data, MiragePolicy::cmd_for_sync(cmd), delay);
+      if(Mirage::Policy::need_sync(cmd, meta)) this->inner->probe_req(addr, meta, data, Mirage::Policy::cmd_for_sync(cmd), delay);
 
       // writeback if dirty
       if(writeback = meta->is_dirty()) { // dirty, writeback
@@ -376,9 +376,9 @@ public:
       }
 
       // update meta
-      MiragePolicy::meta_after_probe_ack(cmd, meta);
+      Mirage::Policy::meta_after_probe_ack(cmd, meta);
     }
-    this->cache->hook_manage(addr, ai, s, w, hit, MiragePolicy::is_evict(cmd), writeback, delay);
+    this->cache->hook_manage(addr, ai, s, w, hit, Mirage::Policy::is_evict(cmd), writeback, delay);
   }
 };
 
@@ -401,9 +401,9 @@ public:
       meta = this->cache->access(ai, s, w);
       meta->data(&ds, &dw);
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
-      if(MiragePolicy::need_sync(cmd, meta)) probe_req(addr, meta, data, MiragePolicy::cmd_for_sync(cmd), delay); // sync if necessary
+      if(Mirage::Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Mirage::Policy::cmd_for_sync(cmd), delay); // sync if necessary
       if constexpr (!isLLC) {
-        if(MiragePolicy::need_promote(cmd, meta)) {  // promote permission if needed
+        if(Mirage::Policy::need_promote(cmd, meta)) {  // promote permission if needed
           outer->acquire_req(addr, meta, data, cmd, delay);
           hit = false;
         }
@@ -461,9 +461,9 @@ public:
         if(meta->is_valid()) {
           auto replace_addr = meta->addr(s);
           if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
-          if(MiragePolicy::need_sync(MiragePolicy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, MiragePolicy::cmd_for_sync(MiragePolicy::cmd_for_evict()), delay); // sync if necessary
+          if(Mirage::Policy::need_sync(Mirage::Policy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, Mirage::Policy::cmd_for_sync(Mirage::Policy::cmd_for_evict()), delay); // sync if necessary
           if(writeback = meta->is_dirty()) 
-            outer->writeback_req(replace_addr, meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
+            outer->writeback_req(replace_addr, meta, data_meta, data, Mirage::Policy::cmd_for_evict(), delay); // writeback if dirty
           else 
             data_meta->to_invalid();
           this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
@@ -502,9 +502,9 @@ public:
         CMMetadataBase* replace_meta = this->cache->access(r_ai, r_s, r_w);
         auto replace_addr = replace_meta->addr(s);
         assert(this->cache->hit(replace_addr, &r_ai, &r_s, &r_w));
-        if(MiragePolicy::need_sync(MiragePolicy::cmd_for_evict(), replace_meta)) probe_req(replace_addr, replace_meta, data, MiragePolicy::cmd_for_sync(MiragePolicy::cmd_for_evict()), delay); // sync if necessary
+        if(Mirage::Policy::need_sync(Mirage::Policy::cmd_for_evict(), replace_meta)) probe_req(replace_addr, replace_meta, data, Mirage::Policy::cmd_for_sync(Mirage::Policy::cmd_for_evict()), delay); // sync if necessary
         if(writeback = replace_meta->is_dirty()) 
-          outer->writeback_req(replace_addr, replace_meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
+          outer->writeback_req(replace_addr, replace_meta, data_meta, data, Mirage::Policy::cmd_for_evict(), delay); // writeback if dirty
         else
           replace_meta->to_invalid(); 
         this->cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
@@ -515,38 +515,38 @@ public:
     }
     // grant
     if constexpr (!std::is_void<DT>::value) data_inner->copy(data);
-    MiragePolicy::meta_after_acquire(cmd, meta);
+    Mirage::Policy::meta_after_acquire(cmd, meta);
     this->cache->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd, uint64_t *delay) {
-    if (isLLC || MiragePolicy::is_release(cmd)) {
+    if (isLLC || Mirage::Policy::is_release(cmd)) {
       uint32_t ai, s, w;
       uint32_t ds, dw;
       bool writeback = false, hit = this->cache->hit(addr, &ai, &s, &w);
       CMMetadataBase *meta = nullptr;
-      if(MiragePolicy::is_release(cmd)) {
+      if(Mirage::Policy::is_release(cmd)) {
         assert(hit); // must hit
         meta = this->cache->access(ai, s, w);
         meta->data(&ds, &dw);
         if constexpr (!std::is_void<DT>::value) this->cache->get_data(ds, dw)->copy(data_inner);
-        MiragePolicy::meta_after_release(cmd, meta);
+        Mirage::Policy::meta_after_release(cmd, meta);
         this->cache->hook_write(addr, ai, s, w, hit, delay);
       } else {
-        assert(MiragePolicy::is_flush(cmd));
+        assert(Mirage::Policy::is_flush(cmd));
         if(hit) {
           CMDataBase *data = nullptr;
           meta = this->cache->access(ai, s, w);
           meta->data(&ds, &dw);
           auto data_meta = this->cache->access(ds, dw);
           if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
-          probe_req(addr, meta, data, MiragePolicy::cmd_for_sync(cmd), delay);
+          probe_req(addr, meta, data, Mirage::Policy::cmd_for_sync(cmd), delay);
           if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data_meta, data, cmd, delay);
         }
-        this->cache->hook_manage(addr, ai, s, w, hit, MiragePolicy::is_evict(cmd), writeback, delay);
+        this->cache->hook_manage(addr, ai, s, w, hit, Mirage::Policy::is_evict(cmd), writeback, delay);
       }
     } else {
-      assert(MiragePolicy::is_flush(cmd) && !isLLC);
+      assert(Mirage::Policy::is_flush(cmd) && !isLLC);
       outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
     }
   }
@@ -554,12 +554,12 @@ public:
 
 // full MSI inner port (broadcasting hub, snoop)
 template<typename MT, typename DT, bool isLLC, bool enableRelocation, int RW>
-class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<RW, MT, DT, isLLC>
+class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<MT, DT, isLLC, enableRelocation, RW>
 {
 public:
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
     for(uint32_t i=0; i<this->coh.size(); i++)
-      if(MiragePolicy::need_probe(cmd, i))
+      if(Mirage::Policy::need_probe(cmd, i))
         this->coh[i]->probe_resp(addr, meta, data, cmd, delay);
   }
 };
@@ -581,7 +581,7 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
       meta->data(&ds, &dw);
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
       if constexpr (!isLLC) {
-        if(MiragePolicy::need_promote(cmd, meta)) {
+        if(Mirage::Policy::need_promote(cmd, meta)) {
           outer->acquire_req(addr, meta, data, cmd, delay);
           hit = false;
         }
@@ -637,7 +637,7 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
           auto replace_addr = meta->addr(s);
           if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
           if(writeback = meta->is_dirty()) 
-            outer->writeback_req(replace_addr, meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
+            outer->writeback_req(replace_addr, meta, data_meta, data, Mirage::Policy::cmd_for_evict(), delay); // writeback if dirty
           else 
             data_meta->to_invalid();
           this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
@@ -677,7 +677,7 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
         auto replace_addr = replace_meta->addr(s);
         assert(this->cache->hit(replace_addr, &r_ai, &r_s, &r_w));
         if(writeback = replace_meta->is_dirty()) 
-          outer->writeback_req(replace_addr, replace_meta, data_meta, data, MiragePolicy::cmd_for_evict(), delay); // writeback if dirty
+          outer->writeback_req(replace_addr, replace_meta, data_meta, data, Mirage::Policy::cmd_for_evict(), delay); // writeback if dirty
         else 
           replace_meta->to_invalid();
         this->cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
@@ -686,7 +686,7 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
       data_meta->bind(ai, s, w);
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }
-    if(cmd == MiragePolicy::cmd_for_core_write()) {
+    if(cmd == Mirage::Policy::cmd_for_core_write()) {
       meta->to_dirty();
       this->cache->hook_write(addr, ai, s, w, hit, delay);
     } else
@@ -705,7 +705,7 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
         if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
         if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
       }
-      this->cache->hook_manage(addr, ai, s, w, hit, MiragePolicy::is_evict(cmd), writeback, delay);
+      this->cache->hook_manage(addr, ai, s, w, hit, Mirage::Policy::is_evict(cmd), writeback, delay);
     } else {
       outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
     }
@@ -713,16 +713,16 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
 
 public:
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
-    return access(addr, MiragePolicy::cmd_for_core_read(), EnableDelay ? delay : nullptr);
+    return access(addr, Mirage::Policy::cmd_for_core_read(), EnableDelay ? delay : nullptr);
   }
 
   virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
-    auto m_data = access(addr, MiragePolicy::cmd_for_core_write(), EnableDelay ? delay : nullptr);
+    auto m_data = access(addr, Mirage::Policy::cmd_for_core_write(), EnableDelay ? delay : nullptr);
     if constexpr (!std::is_void<DT>::value) m_data->copy(data);
   }
 
-  virtual void flush(uint64_t addr, uint64_t *delay)     { manage(addr, MiragePolicy::cmd_for_flush_evict(),     delay); }
-  virtual void writeback(uint64_t addr, uint64_t *delay) { manage(addr, MiragePolicy::cmd_for_flush_writeback(), delay); }
+  virtual void flush(uint64_t addr, uint64_t *delay)     { manage(addr, Mirage::Policy::cmd_for_flush_evict(),     delay); }
+  virtual void writeback(uint64_t addr, uint64_t *delay) { manage(addr, Mirage::Policy::cmd_for_flush_writeback(), delay); }
   virtual void writeback_invalidate(uint64_t *delay) {
     assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
   }
