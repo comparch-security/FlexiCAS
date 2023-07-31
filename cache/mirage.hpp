@@ -349,7 +349,7 @@ public:
 
 // full MSI Outer port
 template<typename MT, typename DT, typename Policy>
-class MirageOuterPortMSI : public MirageOuterPortMSIUncached<MT, DT>
+class MirageOuterPortMSI : public MirageOuterPortMSIUncached<MT, DT, Policy>
 {
 public:
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, uint32_t cmd, uint64_t *delay) {
@@ -550,8 +550,8 @@ public:
 };
 
 // full MSI inner port (broadcasting hub, snoop)
-template<typename MT, typename DT, bool isLLC, bool enableRelocation, int RW>
-class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<MT, DT, isLLC, enableRelocation, RW>
+template<typename MT, typename DT, bool isLLC, bool enableRelocation, int RW, typename Policy>
+class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<MT, DT, isLLC, enableRelocation, RW, Policy>
 {
 public:
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {

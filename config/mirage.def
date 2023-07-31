@@ -28,8 +28,9 @@ type l1_indexer_type    = IndexNorm(L1IW, BlockOffset);
 type l1_replacer_type   = ReplaceLRU(L1IW, L1WN);
 type l1_delay_type      = void;
 type l1_type            = CacheNorm(L1IW, L1WN, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, l1_delay_type, false);
-type l1_inner_type      = CoreInterfaceMSI(l1_metadata_type, data_type, EnableDelay, false);
-type l1_outer_type      = OuterPortMSI(l1_metadata_type, data_type);     // support reverse probe
+type l1_policy          = MSIPolicy();
+type l1_inner_type      = CoreInterfaceMSI(l1_metadata_type, data_type, EnableDelay, false, l1_policy);
+type l1_outer_type      = OuterPortMSI(l1_metadata_type, data_type, l1_policy);     // support reverse probe
 type l1_cache_type      = CoherentL1CacheNorm(l1_type, l1_outer_type, l1_inner_type);
 create l1 = l1_cache_type[1]; // 1 L1 caches
 
@@ -42,8 +43,9 @@ type llc_m_replacer_type = ReplaceLRU(LLCWS, LLCWN);
 type llc_d_replacer_type = ReplaceCompleteRandom(LLCIW, LLCWD);
 type llc_delay_type      = void;
 type llc_type            = CacheMirage(LLCIW, LLCWN, LLCWE, LLCPartitionN, llc_metadata_type, data_type, llc_datameta_type, llc_m_indexer_type, llc_d_indexer_type, llc_m_replacer_type, llc_d_replacer_type, llc_delay_type, EnableMonitor);
-type llc_inner_type      = MirageInnerPortMSIBroadcast(llc_metadata_type, data_type, true, EnableRelocation, LLCRW);
-type llc_outer_type      = MirageOuterPortMSIUncached(llc_metadata_type, data_type);
+type llc_policy          = MirageMSIPolicy();
+type llc_inner_type      = MirageInnerPortMSIBroadcast(llc_metadata_type, data_type, true, EnableRelocation, LLCRW, llc_policy);
+type llc_outer_type      = MirageOuterPortMSIUncached(llc_metadata_type, data_type, llc_policy);
 type llc_cache_type      = CoherentCacheNorm(llc_type, llc_outer_type, llc_inner_type);
 create llc = llc_cache_type[1]; // 1 shared llc slices
 

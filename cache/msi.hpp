@@ -203,7 +203,7 @@ public:
 
 // full MSI Outer port
 template<typename MT, typename DT, typename Policy>
-class OuterPortMSI : public OuterPortMSIUncached<MT, DT>
+class OuterPortMSI : public OuterPortMSIUncached<MT, DT, Policy>
 {
 public:
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, uint32_t cmd, uint64_t *delay) {
@@ -307,7 +307,7 @@ public:
 
 // full MSI inner port (broadcasting hub, snoop)
 template<typename MT, typename DT, bool isLLC, typename Policy>
-class InnerPortMSIBroadcast : public InnerPortMSIUncached<MT, DT, isLLC>
+class InnerPortMSIBroadcast : public InnerPortMSIUncached<MT, DT, isLLC, Policy>
 {
 public:
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
