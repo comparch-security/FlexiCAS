@@ -297,13 +297,13 @@ bool TypeInnerPortMSIUncached::set(std::list<std::string> &values) {
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   Policy = *it; it++;
+  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   return true;
 }
   
 void TypeInnerPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "," << Policy << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/msi.hpp"); }
@@ -316,13 +316,13 @@ bool TypeInnerPortMSIBroadcast::set(std::list<std::string> &values) {
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   Policy = *it; it++;
+  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   return true;
 }
   
 void TypeInnerPortMSIBroadcast::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "," << Policy << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/msi.hpp"); }
@@ -335,14 +335,14 @@ bool TypeCoreInterfaceMSI::set(std::list<std::string> &values) {
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   if(!codegendb.parse_bool(*it, enableDelay)) return false; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  Policy = *it; it++;
   return true;
 }
   
 void TypeCoreInterfaceMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << enableDelay << "," << isLLC <<  "," << Policy << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << enableDelay << "," << isLLC << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeCoreInterfaceMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
@@ -391,15 +391,15 @@ bool TypeMirageInnerPortMSIUncached::set(std::list<std::string> &values) {
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
   if(!codegendb.parse_int(*it, RW)) return false; it++;
-  Policy = *it; it++;
   return true;
 }
   
 void TypeMirageInnerPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "," << enableRelocation << "," << RW << "," << Policy << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeMirageInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
@@ -412,15 +412,15 @@ bool TypeMirageInnerPortMSIBroadcast::set(std::list<std::string> &values) {
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
   if(!codegendb.parse_int(*it, RW)) return false; it++;
-  Policy = *it; it++;
   return true;
 }
   
 void TypeMirageInnerPortMSIBroadcast::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "," << enableRelocation << "," << RW << "," << Policy << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeMirageInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
@@ -433,16 +433,16 @@ bool TypeMirageCoreInterfaceMSI::set(std::list<std::string> &values) {
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   if(!codegendb.parse_bool(*it, enableDelay)) return false; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
   if(!codegendb.parse_int(*it, RW)) return false; it++;
-  Policy = *it; it++;
   return true;
 }
   
 void TypeMirageCoreInterfaceMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << enableDelay << "," << isLLC << "," << enableRelocation << "," << RW << "," << Policy << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << enableDelay << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeMirageCoreInterfaceMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }

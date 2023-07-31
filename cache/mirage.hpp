@@ -382,7 +382,7 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT, bool isLLC, bool enableRelocation, int RW, typename Policy,
+template<typename MT, typename DT, typename Policy, bool isLLC, bool enableRelocation, int RW,
          typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageInnerPortMSIUncached : public InnerCohPortBase
@@ -550,8 +550,8 @@ public:
 };
 
 // full MSI inner port (broadcasting hub, snoop)
-template<typename MT, typename DT, bool isLLC, bool enableRelocation, int RW, typename Policy>
-class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<MT, DT, isLLC, enableRelocation, RW, Policy>
+template<typename MT, typename DT, typename Policy, bool isLLC, bool enableRelocation, int RW>
+class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<MT, DT, Policy, isLLC, enableRelocation, RW>
 {
 public:
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
@@ -562,7 +562,7 @@ public:
 };
 
 // MSI core interface:
-template<typename MT, typename DT, bool EnableDelay, bool isLLC, bool enableRelocation, int RW, typename Policy,
+template<typename MT, typename DT, typename Policy, bool EnableDelay, bool isLLC, bool enableRelocation, int RW,
          typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageCoreInterfaceMSI : public CoreInterfaceBase
