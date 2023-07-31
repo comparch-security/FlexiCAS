@@ -5,137 +5,133 @@
 #include <type_traits>
 #include "cache/coherence.hpp"
 
-namespace // file visibility
-{
-  // MSI protocol
-  class Policy {
-    // definition of command:
-    // [31  :   16] [15 : 8] [7 :0]
-    // coherence-id msg-type action
-    //---------------------------------------
-    // msg type:
-    // [1] Acquire [2] Release (writeback) [3] Probe [4] Flush
-    //---------------------------------------
-    // action:
-    // Acquire: fetch for [0] read / [1] write
-    // Release: [0] evict / [1] writeback (keep modified)
-    // Probe: [0] evict / [1] writeback (keep shared)
-    // Flush: [0] evict / [1] writeback 
+// MSI protocol
+class MSIPolicy {
+  // definition of command:
+  // [31  :   16] [15 : 8] [7 :0]
+  // coherence-id msg-type action
+  //---------------------------------------
+  // msg type:
+  // [1] Acquire [2] Release (writeback) [3] Probe [4] Flush
+  //---------------------------------------
+  // action:
+  // Acquire: fetch for [0] read / [1] write
+  // Release: [0] evict / [1] writeback (keep modified)
+  // Probe: [0] evict / [1] writeback (keep shared)
+  // Flush: [0] evict / [1] writeback
 
-    constexpr static uint32_t acquire_msg = 1 << 8;
-    constexpr static uint32_t release_msg = 2 << 8;
-    constexpr static uint32_t probe_msg = 3 << 8;
-    constexpr static uint32_t flush_msg = 4 << 8;
+  constexpr static uint32_t acquire_msg = 1 << 8;
+  constexpr static uint32_t release_msg = 2 << 8;
+  constexpr static uint32_t probe_msg = 3 << 8;
+  constexpr static uint32_t flush_msg = 4 << 8;
 
-    constexpr static uint32_t acquire_read = 0;
-    constexpr static uint32_t acquire_write = 1;
+  constexpr static uint32_t acquire_read = 0;
+  constexpr static uint32_t acquire_write = 1;
 
-    constexpr static uint32_t release_evict = 0;
-    constexpr static uint32_t release_writeback = 1;
+  constexpr static uint32_t release_evict = 0;
+  constexpr static uint32_t release_writeback = 1;
 
-    constexpr static uint32_t probe_evict = 0;
-    constexpr static uint32_t probe_writeback = 1;
+  constexpr static uint32_t probe_evict = 0;
+  constexpr static uint32_t probe_writeback = 1;
 
-    constexpr static uint32_t flush_evict = 0;
-    constexpr static uint32_t flush_writeback = 1;
-  public:
-    static inline bool is_acquire(uint32_t cmd) {return (cmd & 0x0ff00ul) == acquire_msg; }
-    static inline bool is_release(uint32_t cmd) {return (cmd & 0x0ff00ul) == release_msg; }
-    static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
-    static inline bool is_flush(uint32_t cmd)   {return (cmd & 0x0ff00ul) == flush_msg; }
-    static inline bool is_evict(uint32_t cmd)   {return (is_probe(cmd) && probe_evict == get_action(cmd)) ||
-                                                        (is_flush(cmd) && flush_evict == get_action(cmd)); }
-    static inline uint32_t get_id(uint32_t cmd) {return cmd >> 16; }
-    static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
+  constexpr static uint32_t flush_evict = 0;
+  constexpr static uint32_t flush_writeback = 1;
+public:
+  static inline bool is_acquire(uint32_t cmd) {return (cmd & 0x0ff00ul) == acquire_msg; }
+  static inline bool is_release(uint32_t cmd) {return (cmd & 0x0ff00ul) == release_msg; }
+  static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
+  static inline bool is_flush(uint32_t cmd)   {return (cmd & 0x0ff00ul) == flush_msg; }
+  static inline bool is_evict(uint32_t cmd)   {return (is_probe(cmd) && probe_evict == get_action(cmd)) ||
+      (is_flush(cmd) && flush_evict == get_action(cmd)); }
+  static inline uint32_t get_id(uint32_t cmd) {return cmd >> 16; }
+  static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
 
-    // attach an id to a command
-    static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (0x0fffful)) | (id << 16); }
+  // attach an id to a command
+  static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (0x0fffful)) | (id << 16); }
 
-    // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
-    static inline bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
-      return (is_probe(cmd) && probe_evict == get_action(cmd)) || meta->is_modified() || (is_acquire(cmd) && acquire_write == get_action(cmd));
+  // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
+  static inline bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
+    return (is_probe(cmd) && probe_evict == get_action(cmd)) || meta->is_modified() || (is_acquire(cmd) && acquire_write == get_action(cmd));
+  }
+
+  // check whether a permission upgrade is needed for the required action
+  static inline bool need_promote(uint32_t cmd, CMMetadataBase *meta) {
+    return (is_acquire(cmd) && acquire_write == get_action(cmd) && !meta->is_modified());
+  }
+
+  // avoid self probe
+  static inline bool need_probe(uint32_t cmd, uint32_t coh_id) { return coh_id != get_id(cmd); }
+
+  // generate the command for reverse probe
+  static inline uint32_t cmd_for_sync(uint32_t cmd) {
+    if(is_acquire(cmd) && acquire_read == get_action(cmd)) {
+      return attach_id(probe_msg | probe_writeback, get_id(cmd));
+    } else if ((is_probe(cmd)   && probe_writeback == get_action(cmd)) ||
+               (is_flush(cmd) && flush_writeback == get_action(cmd))) {
+      return attach_id(probe_msg | probe_writeback, -1);
+    } else {
+      assert((is_acquire(cmd) && acquire_write == get_action(cmd)) ||
+             (is_probe(cmd)   && probe_evict == get_action(cmd))   ||
+             (is_release(cmd) && release_evict == get_action(cmd)) ||
+             (is_flush(cmd)) && flush_evict == get_action(cmd));
+      return attach_id(probe_msg | probe_evict, -1);
     }
+  }
 
-    // check whether a permission upgrade is needed for the required action
-    static inline bool need_promote(uint32_t cmd, CMMetadataBase *meta) {
-      return (is_acquire(cmd) && acquire_write == get_action(cmd) && !meta->is_modified());
+  static inline constexpr uint32_t cmd_for_evict()           { return release_msg | release_evict;     }
+  static inline constexpr uint32_t cmd_for_writeback()       { return release_msg | release_writeback; }
+  static inline constexpr uint32_t cmd_for_flush_evict()     { return flush_msg   | flush_evict;       }
+  static inline constexpr uint32_t cmd_for_flush_writeback() { return flush_msg   | flush_writeback;   }
+  static inline constexpr uint32_t cmd_for_core_read()       { return acquire_msg | acquire_read;      }
+  static inline constexpr uint32_t cmd_for_core_write()      { return acquire_msg | acquire_write;     }
+
+  // set the meta after processing an acquire
+  static inline void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta) {
+    assert(is_acquire(cmd)); // must be an acquire
+    if(acquire_read == get_action(cmd))
+      meta->to_shared();
+    else {
+      assert(acquire_write == get_action(cmd));
+      meta->to_modified();
     }
+  }
 
-    // avoid self probe
-    static inline bool need_probe(uint32_t cmd, uint32_t coh_id) { return coh_id != get_id(cmd); }
-
-    // generate the command for reverse probe
-    static inline uint32_t cmd_for_sync(uint32_t cmd) {
-      if(is_acquire(cmd) && acquire_read == get_action(cmd)) {
-        return attach_id(probe_msg | probe_writeback, get_id(cmd));
-      } else if ((is_probe(cmd)   && probe_writeback == get_action(cmd)) ||
-                 (is_flush(cmd) && flush_writeback == get_action(cmd))) {
-        return attach_id(probe_msg | probe_writeback, -1);
-      } else {
-        assert((is_acquire(cmd) && acquire_write == get_action(cmd)) ||
-               (is_probe(cmd)   && probe_evict == get_action(cmd))  ||
-               (is_release(cmd) && release_evict == get_action(cmd)) ||
-               (is_flush(cmd)) && flush_evict == get_action(cmd));
-        return attach_id(probe_msg | probe_evict, -1);
-      }
+  // set the metadata for a newly fetched block
+  static inline void meta_after_grant(uint32_t cmd, CMMetadataBase *meta, uint64_t addr) {
+    assert(is_acquire(cmd)); // must be an acquire
+    assert(!meta->is_dirty()); // by default an invalid block must be clean
+    meta->init(addr);
+    if(acquire_read == get_action(cmd))
+      meta->to_shared();
+    else {
+      assert(acquire_write == get_action(cmd));
+      meta->to_modified();
     }
+  }
 
-    static inline constexpr uint32_t cmd_for_evict()           { return release_msg | release_evict;     }
-    static inline constexpr uint32_t cmd_for_writeback()       { return release_msg | release_writeback; }
-    static inline constexpr uint32_t cmd_for_flush_evict()     { return flush_msg   | flush_evict;       }
-    static inline constexpr uint32_t cmd_for_flush_writeback() { return flush_msg   | flush_writeback;   }
-    static inline constexpr uint32_t cmd_for_core_read()       { return acquire_msg | acquire_read;      }
-    static inline constexpr uint32_t cmd_for_core_write()      { return acquire_msg | acquire_write;     }
-
-    // set the meta after processing an acquire
-    static inline void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta) {
-      assert(is_acquire(cmd)); // must be an acquire
-      if(acquire_read == get_action(cmd))
-        meta->to_shared();
-      else {
-        assert(acquire_write == get_action(cmd));
-        meta->to_modified();
-      }
+  // set the metadata after a block is written back
+  static inline void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta) {
+    if(is_release(cmd) || (is_flush(cmd) && meta != nullptr)){
+      meta->to_clean();
+      if(release_evict == get_action(cmd) || flush_evict == get_action(cmd)) meta->to_invalid();
     }
+  }
 
-    // set the metadata for a newly fetched block
-    static inline void meta_after_grant(uint32_t cmd, CMMetadataBase *meta, uint64_t addr) {
-      assert(is_acquire(cmd)); // must be an acquire
-      assert(!meta->is_dirty()); // by default an invalid block must be clean
-      meta->init(addr);
-      if(acquire_read == get_action(cmd))
-        meta->to_shared();
-      else {
-        assert(acquire_write == get_action(cmd));
-        meta->to_modified();
-      }
+  // set the meta after the block is released
+  static inline void meta_after_release(uint32_t cmd, CMMetadataBase *meta) { meta->to_dirty(); }
+
+  // update the metadata for inner cache after ack a probe
+  static inline void meta_after_probe_ack(uint32_t cmd, CMMetadataBase *meta) {
+    assert(is_probe(cmd)); // must be a probe
+    if(probe_evict == get_action(cmd))
+      meta->to_invalid();
+    else {
+      assert(meta->is_modified()); // for MSI, probe degradation happens only for modified state
+      meta->to_shared();
     }
+  }
 
-    // set the metadata after a block is written back
-    static inline void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta) {
-      if(is_release(cmd) || (is_flush(cmd) && meta != nullptr)){
-        meta->to_clean();
-        if(release_evict == get_action(cmd) || flush_evict == get_action(cmd)) meta->to_invalid();
-      }
-    }
-
-    // set the meta after the block is released
-    static inline void meta_after_release(uint32_t cmd, CMMetadataBase *meta) { meta->to_dirty(); }
-
-    // update the metadata for inner cache after ack a probe
-    static inline void meta_after_probe_ack(uint32_t cmd, CMMetadataBase *meta) {
-      assert(is_probe(cmd)); // must be a probe
-      if(probe_evict == get_action(cmd))
-        meta->to_invalid();
-      else {
-        assert(meta->is_modified()); // for MSI, probe degradation happens only for modified state
-        meta->to_shared();
-      }
-    }
-
-  };
-
-}
+};
 
 // metadata supporting MSI coherency
 class MetadataMSIBase : public CMMetadataBase
@@ -189,7 +185,7 @@ public:
 // uncached MSI outer port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT,
+template<typename MT, typename DT, typename Policy,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class OuterPortMSIUncached : public OuterCohPortBase
@@ -206,7 +202,7 @@ public:
 };
 
 // full MSI Outer port
-template<typename MT, typename DT>
+template<typename MT, typename DT, typename Policy>
 class OuterPortMSI : public OuterPortMSIUncached<MT, DT>
 {
 public:
@@ -240,7 +236,7 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT, bool isLLC,
+template<typename MT, typename DT, bool isLLC, typename Policy,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class InnerPortMSIUncached : public InnerCohPortBase
@@ -310,7 +306,7 @@ public:
 };
 
 // full MSI inner port (broadcasting hub, snoop)
-template<typename MT, typename DT, bool isLLC>
+template<typename MT, typename DT, bool isLLC, typename Policy>
 class InnerPortMSIBroadcast : public InnerPortMSIUncached<MT, DT, isLLC>
 {
 public:
@@ -322,7 +318,7 @@ public:
 };
 
 // MSI core interface:
-template<typename MT, typename DT, bool EnableDelay, bool isLLC,
+template<typename MT, typename DT, bool EnableDelay, bool isLLC, typename Policy,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class CoreInterfaceMSI : public CoreInterfaceBase
