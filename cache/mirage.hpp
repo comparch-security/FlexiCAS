@@ -239,7 +239,7 @@ public:
     return arrays[ai]->get_meta(s, w);
   }
 
-  virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w){
+  virtual MirageDataMeta *access(uint32_t d_s, uint32_t d_w){
     return arrays[P]->get_meta(d_s, d_w);
   }
 
@@ -299,6 +299,10 @@ public:
   virtual bool is_shared() const { return state == 1; }
   virtual bool is_modified() const {return state == 2; }
   virtual bool is_dirty() const { return dirty; }
+
+  // special methods needed for Mirage Cache
+  virtual void bind(uint32_t ds, uint32_t dw) = 0;   // initialize meta pointer
+  virtual void data(uint32_t* ds, uint32_t *dw) = 0; // return meta pointer to data meta
 };
 
 // Metadata with match function
@@ -394,11 +398,11 @@ public:
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     uint32_t ds, dw;
-    CMMetadataBase *meta;
+    MirageMetadataMSIBase *meta;
     CMDataBase *data;
     bool hit, writeback;
     if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
-      meta = this->cache->access(ai, s, w);
+      meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
       meta->data(&ds, &dw);
       if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
       if(Mirage::Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Mirage::Policy::cmd_for_sync(cmd), delay); // sync if necessary
@@ -414,7 +418,8 @@ public:
       std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > location;
       std::unordered_set<uint64_t> remapped;
       std::vector<uint32_t> free_location;
-      CMMetadataBase *mmeta, *data_meta, *data_mmeta;
+      MirageMetadataMSIBase *mmeta;
+      MirageDataMeta *data_meta, *data_mmeta;
       uint32_t P; uint32_t relocation = 0; 
       uint32_t m_ai, m_s, m_w, m_ds, m_dw;
       uint32_t max_free = 1;
@@ -436,18 +441,18 @@ public:
       if(free_location.size() >= 1){
         ai = free_location[cm_get_random_uint32() % free_location.size()];
         s = location[ai].first.first; w = location[ai].first.second;
-        meta = this->cache->access(ai, s, w);
+        meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
         assert(!meta->is_valid());
       }
       else{ // If all the skews have no free space
         ai = cm_get_random_uint32()%P;
         s = location[ai].first.first; w = location[ai].first.second;
-        meta = this->cache->access(ai, s, w);
+        meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
         while(enableRelocation && meta->is_valid() && relocation < RW){
           relocation++;
           addr = meta->addr(s); 
           this->cache->replace(addr, (ai+1) % P, &m_s, &m_w);
-          mmeta = this->cache->access((ai+1) % P, m_s, m_w);
+          mmeta = static_cast<MirageMetadataMSIBase *>(this->cache->access((ai+1) % P, m_s, m_w));
           if(remapped.count(mmeta->addr(s))) break; // Prevent duplicate relocation during cuckoo relocation
           remapped.insert(addr);
           addr_stack.push(addr);
@@ -472,7 +477,7 @@ public:
           addr = addr_stack.top();
           addr_stack.pop();
           this->cache->replace(addr, (ai-1+P)%P, &m_s, &m_w);
-          mmeta = this->cache->access((ai-1+P)%P, m_s, m_w);
+          mmeta = static_cast<MirageMetadataMSIBase *>(this->cache->access((ai-1+P)%P, m_s, m_w));
           mmeta->data(&m_ds, &m_dw);
           data_mmeta = this->cache->access(m_ds, m_dw);
           assert(addr == mmeta->addr(m_s));
@@ -499,7 +504,7 @@ public:
       if(data_meta->is_valid()){
         uint32_t r_ai, r_s, r_w;
         data_meta->meta(&r_ai, &r_s, &r_w);
-        CMMetadataBase* replace_meta = this->cache->access(r_ai, r_s, r_w);
+        auto replace_meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(r_ai, r_s, r_w));
         auto replace_addr = replace_meta->addr(s);
         assert(this->cache->hit(replace_addr, &r_ai, &r_s, &r_w));
         if(Mirage::Policy::need_sync(Mirage::Policy::cmd_for_evict(), replace_meta)) probe_req(replace_addr, replace_meta, data, Mirage::Policy::cmd_for_sync(Mirage::Policy::cmd_for_evict()), delay); // sync if necessary
@@ -524,10 +529,10 @@ public:
       uint32_t ai, s, w;
       uint32_t ds, dw;
       bool writeback = false, hit = this->cache->hit(addr, &ai, &s, &w);
-      CMMetadataBase *meta = nullptr;
+      MirageMetadataMSIBase *meta = nullptr;
       if(Mirage::Policy::is_release(cmd)) {
         assert(hit); // must hit
-        meta = this->cache->access(ai, s, w);
+        meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
         meta->data(&ds, &dw);
         if constexpr (!std::is_void<DT>::value) this->cache->get_data(ds, dw)->copy(data_inner);
         Mirage::Policy::meta_after_release(cmd, meta);
@@ -536,7 +541,7 @@ public:
         assert(Mirage::Policy::is_flush(cmd));
         if(hit) {
           CMDataBase *data = nullptr;
-          meta = this->cache->access(ai, s, w);
+          meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
           meta->data(&ds, &dw);
           auto data_meta = this->cache->access(ds, dw);
           if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
