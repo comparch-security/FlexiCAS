@@ -187,6 +187,24 @@ public:
   virtual void emit_header();
 };
 
+////////////////////////////// Policy ///////////////////////////////////////////////
+
+class TypeMSIPolicy : public Description {
+  const std::string tname;
+public: TypeMSIPolicy(const std::string &name) : Description(name), tname("MSIPolicy") { types.insert("MSIPolicy"); }
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
+class TypeMirageMSIPolicy : public Description {
+  const std::string tname;
+public: TypeMirageMSIPolicy(const std::string &name) : Description(name), tname("MirageMSIPolicy") { types.insert("MirageMSIPolicy"); }
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+  virtual void emit_header();
+};
+
 ////////////////////////////// Coherent Cache ///////////////////////////////////////////////
 
 class TypeOuterCohPortBase : public Description {
@@ -194,7 +212,7 @@ public: TypeOuterCohPortBase(const std::string &name) : Description(name) { type
 };
 
 class TypeOuterPortMSIUncached : public TypeOuterCohPortBase {
-  std::string MT, DT;
+  std::string MT, DT, Policy;
   const std::string tname;
 public:
   TypeOuterPortMSIUncached(const std::string &name) : TypeOuterCohPortBase(name), tname("OuterPortMSIUncached") {}
@@ -204,7 +222,7 @@ public:
 };
 
 class TypeOuterPortMSI : public TypeOuterCohPortBase {
-  std::string MT, DT;
+  std::string MT, DT, Policy;
   const std::string tname;
 public:
   TypeOuterPortMSI(const std::string &name) : TypeOuterCohPortBase(name), tname("OuterPortMSI") {}
@@ -220,7 +238,7 @@ public: TypeInnerCohPortBase(const std::string &name) : Description(name) { type
 
 class TypeInnerPortMSIUncached : public TypeInnerCohPortBase
 {
-  std::string MT, DT; bool isLLC;
+  std::string MT, DT, Policy; bool isLLC; 
   const std::string tname;
 public:
   TypeInnerPortMSIUncached(const std::string &name) : TypeInnerCohPortBase(name), tname("InnerPortMSIUncached") {}
@@ -231,7 +249,7 @@ public:
 
 class TypeInnerPortMSIBroadcast : public TypeInnerCohPortBase
 {
-  std::string MT, DT; bool isLLC;
+  std::string MT, DT, Policy; bool isLLC;
   const std::string tname;
 public:
   TypeInnerPortMSIBroadcast(const std::string &name) : TypeInnerCohPortBase(name), tname("InnerPortMSIBroadcast") {}
@@ -246,7 +264,7 @@ public: TypeCoreInterfaceBase(const std::string &name) : TypeInnerCohPortBase(na
 
 class TypeCoreInterfaceMSI : public TypeCoreInterfaceBase
 {
-  std::string MT, DT; bool enableDelay, isLLC;
+  std::string MT, DT, Policy; bool enableDelay, isLLC;
   const std::string tname;
 public:
   TypeCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("CoreInterfaceMSI") {}
@@ -257,7 +275,7 @@ public:
 
 class TypeMirageOuterPortMSIUncached : public TypeOuterCohPortBase
 {
-  std::string MT, DT;
+  std::string MT, DT, Policy;
   const std::string tname;
 public:
   TypeMirageOuterPortMSIUncached(const std::string &name) : TypeOuterCohPortBase(name), tname("MirageOuterPortMSIUncached") {}
@@ -267,7 +285,7 @@ public:
 };
 
 class TypeMirageOuterPortMSI : public TypeOuterCohPortBase {
-  std::string MT, DT;
+  std::string MT, DT, Policy;
   const std::string tname;
 public:
   TypeMirageOuterPortMSI(const std::string &name) : TypeOuterCohPortBase(name), tname("MirageOuterPortMSI") {}
@@ -278,7 +296,7 @@ public:
 
 class TypeMirageInnerPortMSIUncached : public TypeInnerCohPortBase
 {
-  std::string MT, DT; bool isLLC, enableRelocation; int RW;
+  std::string MT, DT, Policy; bool isLLC, enableRelocation; int RW;
   const std::string tname;
 public:
   TypeMirageInnerPortMSIUncached(const std::string &name) : TypeInnerCohPortBase(name), tname("MirageInnerPortMSIUncached") {}
@@ -289,7 +307,7 @@ public:
 
 class TypeMirageInnerPortMSIBroadcast : public TypeInnerCohPortBase
 {
-  std::string MT, DT; bool isLLC, enableRelocation; int RW;
+  std::string MT, DT, Policy; bool isLLC, enableRelocation; int RW;
   const std::string tname;
 public:
   TypeMirageInnerPortMSIBroadcast(const std::string &name) : TypeInnerCohPortBase(name), tname("MirageInnerPortMSIBroadcast") {}
@@ -300,7 +318,7 @@ public:
 
 class TypeMirageCoreInterfaceMSI : public TypeCoreInterfaceBase
 {
-  std::string MT, DT; bool enableDelay, isLLC, enableRelocation; int RW;
+  std::string MT, DT, Policy; bool enableDelay, isLLC, enableRelocation; int RW;
   const std::string tname;
 public:
   TypeMirageCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("MirageCoreInterfaceMSI") {}

@@ -22,6 +22,8 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "CacheSkewed")                 descriptor = new TypeCacheSkewed(type_name);
   if(base_name == "CacheNorm")                   descriptor = new TypeCacheNorm(type_name);
   if(base_name == "CacheMirage")                 descriptor = new TypeCacheMirage(type_name);
+  if(base_name == "MSIPolicy")                   descriptor = new TypeMSIPolicy(type_name);
+  if(base_name == "MirageMSIPolicy")             descriptor = new TypeMirageMSIPolicy(type_name);
   if(base_name == "OuterPortMSIUncached")        descriptor = new TypeOuterPortMSIUncached(type_name);
   if(base_name == "OuterPortMSI")                descriptor = new TypeOuterPortMSI(type_name);
   if(base_name == "InnerPortMSIUncached")        descriptor = new TypeInnerPortMSIUncached(type_name);
@@ -223,77 +225,71 @@ void TypeCacheMirage::emit(std::ofstream &file) {
 
 void TypeCacheMirage::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
 
+bool TypeMSIPolicy::set(std::list<std::string> &values){
+  if(values.size() != 0) {
+    std::cerr << "[Mismatch] " << tname << " needs 0 parameters!" << std::endl;
+    return false;
+  }
+  return true;
+}
+
+void TypeMSIPolicy::emit(std::ofstream &file){
+  file << "typedef " << tname << " " << this->name << ";" << std::endl;
+}
+
+void TypeMSIPolicy::emit_header(){ codegendb.add_header("cache/msi.hpp"); }
+
+bool TypeMirageMSIPolicy::set(std::list<std::string> &values){
+  if(values.size() != 0) {
+    std::cerr << "[Mismatch] " << tname << " needs 0 parameters!" << std::endl;
+    return false;
+  }
+  return true;
+}
+
+void TypeMirageMSIPolicy::emit(std::ofstream &file){
+  file << "typedef " << tname << " " << this->name << ";" << std::endl;
+}
+
+void TypeMirageMSIPolicy::emit_header(){ codegendb.add_header("cache/mirage.hpp"); }
+
 bool TypeOuterPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
+  if(values.size() != 3) {
+    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  MT     = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+  DT     = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   return true;
 }
   
 void TypeOuterPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "> " << this->name << ";" << std::endl;
 }  
 
 void TypeOuterPortMSIUncached::emit_header() { codegendb.add_header("cache/msi.hpp"); }
 
 bool TypeOuterPortMSI::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
+  if(values.size() != 3) {
+    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  MT     = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+  DT     = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   return true;
 }
   
 void TypeOuterPortMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "> " << this->name << ";" << std::endl;
 }  
 
 void TypeOuterPortMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
 
 bool TypeInnerPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  return true;
-}
-  
-void TypeInnerPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeInnerPortMSIBroadcast::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  return true;
-}
-  
-void TypeInnerPortMSIBroadcast::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeCoreInterfaceMSI::set(std::list<std::string> &values) {
   if(values.size() != 4) {
     std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
     return false;
@@ -301,92 +297,93 @@ bool TypeCoreInterfaceMSI::set(std::list<std::string> &values) {
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
+  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
+  return true;
+}
+  
+void TypeInnerPortMSIUncached::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
+}    
+
+void TypeInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/msi.hpp"); }
+
+bool TypeInnerPortMSIBroadcast::set(std::list<std::string> &values) {
+  if(values.size() != 4) {
+    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
+  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
+  return true;
+}
+  
+void TypeInnerPortMSIBroadcast::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
+}    
+
+void TypeInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/msi.hpp"); }
+
+bool TypeCoreInterfaceMSI::set(std::list<std::string> &values) {
+  if(values.size() != 5) {
+    std::cerr << "[Mismatch] " << tname << " needs 5 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
+  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   if(!codegendb.parse_bool(*it, enableDelay)) return false; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   return true;
 }
   
 void TypeCoreInterfaceMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << enableDelay << "," << isLLC << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << enableDelay << "," << isLLC << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeCoreInterfaceMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
 
 bool TypeMirageOuterPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
+  if(values.size() != 3) {
+    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   return true;
 }
   
 void TypeMirageOuterPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT <<  "," << Policy << "> " << this->name << ";" << std::endl;
 }  
 
 void TypeMirageOuterPortMSIUncached::emit_header() { codegendb.add_header("cache/msi.hpp"); }
 
 bool TypeMirageOuterPortMSI::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
+  if(values.size() != 3) {
+    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   return true;
 }
   
 void TypeMirageOuterPortMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "> " << this->name << ";" << std::endl;
 }  
 
 void TypeMirageOuterPortMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
 
 bool TypeMirageInnerPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 5) {
-    std::cerr << "[Mismatch] " << tname << " needs 5 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
-  if(!codegendb.parse_int(*it, RW)) return false; it++;
-  return true;
-}
-  
-void TypeMirageInnerPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeMirageInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
-
-bool TypeMirageInnerPortMSIBroadcast::set(std::list<std::string> &values) {
-  if(values.size() != 5) {
-    std::cerr << "[Mismatch] " << tname << " needs 5 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
-  if(!codegendb.parse_int(*it, RW)) return false; it++;
-  return true;
-}
-  
-void TypeMirageInnerPortMSIBroadcast::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeMirageInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
-
-bool TypeMirageCoreInterfaceMSI::set(std::list<std::string> &values) {
   if(values.size() != 6) {
     std::cerr << "[Mismatch] " << tname << " needs 6 parameters!" << std::endl;
     return false;
@@ -394,6 +391,49 @@ bool TypeMirageCoreInterfaceMSI::set(std::list<std::string> &values) {
   auto it = values.begin();
   MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
+  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
+  if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
+  if(!codegendb.parse_int(*it, RW)) return false; it++;
+  return true;
+}
+  
+void TypeMirageInnerPortMSIUncached::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
+}    
+
+void TypeMirageInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
+
+bool TypeMirageInnerPortMSIBroadcast::set(std::list<std::string> &values) {
+  if(values.size() != 6) {
+    std::cerr << "[Mismatch] " << tname << " needs 6 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
+  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
+  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
+  if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
+  if(!codegendb.parse_int(*it, RW)) return false; it++;
+  return true;
+}
+  
+void TypeMirageInnerPortMSIBroadcast::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
+}    
+
+void TypeMirageInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
+
+bool TypeMirageCoreInterfaceMSI::set(std::list<std::string> &values) {
+  if(values.size() != 7) {
+    std::cerr << "[Mismatch] " << tname << " needs 7 parameters!" << std::endl;
+    return false;
+  }
+  auto it = values.begin();
+  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
+  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  Policy = *it; it++;
   if(!codegendb.parse_bool(*it, enableDelay)) return false; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
   if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
@@ -402,7 +442,7 @@ bool TypeMirageCoreInterfaceMSI::set(std::list<std::string> &values) {
 }
   
 void TypeMirageCoreInterfaceMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << enableDelay << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << enableDelay << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeMirageCoreInterfaceMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
