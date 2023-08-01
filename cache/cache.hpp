@@ -8,8 +8,6 @@
 #include <set>
 #include <map>
 #include <vector>
-#include <utility>
-
 
 #include "util/random.hpp"
 #include "util/monitor.hpp"
@@ -25,6 +23,7 @@ public:
   virtual void reset() {}                                   // reset the metadata
   virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
   virtual uint64_t addr(uint32_t s) const = 0;            // assemble the block address from the metadata
+
   virtual void to_invalid() {}       // change state to invalid
   virtual void to_shared() {}        // change to shared
   virtual void to_modified() {}      // change to modified
@@ -51,8 +50,7 @@ public:
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) {} // write a 64b data with wmask
   virtual void write(uint64_t *wdata) {} // write the whole cache block
   virtual void copy(const CMDataBase *block) {} // copy the content of block
-  //
-  //virtual bool is_valid() const { return false; } // wsong83: valid should be represented by metadata, even in Mirage, right?
+
   virtual ~CMDataBase() {}
 };
 
