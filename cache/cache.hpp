@@ -167,7 +167,11 @@ public:
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w
                    ) = 0;
-  virtual bool hit(uint64_t addr) = 0;
+
+  bool hit(uint64_t addr) {
+    uint32_t ai, s, w;
+    return hit(addr, &ai, &s, &w);
+  }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
   virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w) {} // only useful for mirage
@@ -240,11 +244,6 @@ public:
         if(access(*ai, *s, *w)->match(addr)) return true;
     }
     return false;
-  }
-
-  virtual bool hit(uint64_t addr){
-    uint32_t ai, s, w;
-    return hit(addr, &ai, &s, &w);
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
