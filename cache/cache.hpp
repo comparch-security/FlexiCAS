@@ -23,14 +23,8 @@ public:
   // implement a totally useless base class
   virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
   virtual void reset() {}                                   // reset the metadata
-  virtual void init(uint64_t addr) {}                     // initialize the meta for addr
-  virtual uint64_t addr(uint32_t s) const { return 0; }              // assemble the block address from the metadata
-
-  virtual void bind(uint32_t ai, uint32_t s, uint32_t w) {} // initialize data meta pointer, only useful for mirage
-  virtual void bind(uint32_t ds, uint32_t dw) {} // initialize meta pointer, only useful for mirage
-  virtual void data(uint32_t* ds, uint32_t *dw) {} // return meta pointer to data meta, only useful for mirage
-  virtual void meta(uint32_t* ai, uint32_t* s, uint32_t *w) {} // return data pointer to meta, only useful for mirage
-
+  virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
+  virtual uint64_t addr(uint32_t s) const = 0;            // assemble the block address from the metadata
   virtual void to_invalid() {}       // change state to invalid
   virtual void to_shared() {}        // change to shared
   virtual void to_modified() {}      // change to modified
@@ -57,8 +51,8 @@ public:
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) {} // write a 64b data with wmask
   virtual void write(uint64_t *wdata) {} // write the whole cache block
   virtual void copy(const CMDataBase *block) {} // copy the content of block
-
-  virtual bool is_valid() const { return false; }
+  //
+  //virtual bool is_valid() const { return false; } // wsong83: valid should be represented by metadata, even in Mirage, right?
   virtual ~CMDataBase() {}
 };
 
