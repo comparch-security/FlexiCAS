@@ -253,24 +253,42 @@ public:
     d_replacer.replace(*d_s, d_w); 
   }
 
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
+    std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > equal_set(P);
+    uint32_t max_free = 0;
+    for(int i=0; i<P; i++) {
+      uint32_t m_s, m_w, free_num = 0;
+      m_s = m_indexer.index(addr, i);
+      m_replacer[i].replace(m_s, &m_w);
+      for(int j=0; j<NW+EW; j++) if(!access(i, m_s, j)->is_valid()) free_num++;
+      if(free_num > max_free) {
+        max_free = free_num;
+        equal_set.clear();
+        equal_set.resize(P);
+      }
+      if(free_num >= max_free) equal_set.push_back(std::make_tuple(i, m_s, m_w));
+    }
+    std::tie(*ai, *s, *w) = equal_set[cm_get_random_uint32() % equal_set.size()];
+  }
+
   virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w){
     *s = m_indexer.index(addr, ai);
     m_replacer[ai].replace(*s, w);
   }
 
-  virtual void replace(uint64_t addr, std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > &location) {
-    uint32_t s, w;
-    location.resize(P);
-    for(uint32_t ai = 0; ai < P; ai++){
-      uint32_t free_num = 0;
-      s = m_indexer.index(addr, ai);
-      m_replacer[ai].replace(s, &w);
-      for(uint32_t i = 0; i < NW+EW; i++){
-        if(!access(ai, s, i)->is_valid()) free_num++;
-      }
-      location[ai] = std::make_pair(std::make_pair(s, w), free_num);
-    }
-  }
+  //virtual void replace(uint64_t addr, std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > &location) {
+  //  uint32_t s, w;
+  //  location.resize(P);
+  //  for(uint32_t ai = 0; ai < P; ai++){
+  //    uint32_t free_num = 0;
+  //    s = m_indexer.index(addr, ai);
+  //    m_replacer[ai].replace(s, &w);
+  //    for(uint32_t i = 0; i < NW+EW; i++){
+  //      if(!access(ai, s, i)->is_valid()) free_num++;
+  //    }
+  //    location[ai] = std::make_pair(std::make_pair(s, w), free_num);
+  //  }
+  //}
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){ 
     for(int i=0; i<P; i++) 
@@ -605,28 +623,10 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
       uint32_t max_free = 1;
       uint64_t addrr = addr;
       ai = 0; 
-      this->cache->replace(addr, location);
+      this->cache->replace(addr, &ai, &s, &w);
+      meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
       P = location.size();
-      for(auto l : location) {
-        if(max_free < l.second){
-          free_location.resize(0);
-          free_location.push_back(ai);
-          max_free = l.second;
-        }
-        else if (max_free == l.second){
-          free_location.push_back(ai);
-        }
-        ai++;
-      }
-      if(free_location.size() >= 1){
-        ai = free_location[cm_get_random_uint32() % free_location.size()];
-        s = location[ai].first.first; w = location[ai].first.second;
-        meta = this->cache->access(ai, s, w);
-      }
-      else{ // If all the skews have no free space
-        ai = cm_get_random_uint32()%P;
-        s = location[ai].first.first; w = location[ai].first.second;
-        meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
+      if(meta->is_valid()) { // If all the skews have no free space
         while(enableRelocation && meta->is_valid() && relocation < RW){
           relocation++;
           addr = meta->addr(s); 

@@ -171,7 +171,7 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
   virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w) {} // only useful for mirage
-  virtual void replace(uint64_t addr, std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > &location) {} // only useful for mirage, obtain free locations in each skew
+  //virtual void replace(uint64_t addr, std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > &location) {} // only useful for mirage, obtain free locations in each skew
 
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
