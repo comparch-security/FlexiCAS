@@ -242,7 +242,7 @@ private:
 // EnMon: whether to enable monitoring
 // EnableRelocation : whether to enable relocation
 template<int IW, int NW, int EW, int P, int RW, typename MT, typename DT, typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation, 
-         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
+         typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type,  // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, DTMT>::value>::type,  // DTMT <- MirageDataMeta
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, MIDX>::value>::type,  // MIDX <- IndexFuncBase
@@ -438,7 +438,7 @@ public:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
 template<typename MT, typename DT, typename Policy, bool isLLC, 
-         typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- CMMetadataBase
+         typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageInnerPortMSIUncached : public InnerCohPortBase
 {
@@ -468,7 +468,7 @@ public:
       MirageDataMeta *data_meta, *data_mmeta;
       uint32_t m_ai, m_s, m_w, m_ds, m_dw;
       uint64_t addrr = addr;
-      this->cache->replace(addr, &ai, &s, &w);
+      cache->replace(addr, &ai, &s, &w);
       meta = static_cast<MirageMetadataMSIBase *>(cache->access(ai, s, w));
       if(meta->is_valid()){
         cache->cuckoo_search(&ai, &s, &w, meta, addr_stack);
