@@ -13,14 +13,14 @@ const LLCWE = 6;         // LLC every skew 6 ways extra
 const LLCWS = 14;        // LLC every skew 8 + 6 = 14 ways all
 const LLCTagOffset = 6;  // random index
 const LLCWD = 16;        // LLC data ways is LLCPartitionN(2) * LLCWN(8) = 16 
-const LLCRW = 0;         // Cuckoo max relocation 
+const LLCRW = 2;         // Cuckoo max relocation 
 
 // optimal options
 const EnableDelay      = false;  // disable delay estimation
 const EnableMonitor    = false;  // disable pfc monitoring
-const EnableRelocation = false;  // disable cuckoo relocation
+const EnableRelocation = true;  // disable cuckoo relocation
 
-type data_type         = void;
+type data_type         = Data64B();
 
 // initiate the L1 cache
 type l1_metadata_type   = MetadataMSI(AddrWidth, L1IW, L1TagOffset);
@@ -42,9 +42,9 @@ type llc_d_indexer_type  = IndexRandom(LLCIW, BlockOffset);
 type llc_m_replacer_type = ReplaceLRU(LLCWS, LLCWN);
 type llc_d_replacer_type = ReplaceCompleteRandom(LLCIW, LLCWD);
 type llc_delay_type      = void;
-type llc_type            = CacheMirage(LLCIW, LLCWN, LLCWE, LLCPartitionN, llc_metadata_type, data_type, llc_datameta_type, llc_m_indexer_type, llc_d_indexer_type, llc_m_replacer_type, llc_d_replacer_type, llc_delay_type, EnableMonitor);
+type llc_type            = CacheMirage(LLCIW, LLCWN, LLCWE, LLCPartitionN, LLCRW, llc_metadata_type, data_type, llc_datameta_type, llc_m_indexer_type, llc_d_indexer_type, llc_m_replacer_type, llc_d_replacer_type, llc_delay_type, EnableMonitor, EnableRelocation);
 type llc_policy          = MirageMSIPolicy();
-type llc_inner_type      = MirageInnerPortMSIBroadcast(llc_metadata_type, data_type, llc_policy, true, EnableRelocation, LLCRW);
+type llc_inner_type      = MirageInnerPortMSIBroadcast(llc_metadata_type, data_type, llc_policy, true);
 type llc_outer_type      = MirageOuterPortMSIUncached(llc_metadata_type, data_type, llc_policy);
 type llc_cache_type      = CoherentCacheNorm(llc_type, llc_outer_type, llc_inner_type);
 create llc = llc_cache_type[1]; // 1 shared llc slices

@@ -4,7 +4,73 @@
 #include <cassert>
 #include <type_traits>
 #include <stack>
-#include "cache/coherence.hpp"
+#include "cache/msi.hpp"
+
+class MirageDataMeta : public CMMetadataBase
+{
+protected:
+  bool state; // false: invalid, true: valid
+  uint32_t mai, ms, mw; // data meta pointer to meta
+
+public:
+  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
+  virtual void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
+  virtual void meta(uint32_t* ai, uint32_t* s, uint32_t* w) { *ai = mai; *s = ms; *w = mw; }
+  virtual void to_invalid() { state = false; }
+  virtual bool is_valid() const { return state; }
+  
+  virtual ~MirageDataMeta() {}
+
+private:
+  virtual void init(uint64_t addr) {}
+  virtual uint64_t addr(uint32_t s) const { return 0; }
+};
+
+// metadata supporting MSI coherency
+class MirageMetadataSupport
+{
+protected:
+  uint32_t d_s, d_w;
+public:
+  MirageMetadataSupport() : d_s(0), d_w(0) {}
+  virtual ~MirageMetadataSupport() {}
+
+  // special methods needed for Mirage Cache
+  virtual void bind(uint32_t ds, uint32_t dw) = 0;   // initialize meta pointer
+  virtual void data(uint32_t* ds, uint32_t *dw) = 0; // return meta pointer to data meta
+};
+
+class MirageMetadataMSIBase : public MetadataMSIBase, public MirageMetadataSupport{};
+
+// Metadata with match function
+// AW    : address width
+// IW    : index width
+// TOfst : tag offset
+template <int AW, int IW, int TOfst>
+class MirageMetadataMSI : public MirageMetadataMSIBase
+{
+protected:
+  uint64_t     tag   : AW-TOfst;
+  constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
+
+public:
+  MirageMetadataMSI() : MirageMetadataMSIBase(), tag(0) {}
+  virtual ~MirageMetadataMSI() {}
+
+  virtual bool match(uint64_t addr) const { return is_valid() && ((addr >> TOfst) & mask) == tag; }
+  virtual void reset() { tag = 0; state = 0; dirty = 0; }
+  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0;}
+  virtual void bind(uint32_t ds, uint32_t dw) { d_s = ds; d_w = dw; }
+  virtual void data(uint32_t* ds, uint32_t *dw) { *ds = d_s; *dw = d_w;}
+  virtual uint64_t addr(uint32_t s) const {
+    uint64_t addr = tag << TOfst;
+    if constexpr (IW > 0) {
+      constexpr uint32_t index_mask = (1 << IW) - 1;
+      addr |= (s & index_mask) << (TOfst - IW);
+    }
+    return addr;
+  }
+};
 
 // MirageMSI protocol
 class MirageMSIPolicy {
@@ -133,44 +199,58 @@ public:
       meta->to_shared();
     }
   }
+
+  static inline void meta_copy_state(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, MirageMetadataMSIBase *meta, MirageMetadataMSIBase* mmeta, MirageDataMeta* data_mmeta){
+    uint32_t m_ds, m_dw;
+    mmeta->data(&m_ds, &m_dw);
+    meta->init(addr);
+    meta->bind(m_ds, m_dw); data_mmeta->bind(ai, s, w);
+    if(mmeta->is_dirty()) meta->to_dirty(); 
+    if(mmeta->is_shared()) meta->to_shared(); else meta->to_modified();
+  }
 };
 
-class MirageDataMeta : public CMMetadataBase
+class CacheMirageBase : public CacheBase
 {
-protected:
-  bool state; // false: invalid, true: valid
-  uint32_t mai, ms, mw; // data meta pointer to meta
+public: 
+  CacheMirageBase(std ::string name = "") : CacheBase(name) {}
 
-public:
-  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
-  virtual void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
-  virtual void meta(uint32_t* ai, uint32_t* s, uint32_t* w) { *ai = mai; *s = ms; *w = mw; }
-  virtual void to_invalid() { state = false; }
-  virtual bool is_valid() const { return state; }
-  
-  virtual ~MirageDataMeta() {}
+  virtual ~CacheMirageBase() {}
+
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual MirageDataMeta *access(uint32_t d_s, uint32_t d_w) = 0;
+  virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) = 0;
+
+  virtual void replace_data(uint64_t addr, uint32_t *d_s, uint32_t *d_w) = 0;
+
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
+  virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w) = 0;
+  virtual void cuckoo_replace(uint64_t addr, uint32_t ai, uint32_t *m_ai, uint32_t *m_s, uint32_t *m_w, bool add) = 0;
+
+  virtual void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, MirageMetadataMSIBase *meta, std::stack<uint64_t> &addr_stack) = 0;
+
 
 private:
-  virtual void init(uint64_t addr) {}
-  virtual uint64_t addr(uint32_t s) const { return 0; }
+  virtual CMDataBase* get_data(uint32_t ai, uint32_t s, uint32_t w) { return nullptr; }
 };
 
 // Mirage 
-// IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions
+// IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions, RW: max number of relocations
 // MT: metadata type, DT: data type (void if not in use), DTMT: data meta type 
 // MIDX: indexer type, MRPC: replacer type
 // DIDX: data indexer type, DRPC: data replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, int EW, int P, typename MT, typename DT, typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon,
+// EnableRelocation : whether to enable relocation
+template<int IW, int NW, int EW, int P, int RW, typename MT, typename DT, typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation, 
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
          typename = typename std::enable_if<std::is_base_of<CMMetadataBase, DTMT>::value>::type,  // DTMT <- MirageDataMeta
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, MIDX>::value>::type,  // MIDX <- IndexFuncBase
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, DIDX>::value>::type,  // DIDX <- IndexFuncBase
          typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, MRPC>::value>::type,  // MRPC <- ReplaceFuncBase
-         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, DRPC>::value>::type,  // MRPC <- ReplaceFuncBase
+         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, DRPC>::value>::type,  // DRPC <- ReplaceFuncBase
          typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
-class CacheMirage : public CacheBase
+class CacheMirage : public CacheMirageBase
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
 protected:
@@ -182,7 +262,7 @@ protected:
 
 public:
   CacheMirage(std::string name = "")
-    : CacheBase(name)
+    : CacheMirageBase(name)
   { 
     // CacheMirage has P+1 CacheArray
     arrays.resize(P+1);
@@ -209,13 +289,6 @@ public:
     return hit(addr, &ai, &s, &w);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
-    if constexpr (P==1) *ai = 0;
-    else                *ai = (cm_get_random_uint32() % P);
-    *s = m_indexer.index(addr, *ai);
-    m_replacer[*ai].replace(*s, w);
-  }
-
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     m_replacer[ai].access(s, w);
     if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
@@ -240,8 +313,8 @@ public:
     return arrays[ai]->get_meta(s, w);
   }
 
-  virtual CMMetadataBase *access(uint32_t d_s, uint32_t d_w){
-    return arrays[P]->get_meta(d_s, d_w);
+  virtual MirageDataMeta *access(uint32_t d_s, uint32_t d_w){
+    return static_cast<MirageDataMeta *>(arrays[P]->get_meta(d_s, d_w));
   }
 
   virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) {
@@ -254,7 +327,7 @@ public:
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
-    std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > equal_set(P);
+    std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > equal_set(0);
     uint32_t max_free = 0;
     for(int i=0; i<P; i++) {
       uint32_t m_s, m_w, free_num = 0;
@@ -264,7 +337,7 @@ public:
       if(free_num > max_free) {
         max_free = free_num;
         equal_set.clear();
-        equal_set.resize(P);
+        equal_set.resize(0);
       }
       if(free_num >= max_free) equal_set.push_back(std::make_tuple(i, m_s, m_w));
     }
@@ -276,81 +349,37 @@ public:
     m_replacer[ai].replace(*s, w);
   }
 
-  //virtual void replace(uint64_t addr, std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > &location) {
-  //  uint32_t s, w;
-  //  location.resize(P);
-  //  for(uint32_t ai = 0; ai < P; ai++){
-  //    uint32_t free_num = 0;
-  //    s = m_indexer.index(addr, ai);
-  //    m_replacer[ai].replace(s, &w);
-  //    for(uint32_t i = 0; i < NW+EW; i++){
-  //      if(!access(ai, s, i)->is_valid()) free_num++;
-  //    }
-  //    location[ai] = std::make_pair(std::make_pair(s, w), free_num);
-  //  }
-  //}
+  virtual void cuckoo_replace(uint64_t addr, uint32_t ai, uint32_t *m_ai, uint32_t *m_s, uint32_t *m_w, bool add){
+    if(add) *m_ai = (ai+1)%P; else *m_ai = (ai-1+P)%P;
+    replace(addr, *m_ai, m_s, m_w);
+  }
+
+  virtual void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, MirageMetadataMSIBase *meta, std::stack<uint64_t> &addr_stack){
+    uint32_t relocation = 0;
+    uint64_t addr;
+    uint32_t m_ai, m_s, m_w;
+    MirageMetadataMSIBase *mmeta;
+    std::unordered_set<uint64_t> remapped;
+    while(EnableRelocation && meta->is_valid() && relocation < RW){
+      relocation++;
+      addr = meta->addr(*s);
+      cuckoo_replace(addr, *ai, &m_ai, &m_s, &m_w, true);
+      mmeta = static_cast<MirageMetadataMSIBase *>(access(m_ai, m_s, m_w));
+      if(remapped.count(mmeta->addr(*s))) break;
+      remapped.insert(addr);
+      addr_stack.push(addr);
+      meta = mmeta;
+      *ai = m_ai;
+      *s  = m_s;
+      *w  = m_w;
+    }
+  }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){ 
     for(int i=0; i<P; i++) 
       if(m_indexer.index(addrA, i) == m_indexer.index(addrB, i)) 
         return true;
     return false;
-  }
-};
-
-// metadata supporting MSI coherency
-class MirageMetadataMSIBase : public CMMetadataBase
-{
-protected:
-  unsigned int state : 2; // 0: invalid, 1: shared, 2:modify
-  unsigned int dirty : 1; // 0: clean, 1: dirty
-  uint32_t d_s, d_w;
-public:
-  MirageMetadataMSIBase() : state(0), dirty(0), d_s(0), d_w(0) {}
-  virtual ~MirageMetadataMSIBase() {}
-
-  virtual void to_invalid() { state = 0; }
-  virtual void to_shared() { state = 1; }
-  virtual void to_modified() { state = 2; }
-  virtual void to_dirty() { dirty = 1; }
-  virtual void to_clean() { dirty = 0; }
-  virtual bool is_valid() const { return state; }
-  virtual bool is_shared() const { return state == 1; }
-  virtual bool is_modified() const {return state == 2; }
-  virtual bool is_dirty() const { return dirty; }
-
-  // special methods needed for Mirage Cache
-  virtual void bind(uint32_t ds, uint32_t dw) = 0;   // initialize meta pointer
-  virtual void data(uint32_t* ds, uint32_t *dw) = 0; // return meta pointer to data meta
-};
-
-// Metadata with match function
-// AW    : address width
-// IW    : index width
-// TOfst : tag offset
-template <int AW, int IW, int TOfst>
-class MirageMetadataMSI : public MirageMetadataMSIBase
-{
-protected:
-  uint64_t     tag   : AW-TOfst;
-  constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
-
-public:
-  MirageMetadataMSI() : tag(0) {}
-  virtual ~MirageMetadataMSI() {}
-
-  virtual bool match(uint64_t addr) const { return is_valid() && ((addr >> TOfst) & mask) == tag; }
-  virtual void reset() { tag = 0; state = 0; dirty = 0; }
-  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0;}
-  virtual void bind(uint32_t ds, uint32_t dw) { d_s = ds; d_w = dw; }
-  virtual void data(uint32_t* ds, uint32_t *dw) { *ds = d_s; *dw = d_w;}
-  virtual uint64_t addr(uint32_t s) const {
-    uint64_t addr = tag << TOfst;
-    if constexpr (IW > 0) {
-      constexpr uint32_t index_mask = (1 << IW) - 1;
-      addr |= (s & index_mask) << (TOfst - IW);
-    }
-    return addr;
   }
 };
 
@@ -385,7 +414,7 @@ public:
       auto meta = this->cache->access(ai, s, w); // oddly here, `this->' is required by the g++ 11.3.0 @wsong83
       CMDataBase *data = nullptr;
       if constexpr (!std::is_void<DT>::value) {
-        data = this->cache->get_data(ai, s, w);
+        data = (static_cast<CacheMirageBase *>(this->cache))->get_data(ai, s, w);
       }
 
       // sync if necessary
@@ -408,8 +437,8 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT, typename Policy, bool isLLC, bool enableRelocation, int RW,
-         typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
+template<typename MT, typename DT, typename Policy, bool isLLC, 
+         typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- CMMetadataBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageInnerPortMSIUncached : public InnerCohPortBase
 {
@@ -420,10 +449,11 @@ public:
     MirageMetadataMSIBase *meta;
     CMDataBase *data;
     bool hit, writeback;
-    if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
-      meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
+    CacheMirageBase* cache = static_cast<CacheMirageBase *>(this->cache);
+    if(hit = cache->hit(addr, &ai, &s, &w)) { // hit
+      meta = static_cast<MirageMetadataMSIBase *>(cache->access(ai, s, w));
       meta->data(&ds, &dw);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
+      if constexpr (!std::is_void<DT>::value) data = cache->get_data(ds, dw);
       if(Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay); // sync if necessary
       if constexpr (!isLLC) {
         if(Policy::need_promote(cmd, meta)) {  // promote permission if needed
@@ -434,104 +464,62 @@ public:
     } else { // miss
       // get the way to be replaced
       std::stack<uint64_t> addr_stack;
-      std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > location;
-      std::unordered_set<uint64_t> remapped;
-      std::vector<uint32_t> free_location;
       MirageMetadataMSIBase *mmeta;
       MirageDataMeta *data_meta, *data_mmeta;
-      uint32_t P; uint32_t relocation = 0; 
       uint32_t m_ai, m_s, m_w, m_ds, m_dw;
-      uint32_t max_free = 1;
       uint64_t addrr = addr;
-      ai = 0; 
-      this->cache->replace(addr, location);
-      P = location.size();
-      for(auto l : location) {
-        if(max_free < l.second){
-          free_location.resize(0);
-          free_location.push_back(ai);
-          max_free = l.second;
-        }
-        else if (max_free == l.second){
-          free_location.push_back(ai);
-        }
-        ai++;
-      }
-      if(free_location.size() >= 1){
-        ai = free_location[cm_get_random_uint32() % free_location.size()];
-        s = location[ai].first.first; w = location[ai].first.second;
-        meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
-        assert(!meta->is_valid());
-      }
-      else{ // If all the skews have no free space
-        ai = cm_get_random_uint32()%P;
-        s = location[ai].first.first; w = location[ai].first.second;
-        meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
-        while(enableRelocation && meta->is_valid() && relocation < RW){
-          relocation++;
-          addr = meta->addr(s); 
-          this->cache->replace(addr, (ai+1) % P, &m_s, &m_w);
-          mmeta = static_cast<MirageMetadataMSIBase *>(this->cache->access((ai+1) % P, m_s, m_w));
-          if(remapped.count(mmeta->addr(s))) break; // Prevent duplicate relocation during cuckoo relocation
-          remapped.insert(addr);
-          addr_stack.push(addr);
-          meta = mmeta;
-          ai = (ai+1) % P;
-          s = m_s;
-          w = m_w;
-        }
+      this->cache->replace(addr, &ai, &s, &w);
+      meta = static_cast<MirageMetadataMSIBase *>(cache->access(ai, s, w));
+      if(meta->is_valid()){
+        cache->cuckoo_search(&ai, &s, &w, meta, addr_stack);
+        meta = static_cast<MirageMetadataMSIBase *>(cache->access(ai, s, w));
         meta->data(&ds, &dw);
-        data_meta = static_cast<MirageDataMeta *>(this->cache->access(ds, dw));
+        data_meta = cache->access(ds, dw);
         if(meta->is_valid()) {
           auto replace_addr = meta->addr(s);
-          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
+          if constexpr (!std::is_void<DT>::value) data = cache->get_data(ds, dw);
           if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()), delay); // sync if necessary
           if(writeback = meta->is_dirty()) 
             outer->writeback_req(replace_addr, meta, data_meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
           else 
             data_meta->to_invalid();
-          this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
+          cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
         }
         while(addr_stack.size()>=1){
           addr = addr_stack.top();
           addr_stack.pop();
-          this->cache->replace(addr, (ai-1+P)%P, &m_s, &m_w);
-          mmeta = static_cast<MirageMetadataMSIBase *>(this->cache->access((ai-1+P)%P, m_s, m_w));
+          cache->cuckoo_replace(addr, ai, &m_ai, &m_s, &m_w, false);
+          mmeta = static_cast<MirageMetadataMSIBase *>(cache->access(m_ai, m_s, m_w));
           mmeta->data(&m_ds, &m_dw);
-          data_mmeta = static_cast<MirageDataMeta *>(this->cache->access(m_ds, m_dw));
+          data_mmeta = cache->access(m_ds, m_dw);
           assert(addr == mmeta->addr(m_s));
-          meta->init(addr); meta->bind(m_ds, m_dw); data_mmeta->bind(ai, s, w);
-          if(mmeta->is_dirty()) { meta->to_dirty(); mmeta->to_clean();} 
-          if(mmeta->is_shared()) 
-            meta->to_shared();
-          else
-            meta->to_modified();
-          mmeta->to_invalid();
-          this->cache->hook_manage(addr, (ai-1+P)%P, m_s, m_w, true, true, false, delay);
-          this->cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
+          Policy::meta_copy_state(addr, ai, s, w, meta, mmeta, data_mmeta);
+          mmeta->to_clean(); mmeta->to_invalid();
+          cache->hook_manage(addr, m_ai, m_s, m_w, true, true, false, delay);
+          cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
             
-          ai = (ai-1+P) % P;
+          ai = m_ai;
           s = m_s;
           w = m_w;
           meta = mmeta;
         }
         addr = addrr;
       }
-      this->cache->replace_data(addr, &ds, &dw);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
-      data_meta = static_cast<MirageDataMeta *>(this->cache->access(ds, dw));
+      cache->replace_data(addr, &ds, &dw);
+      if constexpr (!std::is_void<DT>::value) data = cache->get_data(ds, dw);
+      data_meta = cache->access(ds, dw);
       if(data_meta->is_valid()){
         uint32_t r_ai, r_s, r_w;
         data_meta->meta(&r_ai, &r_s, &r_w);
-        auto replace_meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(r_ai, r_s, r_w));
+        auto replace_meta = cache->access(r_ai, r_s, r_w);
         auto replace_addr = replace_meta->addr(s);
-        assert(this->cache->hit(replace_addr, &r_ai, &r_s, &r_w));
+        assert(cache->hit(replace_addr, &r_ai, &r_s, &r_w));
         if(Policy::need_sync(Policy::cmd_for_evict(), replace_meta)) probe_req(replace_addr, replace_meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()), delay); // sync if necessary
         if(writeback = replace_meta->is_dirty()) 
           outer->writeback_req(replace_addr, replace_meta, data_meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
         else
           replace_meta->to_invalid(); 
-        this->cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
+        cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
       }
       meta->bind(ds, dw);
       data_meta->bind(ai, s, w);
@@ -540,34 +528,35 @@ public:
     // grant
     if constexpr (!std::is_void<DT>::value) data_inner->copy(data);
     Policy::meta_after_acquire(cmd, meta);
-    this->cache->hook_read(addr, ai, s, w, hit, delay);
+    cache->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd, uint64_t *delay) {
     if (isLLC || Policy::is_release(cmd)) {
       uint32_t ai, s, w;
       uint32_t ds, dw;
-      bool writeback = false, hit = this->cache->hit(addr, &ai, &s, &w);
+      CacheMirageBase* cache = static_cast<CacheMirageBase *>(this->cache);
+      bool writeback = false, hit = cache->hit(addr, &ai, &s, &w);
       MirageMetadataMSIBase *meta = nullptr;
       if(Policy::is_release(cmd)) {
         assert(hit); // must hit
-        meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
+        meta = static_cast<MirageMetadataMSIBase *>(cache->access(ai, s, w));
         meta->data(&ds, &dw);
-        if constexpr (!std::is_void<DT>::value) this->cache->get_data(ds, dw)->copy(data_inner);
+        if constexpr (!std::is_void<DT>::value) cache->get_data(ds, dw)->copy(data_inner);
         Policy::meta_after_release(cmd, meta);
-        this->cache->hook_write(addr, ai, s, w, hit, delay);
+        cache->hook_write(addr, ai, s, w, hit, delay);
       } else {
         assert(Policy::is_flush(cmd));
         if(hit) {
           CMDataBase *data = nullptr;
-          meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
+          meta = static_cast<MirageMetadataMSIBase *>(cache->access(ai, s, w));
           meta->data(&ds, &dw);
-          auto data_meta = this->cache->access(ds, dw);
-          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
+          auto data_meta = cache->access(ds, dw);
+          if constexpr (!std::is_void<DT>::value) data = cache->get_data(ds, dw);
           probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay);
           if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data_meta, data, cmd, delay);
         }
-        this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
+        cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
       }
     } else {
       assert(Policy::is_flush(cmd) && !isLLC);
@@ -577,8 +566,8 @@ public:
 };
 
 // full MSI inner port (broadcasting hub, snoop)
-template<typename MT, typename DT, typename Policy, bool isLLC, bool enableRelocation, int RW>
-class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<MT, DT, Policy, isLLC, enableRelocation, RW>
+template<typename MT, typename DT, typename Policy, bool isLLC>
+class MirageInnerPortMSIBroadcast : public MirageInnerPortMSIUncached<MT, DT, Policy, isLLC>
 {
 public:
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
@@ -589,7 +578,7 @@ public:
 };
 
 // MSI core interface:
-template<typename MT, typename DT, typename Policy, bool EnableDelay, bool isLLC, bool enableRelocation, int RW,
+template<typename MT, typename DT, typename Policy, bool EnableDelay, bool isLLC, 
          typename = typename std::enable_if<std::is_base_of<MirageMetadataMSIBase, MT>::value>::type, // MT <- MirageMetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
 class MirageCoreInterfaceMSI : public CoreInterfaceBase
@@ -597,13 +586,14 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
   inline CMDataBase *access(uint64_t addr, uint32_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     uint32_t ds, dw;
+    CacheMirageBase* cache = static_cast<CacheMirageBase *>(this->cache);
     MirageMetadataMSIBase *meta;
     CMDataBase *data = nullptr;
     bool hit, writeback;
-    if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
-      meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
+    if(hit = cache->hit(addr, &ai, &s, &w)) { // hit
+      meta = cache->access(ai, s, w);
       meta->data(&ds, &dw);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
+      if constexpr (!std::is_void<DT>::value) data = cache->get_data(ai, s, w);
       if constexpr (!isLLC) {
         if(Policy::need_promote(cmd, meta)) {
           outer->acquire_req(addr, meta, data, cmd, delay);
@@ -613,81 +603,60 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
     } else { // miss
       // get the way to be replaced
       std::stack<uint64_t> addr_stack;
-      std::vector<std::pair<std::pair<uint32_t, uint32_t>, uint32_t> > location;
-      std::unordered_set<uint64_t> remapped;
-      std::vector<uint32_t> free_location;
       MirageMetadataMSIBase *mmeta;
       MirageDataMeta *data_meta, *data_mmeta;
-      uint32_t P; uint32_t relocation = 0; 
       uint32_t m_ai, m_s, m_w, m_ds, m_dw;
-      uint32_t max_free = 1;
       uint64_t addrr = addr;
       ai = 0; 
-      this->cache->replace(addr, &ai, &s, &w);
-      meta = static_cast<MirageMetadataMSIBase *>(this->cache->access(ai, s, w));
-      P = location.size();
+      cache->replace(addr, &ai, &s, &w);
+      meta = cache->access(ai, s, w);
       if(meta->is_valid()) { // If all the skews have no free space
-        while(enableRelocation && meta->is_valid() && relocation < RW){
-          relocation++;
-          addr = meta->addr(s); 
-          this->cache->replace(addr, (ai+1) % P, &s, &w);
-          mmeta = static_cast<MirageMetadataMSIBase *>(this->cache->access((ai+1) % P, s, w));
-          if(remapped.count(mmeta->addr(s))) break; // Prevent duplicate relocation during cuckoo relocation
-          remapped.insert(addr);
-          addr_stack.push(addr);
-          meta = mmeta;
-          ai = (ai+1) % P;
-        }
+        cache->cuckoo_search(&ai, &s, &w, meta, addr_stack);
+        meta = static_cast<MirageMetadataMSIBase *>(cache->access(ai, s, w));
         meta->data(&ds, &dw);
-        data_meta = static_cast<MirageDataMeta *>(this->cache->access(ds, dw));
+        data_meta = cache->access(ds, dw);
         if(meta->is_valid()) {
           auto replace_addr = meta->addr(s);
-          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
+          if constexpr (!std::is_void<DT>::value) data = cache->get_data(ds, dw);
           if(writeback = meta->is_dirty()) 
             outer->writeback_req(replace_addr, meta, data_meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
           else 
             data_meta->to_invalid();
-          this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
+          cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
         }
         while(addr_stack.size()>=1){
           addr = addr_stack.top();
           addr_stack.pop();
-          this->cache->replace(addr, (ai-1+P)%P, &m_s, &m_w);
-          mmeta = static_cast<MirageMetadataMSIBase *>(this->cache->access((ai-1+P)%P, m_s, m_w));
+          cache->cuckoo_replace(addr, ai, &m_ai, &m_s, &m_w, false);
           mmeta->data(&m_ds, &m_dw);
-          data_mmeta = static_cast<MirageDataMeta *>(this->cache->access(m_ds, m_dw));
+          data_mmeta = cache->access(m_ds, m_dw);
           assert(addr == mmeta->addr(m_s));
-          meta->init(addr); meta->bind(m_ds, m_dw); data_mmeta->bind(ai, s, w);
-          if(mmeta->is_dirty()) { meta->to_dirty(); mmeta->to_clean();} 
-          if(mmeta->is_shared()) 
-            meta->to_shared();
-          else
-            meta->to_modified();
-          mmeta->to_invalid();
-          this->cache->hook_manage(addr, (ai-1+P)%P, m_s, m_w, true, true, false, delay);
-          this->cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
-            
-          ai = (ai-1+P) % P;
+          Policy::meta_copy_state(addr, ai, s, w, meta, mmeta, data_mmeta);
+          mmeta->to_clean(); mmeta->to_invalid();
+          cache->hook_manage(addr, m_ai, m_s, m_w, true, true, false, delay);
+          cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
+
+          ai = m_ai;
           s = m_s;
           w = m_w;
           meta = mmeta;
         }
         addr = addrr;
       }
-      this->cache->replace_data(addr, &ds, &dw);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ds, dw);
-      data_meta = static_cast<MirageDataMeta *>(this->cache->access(ds, dw));
+      cache->replace_data(addr, &ds, &dw);
+      if constexpr (!std::is_void<DT>::value) data = cache->get_data(ds, dw);
+      data_meta = cache->access(ds, dw);
       if(data_meta->is_valid()){
         uint32_t r_ai, r_s, r_w;
         data_meta->meta(&r_ai, &r_s, &r_w);
-        auto replace_meta = this->cache->access(r_ai, r_s, r_w);
+        auto replace_meta = cache->access(r_ai, r_s, r_w);
         auto replace_addr = replace_meta->addr(s);
-        assert(this->cache->hit(replace_addr, &r_ai, &r_s, &r_w));
+        assert(cache->hit(replace_addr, &r_ai, &r_s, &r_w));
         if(writeback = replace_meta->is_dirty()) 
           outer->writeback_req(replace_addr, replace_meta, data_meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
         else 
-          replace_meta->to_invalid();
-        this->cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
+          data_meta->to_invalid();
+        cache->hook_manage(replace_addr, r_ai, r_s, r_w, true, true, writeback, delay);
       }
       meta->bind(ds, dw);
       data_meta->bind(ai, s, w);
@@ -695,9 +664,9 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase
     }
     if(cmd == Policy::cmd_for_core_write()) {
       meta->to_dirty();
-      this->cache->hook_write(addr, ai, s, w, hit, delay);
+      cache->hook_write(addr, ai, s, w, hit, delay);
     } else
-      this->cache->hook_read(addr, ai, s, w, hit, delay);
+      cache->hook_read(addr, ai, s, w, hit, delay);
     return data;
   }
 

@@ -198,8 +198,8 @@ void TypeCacheNorm::emit(std::ofstream &file) {
 }
 
 bool TypeCacheMirage::set(std::list<std::string> &values) {
-  if(values.size() != 13) {
-    std::cerr << "[Mismatch] " << tname << " needs 13 parameters!" << std::endl;
+  if(values.size() != 15) {
+    std::cerr << "[Mismatch] " << tname << " needs 15 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
@@ -207,6 +207,7 @@ bool TypeCacheMirage::set(std::list<std::string> &values) {
   if(!codegendb.parse_int(*it, NW)) return false; it++;
   if(!codegendb.parse_int(*it, EW)) return false; it++;
   if(!codegendb.parse_int(*it, P)) return false; it++;
+  if(!codegendb.parse_int(*it, RW)) return false; it++;
   MT   = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
   DT   = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
   MTDT = *it; if(!this->check(tname, "MTDT", *it, "CMMetadataBase", false)) return false; it++;
@@ -216,11 +217,12 @@ bool TypeCacheMirage::set(std::list<std::string> &values) {
   DRPC = *it; if(!this->check(tname, "DRPC", *it, "ReplaceFuncBase", false)) return false; it++;
   DLY  = *it; if(!this->check(tname, "DLY", *it, "DelayBase", true)) return false; it++;
   if(!codegendb.parse_bool(*it, EnMon)) return false; it++;
+  if(!codegendb.parse_bool(*it, EnableRelocation)) return false; it++;
   return true;
 }
  
 void TypeCacheMirage::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << IW << "," << NW << "," << EW << "," << P << "," << MT << "," << DT << "," << MTDT << "," << MIDX << "," << DIDX << "," << MRPC << "," << DRPC << "," << DLY << "," << EnMon << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << IW << "," << NW << "," << EW << "," << P << "," << RW <<  "," << MT << "," << DT << "," << MTDT << "," << MIDX << "," << DIDX << "," << MRPC << "," << DRPC << "," << DLY << "," << EnMon << "," << EnableRelocation << "> " << this->name << ";" << std::endl;
 }
 
 void TypeCacheMirage::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
@@ -384,8 +386,8 @@ void TypeMirageOuterPortMSI::emit(std::ofstream &file) {
 void TypeMirageOuterPortMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
 
 bool TypeMirageInnerPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 6) {
-    std::cerr << "[Mismatch] " << tname << " needs 6 parameters!" << std::endl;
+  if(values.size() != 4) {
+    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
@@ -393,20 +395,18 @@ bool TypeMirageInnerPortMSIUncached::set(std::list<std::string> &values) {
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
   Policy = *it; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
-  if(!codegendb.parse_int(*it, RW)) return false; it++;
   return true;
 }
   
 void TypeMirageInnerPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeMirageInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
 
 bool TypeMirageInnerPortMSIBroadcast::set(std::list<std::string> &values) {
-  if(values.size() != 6) {
-    std::cerr << "[Mismatch] " << tname << " needs 6 parameters!" << std::endl;
+  if(values.size() != 4) {
+    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
     return false;
   }
   auto it = values.begin();
@@ -414,13 +414,11 @@ bool TypeMirageInnerPortMSIBroadcast::set(std::list<std::string> &values) {
   DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
   Policy = *it; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
-  if(!codegendb.parse_int(*it, RW)) return false; it++;
   return true;
 }
   
 void TypeMirageInnerPortMSIBroadcast::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeMirageInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
@@ -436,13 +434,11 @@ bool TypeMirageCoreInterfaceMSI::set(std::list<std::string> &values) {
   Policy = *it; it++;
   if(!codegendb.parse_bool(*it, enableDelay)) return false; it++;
   if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  if(!codegendb.parse_bool(*it, enableRelocation)) return false; it++;
-  if(!codegendb.parse_int(*it, RW)) return false; it++;
   return true;
 }
   
 void TypeMirageCoreInterfaceMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << enableDelay << "," << isLLC << "," << enableRelocation << "," << RW << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << enableDelay << "," << isLLC << "> " << this->name << ";" << std::endl;
 }    
 
 void TypeMirageCoreInterfaceMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
