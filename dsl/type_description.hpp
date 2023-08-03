@@ -178,7 +178,7 @@ public:
 
 class TypeCacheMirage : public TypeCacheBase
 {
-  int IW, NW, EW, P; std::string MT, DT, MTDT, MIDX, DIDX, MRPC, DRPC, DLY; bool EnMon;
+  int IW, NW, EW, P, RW; std::string MT, DT, MTDT, MIDX, DIDX, MRPC, DRPC, DLY; bool EnMon, EnableRelocation;
   const std::string tname;
 public:
   TypeCacheMirage(const std::string &name) : TypeCacheBase(name), tname("CacheMirage") {}
@@ -296,7 +296,7 @@ public:
 
 class TypeMirageInnerPortMSIUncached : public TypeInnerCohPortBase
 {
-  std::string MT, DT, Policy; bool isLLC, enableRelocation; int RW;
+  std::string MT, DT, Policy; bool isLLC;
   const std::string tname;
 public:
   TypeMirageInnerPortMSIUncached(const std::string &name) : TypeInnerCohPortBase(name), tname("MirageInnerPortMSIUncached") {}
@@ -307,7 +307,7 @@ public:
 
 class TypeMirageInnerPortMSIBroadcast : public TypeInnerCohPortBase
 {
-  std::string MT, DT, Policy; bool isLLC, enableRelocation; int RW;
+  std::string MT, DT, Policy; bool isLLC;
   const std::string tname;
 public:
   TypeMirageInnerPortMSIBroadcast(const std::string &name) : TypeInnerCohPortBase(name), tname("MirageInnerPortMSIBroadcast") {}
@@ -318,7 +318,7 @@ public:
 
 class TypeMirageCoreInterfaceMSI : public TypeCoreInterfaceBase
 {
-  std::string MT, DT, Policy; bool enableDelay, isLLC, enableRelocation; int RW;
+  std::string MT, DT, Policy; bool enableDelay, isLLC;
   const std::string tname;
 public:
   TypeMirageCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("MirageCoreInterfaceMSI") {}
