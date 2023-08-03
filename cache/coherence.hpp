@@ -33,7 +33,6 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMMetadataBase *data_meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // only useful for mirage
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
@@ -127,30 +126,8 @@ public:
   virtual ~CoherentCacheNorm() {}
 };
 
-class CoherentL1CacheBase : public CoherentCacheBase
-{
-public:
-  CoherentL1CacheBase(CacheBase *cache, OuterCohPortBase *outer, InnerCohPortBase *inner, std::string name) : CoherentCacheBase(cache, outer, inner, name) {}
-  virtual ~CoherentL1CacheBase() {}
-
-  virtual const CMDataBase* read(uint64_t addr, uint64_t* delay) = 0;
-  virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) = 0;
-  virtual void flush(uint64_t addr, uint64_t *delay) = 0;
-  virtual void writeback(uint64_t addr, uint64_t *delay) = 0;
-};
-// Normal L1 coherent cache
-template<typename CacheT, typename OuterT, typename CoreT,
-         typename = typename std::enable_if<std::is_base_of<CoreInterfaceBase, CoreT>::value>::type> // CoreInterfaceBase <= CoreT
-class CoherentL1CacheNorm : public CoherentL1CacheBase
-{
-public:
-  CoherentL1CacheNorm(std::string name = "") : CoherentL1CacheBase(new CacheT(), new OuterT(), new CoreT(), name) {}
-  virtual ~CoherentL1CacheNorm() {}
-  const CMDataBase* read(uint64_t addr, uint64_t* delay) { return (dynamic_cast<CoreInterfaceBase*>(this->inner))->read(addr, delay); }
-  void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) { (dynamic_cast<CoreInterfaceBase*>(this->inner))->write(addr, data, delay); }
-  virtual void flush(uint64_t addr, uint64_t *delay) { (dynamic_cast<CoreInterfaceBase*>(this->inner))->flush(addr, delay); }
-  virtual void writeback(uint64_t addr, uint64_t *delay) { (dynamic_cast<CoreInterfaceBase*>(this->inner))->writeback(addr, delay); }
-};
+template<typename CacheT, typename OuterT, typename InnerT>
+using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, InnerT>;
 
 /////////////////////////////////
 // Slice dispatcher needed normally needed for sliced LLC

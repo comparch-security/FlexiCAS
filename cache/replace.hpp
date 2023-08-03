@@ -16,8 +16,8 @@ protected:
 public:
   ReplaceFuncBase(uint32_t nset) : nset(nset) {};
   virtual uint32_t replace(uint32_t s, uint32_t *w) = 0;
-  virtual void access(uint32_t s, uint32_t w) {}
-  virtual void invalid(uint32_t s, uint32_t w) {}
+  virtual void access(uint32_t s, uint32_t w) = 0;
+  virtual void invalid(uint32_t s, uint32_t w) = 0;
   virtual ~ReplaceFuncBase() {}
 };
 
@@ -127,6 +127,8 @@ public:
     *w = cm_get_random_uint32() % NW;
     return 0;
   }
-
+private:
+  virtual void access(uint32_t s, uint32_t w) {}
+  virtual void invalid(uint32_t s, uint32_t w) {}
 };
 #endif
