@@ -31,8 +31,8 @@ public:
 
   virtual void connect(CohMasterBase *h, uint32_t id) {coh = h; coh_id = id;}
 
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
+  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
@@ -126,8 +126,10 @@ public:
   virtual ~CoherentCacheNorm() {}
 };
 
-template<typename CacheT, typename OuterT, typename InnerT>
-using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, InnerT>;
+// Normal L1 coherent cache
+template<typename CacheT, typename OuterT, typename CoreT,
+         typename = typename std::enable_if<std::is_base_of<CoreInterfaceBase, CoreT>::value>::type> // CoreInterfaceBase <= CoreT
+using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 /////////////////////////////////
 // Slice dispatcher needed normally needed for sliced LLC

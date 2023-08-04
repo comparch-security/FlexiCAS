@@ -22,7 +22,7 @@ public:
   virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
   virtual void reset() {}                                   // reset the metadata
   virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
-  virtual uint64_t addr(uint32_t s) const = 0;            // assemble the block address from the metadata
+  virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
 
   virtual void to_invalid() {}       // change state to invalid
   virtual void to_shared() {}        // change to shared
@@ -284,6 +284,5 @@ public:
 // Normal set-associative cache
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
-
 
 #endif
