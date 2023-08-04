@@ -51,7 +51,7 @@ public:
 // IW    : index width
 // TOfst : tag offset
 template <int AW, int IW, int TOfst>
-class MirageMetadataMSI : public MetadataMSIBase<AW, IW, TOfst>, public MirageMetadataSupport
+class MirageMetadataMSI : public MetadataMSI<AW, IW, TOfst>, public MirageMetadataSupport
 {
 public:
   virtual ~MirageMetadataMSI() {}
@@ -197,6 +197,7 @@ public:
   virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) = 0;
   virtual void replace_data(uint64_t addr, uint32_t *d_s, uint32_t *d_w) = 0;
   virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w) = 0;
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
   virtual void cuckoo_replace(uint64_t addr, uint32_t ai, uint32_t *m_ai, uint32_t *m_s, uint32_t *m_w, bool add) = 0;
   virtual void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase *meta, std::stack<uint64_t> &addr_stack) = 0;
 };
@@ -268,7 +269,7 @@ public:
   }
 
   virtual CMDataBase *get_data(uint32_t d_s, uint32_t d_w) {
-    return get_data(P, d_s, d_w);
+    return CacheBase::get_data(P, d_s, d_w);
   }
 
   virtual void replace_data(uint64_t addr, uint32_t *d_s, uint32_t *d_w) { 
@@ -337,6 +338,8 @@ class OuterCohPortMirageBase : public OuterCohPortBase
 {
 public:
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMMetadataBase *data_meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
+private:
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
 };
 
 // uncached MSI outer port:
@@ -357,6 +360,8 @@ public:
     coh->writeback_resp(addr, data, Policy::attach_id(cmd, this->coh_id), delay);
     Policy::meta_after_writeback(cmd, meta, data_meta);
   }
+private:
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
 };
 
 // full MSI Outer port
@@ -371,7 +376,9 @@ public:
       auto meta = this->cache->access(ai, s, w); // oddly here, `this->' is required by the g++ 11.3.0 @wsong83
       CMDataBase *data = nullptr;
       if constexpr (!std::is_void<DT>::value) {
-        data = (static_cast<CacheMirageBase *>(this->cache))->get_data(ai, s, w);
+        uint32_t ds, dw;
+        meta->data(&ds, &dw);
+        data = (static_cast<CacheMirageBase *>(this->cache))->get_data(ds, dw);
       }
 
       // sync if necessary
@@ -405,7 +412,7 @@ public:
     if(mmeta->is_dirty()) meta->to_dirty();
     if(mmeta->is_shared()) meta->to_shared(); else meta->to_modified();
   }
-}
+};
 
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
@@ -467,7 +474,7 @@ public:
           mmeta->data(&m_ds, &m_dw);
           data_mmeta = cache->access_data_meta(m_ds, m_dw);
           assert(addr == mmeta->addr(m_s));
-          meta_copy_state(addr, ai, s, w, meta, mmeta, data_mmeta);
+          this->meta_copy_state(addr, ai, s, w, meta, mmeta, data_mmeta);
           mmeta->to_clean(); mmeta->to_invalid();
           cache->hook_manage(addr, m_ai, m_s, m_w, true, true, false, delay);
           cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
@@ -568,7 +575,7 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase, protected MirageInnerPo
     if(hit = cache->hit(addr, &ai, &s, &w)) { // hit
       meta = cache->access(ai, s, w);
       meta->data(&ds, &dw);
-      if constexpr (!std::is_void<DT>::value) data = cache->get_data(ai, s, w);
+      if constexpr (!std::is_void<DT>::value) data = cache->get_data(ds, dw);
       if constexpr (!isLLC) {
         if(Policy::need_promote(cmd, meta)) {
           outer->acquire_req(addr, meta, data, cmd, delay);
@@ -604,9 +611,9 @@ class MirageCoreInterfaceMSI : public CoreInterfaceBase, protected MirageInnerPo
           addr_stack.pop();
           cache->cuckoo_replace(addr, ai, &m_ai, &m_s, &m_w, false);
           mmeta->data(&m_ds, &m_dw);
-          data_mmeta = cache->access(m_ds, m_dw);
+          data_mmeta = cache->access_data_meta(m_ds, m_dw);
           assert(addr == mmeta->addr(m_s));
-          meta_copy_state(addr, ai, s, w, meta, mmeta, data_mmeta);
+          this->meta_copy_state(addr, ai, s, w, meta, mmeta, data_mmeta);
           mmeta->to_clean(); mmeta->to_invalid();
           cache->hook_manage(addr, m_ai, m_s, m_w, true, true, false, delay);
           cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay

@@ -235,7 +235,7 @@ public:
     if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
-}
+};
 
 
 // Skewed Cache
@@ -257,7 +257,7 @@ protected:
 
 public:
   CacheSkewed(std::string name = "")
-    : CacheBase(name), CacheMonitorSupport<DLY, EnMon>(this->id)
+    : CacheBase(name), CacheMonitorSupport<DLY, EnMon>(CacheBase::id)
   {
     arrays.resize(P);
     for(auto &a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
