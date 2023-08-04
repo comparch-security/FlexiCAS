@@ -218,13 +218,12 @@ template<int IW, int NW, int EW, int P, int RW, typename MT, typename DT, typena
          typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, MRPC>::value>::type,  // MRPC <- ReplaceFuncBase
          typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, DRPC>::value>::type,  // DRPC <- ReplaceFuncBase
          typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
-class CacheMirage : public CacheMirageBase
+class CacheMirage : public CacheMirageBase, protected CacheMonitorSupport<DLY, EnMon>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
 protected:
   MIDX m_indexer;     // meta index resolver
   MRPC m_replacer[P]; // meta replacer
-  DLY *timer;       // delay estimator
   DIDX d_indexer;   // data index resolver
   DRPC d_replacer;  // data replacer
 
@@ -236,12 +235,9 @@ public:
     arrays.resize(P+1);
     for(int i = 0; i < P; i++)  arrays[i] = new CacheArrayNorm<IW,NW+EW,MT,void>();  // The first P CacheArrays only have Meta without Data
     arrays[P] = new CacheArrayNorm<IW,P*NW,DTMT,DT>(); // The last CacheArray has a global data (see mirage paper), and its meta (DTMT) holds a pointer from data to meta
-    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
   }
 
-  virtual ~CacheMirage() {
-    if constexpr (!std::is_void<DLY>::value) delete timer;
-  }
+  virtual ~CacheMirage() {}
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
@@ -252,29 +248,19 @@ public:
     return false;
   }
 
-  virtual bool hit(uint64_t addr){
-    uint32_t ai, s, w;
-    return hit(addr, &ai, &s, &w);
-  }
-
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    m_replacer[ai].access(s, w);
-    if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
+    replacer[ai].access(s, w);
+    CacheMonitorSupport<DLY, EnMon>::hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    m_replacer[ai].access(s, w);
-    if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
+    replacer[ai].access(s, w);
+    CacheMonitorSupport<DLY, EnMon>::hook_write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
-    if(hit && evict) {
-      m_replacer[ai].invalid(s, w);
-      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
-    }
-    if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
+    if(hit && evict) replacer[ai].invalid(s, w);
+    CacheMonitorSupport<DLY, EnMon>::hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
   virtual MirageDataMeta *access_data_meta(uint32_t d_s, uint32_t d_w){
