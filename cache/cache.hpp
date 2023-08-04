@@ -181,8 +181,13 @@ public:
   // probe, invalidate and writeback
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
 
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
+    return arrays[ai]->get_meta(s, w);
+  }
+
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
+    return arrays[ai]->get_data(s, w);
+  }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
 
@@ -264,13 +269,6 @@ public:
       if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
     }
     if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
-  }
-
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
-    return arrays[ai]->get_meta(s, w);
-  }
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w){
-    return arrays[ai]->get_data(s, w);
   }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
