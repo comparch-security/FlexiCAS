@@ -24,13 +24,13 @@ public:
   virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
   virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
 
-  virtual void to_invalid() {}       // change state to invalid
-  virtual void to_shared() {}        // change to shared
-  virtual void to_modified() {}      // change to modified
-  virtual void to_owned() {}         // change to owned
-  virtual void to_exclusive() {}     // change to exclusive
-  virtual void to_dirty() {}         // change to dirty
-  virtual void to_clean() {}         // change to dirty
+  virtual void to_invalid() = 0;     // change state to invalid
+  virtual void to_shared() = 0;      // change to shared
+  virtual void to_modified() = 0;    // change to modified
+  virtual void to_owned() = 0;       // change to owned
+  virtual void to_exclusive() = 0;   // change to exclusive
+  virtual void to_dirty() = 0;       // change to dirty
+  virtual void to_clean() = 0;       // change to dirty
   virtual bool is_valid() const { return false; }
   virtual bool is_shared() const { return false; }
   virtual bool is_modified() const { return false; }

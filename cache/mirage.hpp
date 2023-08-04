@@ -22,6 +22,12 @@ public:
   virtual ~MirageDataMeta() {}
 
 private:
+  virtual void to_shared() {}
+  virtual void to_modified() {}
+  virtual void to_owned() {}
+  virtual void to_exclusive() {}
+  virtual void to_dirty() {}
+  virtual void to_clean() {}
   virtual void init(uint64_t addr) {}
   virtual uint64_t addr(uint32_t s) const { return 0; }
 };

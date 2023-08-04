@@ -152,6 +152,9 @@ public:
   virtual bool is_shared() const { return state == 1; }
   virtual bool is_modified() const {return state == 2; }
   virtual bool is_dirty() const { return dirty; }
+private:
+  virtual virtual void to_owned() {}
+  virtual void to_exclusive() {}
 };
 
 // Metadata with match function
