@@ -1,5 +1,5 @@
-#ifndef CM_CACHE_DELAY_HPP
-#define CM_CACHE_DELAY_HPP
+#ifndef CM_UTIL_DELAY_HPP
+#define CM_UTIL_DELAY_HPP
 
 class DelayBase
 {

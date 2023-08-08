@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <set>
+#include "util/delay.hpp"
 
 // monitor base class
 class MonitorBase
@@ -23,6 +24,70 @@ public:
   virtual void pause() = 0;    // pause the monitor, assming it will resume later
   virtual void resume() = 0;   // resume the monitor, assuming it has been paused
   virtual void reset() = 0;    // reset all internal statistics, assuming to be later started as new
+};
+
+// mointor container used in cache
+class MonitorContainerBase
+{
+protected:
+  const uint32_t id;                    // a unique id to identify the attached cache
+  std::set<MonitorBase *> monitors;     // performance moitors
+
+public:
+
+  MonitorContainerBase(uint32_t id) : id(id) {}
+
+  virtual ~MonitorContainerBase() {}
+
+  virtual bool attach_monitor(MonitorBase *m) = 0;
+
+  // support run-time assign/reassign mointors
+  void detach_monitor() { monitors.clear(); }
+
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
+};
+
+// Cache monitor and delay support
+template<typename DLY, bool EnMon>
+class CacheMonitorSupport : public MonitorContainerBase
+{
+protected:
+  DLY *timer;                           // delay estimator
+
+public:
+  CacheMonitorSupport(uint32_t id) : MonitorContainerBase(id) {
+    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
+  }
+
+  virtual ~CacheMonitorSupport() {
+    if constexpr (!std::is_void<DLY>::value) delete timer;
+  }
+
+  virtual void attach_monitor(MonitorBase *m) {
+    if constexpr (EnMon) {
+      if(m->attach(MonitorContainerBase::id)) MonitorContainerBase::monitors.insert(m);
+    }
+  }
+
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    if constexpr (EnMon) for(auto m:MonitorContainerBase::monitors) m->read(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
+  }
+
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    if constexpr (EnMon) for(auto m:MonitorContainerBase::monitors) m->write(addr, ai, s, w, hit);
+    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
+  }
+
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+    if(hit && evict) {
+      if constexpr (EnMon) for(auto m:MonitorContainerBase::this->monitors) m->invalid(addr, ai, s, w);
+    }
+    if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
+  }
+
 };
 
 // performance counter

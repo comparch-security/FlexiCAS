@@ -13,7 +13,6 @@
 #include "util/monitor.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
-#include "cache/delay.hpp"
 
 class CMMetadataBase
 {
@@ -156,9 +155,14 @@ protected:
   std::vector<CacheArrayBase *> arrays;
 
 public:
+  MonitorContainerBase *mointors; // monitor container
+
   CacheBase(std::string name) : id(UniqueID::new_id()), name(name) {}
 
-  virtual ~CacheBase() { for(auto a: arrays) delete a; }
+  virtual ~CacheBase() {
+    for(auto a: arrays) delete a;
+    delete mointors;
+  }
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
@@ -189,55 +193,6 @@ public:
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
 };
 
-// Cache monitor and delay support
-template<typename DLY, bool EnMon>
-class CacheMonitorSupport
-{
-protected:
-  const uint32_t id;                    // a unique id to identify the attached cache
-  std::set<MonitorBase *> monitors;     // performance moitors
-  DLY *timer;                           // delay estimator
-
-public:
-  CacheMonitorSupport(uint32_t id) : id(id) {
-    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
-  }
-
-  virtual ~CacheMonitorSupport() {
-    if constexpr (!std::is_void<DLY>::value) delete timer;
-  }
-
-  bool attach_monitor(MonitorBase *m)  {
-    if(m->attach(id)) {
-      monitors.insert(m);
-      return true;
-    } else
-      return false;
-  }
-
-  // support run-time assign/reassign mointors
-  void detach_monitor() { monitors.clear(); }
-
-  void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
-  }
-
-  void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
-  }
-
-  void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
-    if(hit && evict) {
-      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
-    }
-    if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
-  }
-
-};
-
-
 // Skewed Cache
 // IW: index width, NW: number of ways, P: number of partitions
 // MT: metadata type, DT: data type (void if not in use)
@@ -249,7 +204,7 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
          typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type,  // IDX <- IndexFuncBase
          typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, RPC>::value>::type,  // RPC <- ReplaceFuncBase
          typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
-class CacheSkewed : public CacheBase, protected CacheMonitorSupport<DLY, EnMon>
+class CacheSkewed : public CacheBase
 {
 protected:
   IDX indexer;     // index resolver
@@ -257,10 +212,11 @@ protected:
 
 public:
   CacheSkewed(std::string name = "")
-    : CacheBase(name), CacheMonitorSupport<DLY, EnMon>(CacheBase::id)
+    : CacheBase(name)
   {
     arrays.resize(P);
     for(auto &a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
+    monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
   }
 
   virtual ~CacheSkewed() {}
@@ -283,17 +239,17 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
-    CacheMonitorSupport<DLY, EnMon>::hook_read(addr, ai, s, w, hit, delay);
+    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
-    CacheMonitorSupport<DLY, EnMon>::hook_write(addr, ai, s, w, hit, delay);
+    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
     if(hit && evict) replacer[ai].invalid(s, w);
-    CacheMonitorSupport<DLY, EnMon>::hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
+    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){

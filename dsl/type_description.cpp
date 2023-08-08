@@ -651,7 +651,7 @@ void TypeSliceDispatcher::emit(std::ofstream &file) {
 
 void TypeSliceDispatcher::emit_header() { codegendb.add_header("cache/coherence.hpp"); }
 
-void TypeDelayBase::emit_header() { codegendb.add_header("cache/delay.hpp"); }
+void TypeDelayBase::emit_header() { codegendb.add_header("util/delay.hpp"); }
 
 bool TypeDelayL1::set(std::list<std::string> &values) {
   if(values.size() != 3) {
