@@ -39,7 +39,7 @@ public:
 
   virtual ~MonitorContainerBase() {}
 
-  virtual bool attach_monitor(MonitorBase *m) = 0;
+  virtual void attach_monitor(MonitorBase *m) = 0;
 
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors.clear(); }
@@ -83,7 +83,7 @@ public:
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
     if(hit && evict) {
-      if constexpr (EnMon) for(auto m:MonitorContainerBase::this->monitors) m->invalid(addr, ai, s, w);
+      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
     }
     if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }

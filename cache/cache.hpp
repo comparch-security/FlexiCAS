@@ -155,13 +155,13 @@ protected:
   std::vector<CacheArrayBase *> arrays;
 
 public:
-  MonitorContainerBase *mointors; // monitor container
+  MonitorContainerBase *monitors; // monitor container
 
   CacheBase(std::string name) : id(UniqueID::new_id()), name(name) {}
 
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
-    delete mointors;
+    delete monitors;
   }
 
   virtual bool hit(uint64_t addr,
