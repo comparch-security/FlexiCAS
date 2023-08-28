@@ -81,4 +81,54 @@ public:
   }
 };
 
+/////////////////////////////////
+// Random replacement
+// IW: index width, NW: number of ways
+template<int IW, int NW>
+class ReplaceRandom : public ReplaceFuncBase
+{
+protected:
+  std::unordered_map<uint32_t, std::unordered_set<uint32_t> > free_map;
+public:
+  ReplaceRandom() : ReplaceFuncBase(1ul<<IW) {}
+  virtual ~ReplaceRandom() {}
+
+  virtual uint32_t replace(uint32_t s, uint32_t *w){
+    if(!free_map.count(s))
+      for(uint32_t i=0; i<NW; i++) free_map[s].insert(i);
+    if(free_map[s].size() > 0)
+      *w = *(free_map[s].begin());
+    else
+      *w = cm_get_random_uint32() % NW;
+    return 0;
+  }
+
+  virtual void access(uint32_t s, uint32_t w){
+    if(free_map[s].count(w))
+      free_map[s].erase(w);
+  }
+
+  virtual void invalid(uint32_t s, uint32_t w) {
+    free_map[s].insert(w);
+  }
+};
+
+/////////////////////////////////
+// Mirage Random replacement
+// IW: index width, NW: number of ways
+template<int IW, int NW>
+class ReplaceCompleteRandom : public ReplaceFuncBase
+{
+public:
+  ReplaceCompleteRandom() : ReplaceFuncBase(1ul<<IW) {}
+  virtual ~ReplaceCompleteRandom() {}
+
+  virtual uint32_t replace(uint32_t s, uint32_t *w){
+    *w = cm_get_random_uint32() % NW;
+    return 0;
+  }
+
+  virtual void access(uint32_t s, uint32_t w) {}
+  virtual void invalid(uint32_t s, uint32_t w) {}
+};
 #endif

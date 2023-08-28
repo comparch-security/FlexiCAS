@@ -13,7 +13,6 @@
 #include "util/monitor.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
-#include "cache/delay.hpp"
 
 class CMMetadataBase
 {
@@ -24,13 +23,13 @@ public:
   virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
   virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
 
-  virtual void to_invalid() {}       // change state to invalid
-  virtual void to_shared() {}        // change to shared
-  virtual void to_modified() {}      // change to modified
-  virtual void to_owned() {}         // change to owned
-  virtual void to_exclusive() {}     // change to exclusive
-  virtual void to_dirty() {}         // change to dirty
-  virtual void to_clean() {}         // change to dirty
+  virtual void to_invalid() = 0;     // change state to invalid
+  virtual void to_shared() = 0;      // change to shared
+  virtual void to_modified() = 0;    // change to modified
+  virtual void to_owned() = 0;       // change to owned
+  virtual void to_exclusive() = 0;   // change to exclusive
+  virtual void to_dirty() = 0;       // change to dirty
+  virtual void to_clean() = 0;       // change to dirty
   virtual bool is_valid() const { return false; }
   virtual bool is_shared() const { return false; }
   virtual bool is_modified() const { return false; }
@@ -155,18 +154,25 @@ protected:
   // MIRAGE: parition number of CacheArrayNorm (meta only) with one separate CacheArrayNorm for storing data (in derived class)
   std::vector<CacheArrayBase *> arrays;
 
-  // monitor related
-  std::set<MonitorBase *> monitors;
-
 public:
+  MonitorContainerBase *monitors; // monitor container
+
   CacheBase(std::string name) : id(UniqueID::new_id()), name(name) {}
 
-  virtual ~CacheBase() { for(auto a: arrays) delete a; }
+  virtual ~CacheBase() {
+    for(auto a: arrays) delete a;
+    delete monitors;
+  }
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w
                    ) = 0;
+
+  bool hit(uint64_t addr) {
+    uint32_t ai, s, w;
+    return hit(addr, &ai, &s, &w);
+  }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
@@ -176,20 +182,15 @@ public:
   // probe, invalidate and writeback
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
 
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) = 0;
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) = 0;
-
-  // monitor related
-  bool attach_monitor(MonitorBase *m) {
-    if(m->attach(id)) {
-      monitors.insert(m);
-      return true;
-    } else
-      return false;
+  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
+    return arrays[ai]->get_meta(s, w);
   }
 
-  // support run-time assign/reassign mointors
-  void detach_monitor() { monitors.clear(); }
+  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
+    return arrays[ai]->get_data(s, w);
+  }
+
+  virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
 };
 
 // Skewed Cache
@@ -208,7 +209,6 @@ class CacheSkewed : public CacheBase
 protected:
   IDX indexer;     // index resolver
   RPC replacer[P]; // replacer
-  DLY *timer;      // delay estimator
 
 public:
   CacheSkewed(std::string name = "")
@@ -216,12 +216,10 @@ public:
   {
     arrays.resize(P);
     for(auto &a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
-    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
+    monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
   }
 
-  virtual ~CacheSkewed() {
-    if constexpr (!std::is_void<DLY>::value) delete timer;
-  }
+  virtual ~CacheSkewed() {}
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
@@ -241,29 +239,24 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
-    if constexpr (EnMon) for(auto m:this->monitors) m->read(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
+    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
-    if constexpr (EnMon) for(auto m:this->monitors) m->write(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
+    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
-    if(hit && evict) {
-      replacer[ai].invalid(s, w);
-      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
-    }
-    if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
+    if(hit && evict) replacer[ai].invalid(s, w);
+    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w){
-    return arrays[ai]->get_meta(s, w);
-  }
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w){
-    return arrays[ai]->get_data(s, w);
+  virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
+    for(int i=0; i<P; i++) 
+      if(indexer.index(addrA, i) == indexer.index(addrB, i)) 
+        return true;
+    return false;
   }
 };
 
