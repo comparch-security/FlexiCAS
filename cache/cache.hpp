@@ -190,6 +190,9 @@ public:
     return arrays[ai]->get_data(s, w);
   }
 
+  // access both meta and data in one function call
+  virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
+
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
 };
 
@@ -228,6 +231,14 @@ public:
         if(access(*ai, *s, *w)->match(addr)) return true;
     }
     return false;
+  }
+
+  virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
+    auto meta = arrays[ai]->get_meta(s, w);
+    if constexpr (!std::is_void<DT>::value)
+      return std::make_pair(meta, arrays[ai]->get_data(s, w));
+    else
+      return std::make_pair(meta, nullptr);
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
