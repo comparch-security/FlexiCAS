@@ -2,8 +2,10 @@
 #define CM_CACHE_COHERENCE_HPP
 
 #include <type_traits>
+#include <tuple>
 #include "cache/cache.hpp"
 #include "cache/slicehash.hpp"
+#include "cache/coh_policy.hpp"
 
 class OuterCohPortBase;
 class InnerCohPortBase;
@@ -24,19 +26,71 @@ protected:
   CacheBase *cache; // reverse pointer for the cache parent
   InnerCohPortBase *inner; // inner port for probe when sync
   CohMasterBase *coh; // hook up with the coherence hub
-  uint32_t coh_id; // the identifier used in locating this cache client by the coherence mster
+  uint32_t coh_id; // the identifier used in locating this cache client by the coherence master
+  CohPolicyBase *policy; // the coherence policy
 public:
-  OuterCohPortBase() {}
-  virtual ~OuterCohPortBase() {}
+  OuterCohPortBase(CohPolicyBase *policy) : policy(policy) {}
+  virtual ~OuterCohPortBase() { delete policy; }
 
   virtual void connect(CohMasterBase *h, uint32_t id) {coh = h; coh_id = id;}
 
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
-  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // may not implement if not supported
+  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
 };
+
+// common behvior for uncached outer ports
+class OuterCohPortUncachedBase : public OuterCohPortBase
+{
+public:
+  OuterCohPortUncachedBase(CohPolicyBase *policy) : OuterCohPortBase(policy) {}
+  virtual ~OuterCohPortUncachedBase() {}
+
+  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
+    cmd.id = this->coh_id;  // will need a policy converter for comm between policies
+    coh->acquire_resp(addr, data, cmd, delay);
+    policy->meta_after_fetch(cmd, meta, addr);
+  }
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
+    cmd.id = this->coh_id;  // will need a policy converter for comm between policies
+    coh->writeback_resp(addr, data, cmd, delay);
+    policy->meta_after_writeback(cmd, meta);
+  }
+};
+
+// common behavior for cached outer ports
+class OuterCohPortBase : public OuterCohPortUncachedBase
+{
+public:
+  OuterCohPortBase(CohPolicyBase *policy) : OuterCohPortUncachedBase(policy) {}
+  virtual ~OuterCohPortBase() {}
+
+  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t cmd, uint64_t *delay) {
+    uint32_t ai, s, w;
+    bool hit, writeback = false;
+    if(hit = this->cache->hit(addr, &ai, &s, &w)) {
+      auto [meta, data] = this->cache->access_line(ai, s, w); // need c++17 for auto type infer
+
+      // sync if necessary
+      auto sync = policy->probe_need_sync(cmd, meta);
+      if(sync.first) this->inner->probe_req(addr, meta, data, sync.second, delay);
+
+      // writeback if dirty
+      if(writeback = meta->is_dirty()) { // dirty, writeback
+        meta_outer->to_dirty();
+        if(data_outer) data_outer->copy(data);
+        meta->to_clean();
+      }
+
+      // update meta
+      policy->meta_after_probe(cmd, meta);
+    }
+    this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
+  }
+};
+
 
 /////////////////////////////////
 // Base interface for inner ports
@@ -47,36 +101,160 @@ protected:
   CacheBase *cache; // reverse pointer for the cache parent
   OuterCohPortBase *outer; // outer port for writeback when replace
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
+  CohPolicyBase *policy; // the coherence policy
+  CohCMDDecoderBase *coh_dec; // coherence command decoder
 public:
-  InnerCohPortBase() {}
-  virtual ~InnerCohPortBase() {}
+  InnerCohPortBase(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : policy(policy), coh_dec(coh_dec) {}
+  virtual ~InnerCohPortBase() { delete policy; delete doh_dec;}
 
   virtual uint32_t connect(CohClientBase *c) { coh.push_back(c); return coh.size() - 1;}
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) = 0;
-  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // may not implement if not supported
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {} // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
 };
 
-// interface with the processing core is a special InnerCohPort
-class CoreInterfaceBase : public InnerCohPortBase {
+class InnerCohPortUncachedBase : public InnerCohPortBase
+{
 public:
-  CoreInterfaceBase() {}
+  InnerCohPortUncachedBase(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : InnerCohPortBase(policy, coh_dec) {}
+  virtual ~InnerCohPortUncachedBase() {}
+
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
+    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd);
+
+    if (data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
+    policy->meta_after_grant(cmd, meta);
+    this->cache->hook_read(addr, ai, s, w, hit, delay);
+  }
+
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
+    if(coh_dec.is_flush(cmd))
+      flush_line(addr, cmd, delay);
+    else
+      write_line(addr, data_inner, cmd, delay);
+  }
+
+protected:
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
+  access_line(uint64_t addr, coh_cmd_t cmd) { // common function for access a line in the cache
+    uint32_t ai, s, w;
+    CMMetadataBase *meta;
+    CMDataBase *data;
+    bool hit = this->cache->hit(addr, &ai, &s, &w);
+    if(hit) {
+      std::tie(meta, data) = this->cache->access_line(ai, s, w);
+      auto sync = policy->acquire_need_sync(cmd, meta);
+      if(sync.first) probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      auto promote = policy->acquire_need_promote(cmd, meta);
+      if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = false; } // promote permission if needed
+    } else { // miss
+      // get the way to be replaced
+      this->cache->replace(addr, &ai, &s, &w);
+      std::tie(meta, data) = this->cache->access_line(ai, s, w);
+      if(meta->is_valid()) {
+        auto replace_addr = meta->addr(s);
+        auto sync = policy->writeback_need_sync(meta);
+        if(sync.first) probe_req(replace_addr, meta, data, sync.second, delay); // sync if necessary
+        auto writeback = policy->writeback_need_writeback(meta);
+        if(writeback.first) outer->writeback_req(replace_addr, meta, data, writeback.second, delay); // writeback if dirty
+        this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback.first, delay);
+      }
+      outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
+    }
+    return std::make_tuple(meta, data, ai, s, w, hit);
+  }
+
+  virtual void write_line(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
+    uint32_t ai, s, w;
+    CMMetadataBase *meta = nullptr;
+    CMDataBase *data = nullptr;
+    bool hit = this->cache->hit(addr, &ai, &s, &w); assert(hit); // must hit
+    std::tie(meta, data) = this->cache->access_line(ai, s, w);
+    if(data_inner) data->copy(data_inner);
+    policy->meta_after_release(cmd, meta);
+    this->cache->hook_write(addr, ai, s, w, hit, delay);
+  }
+
+  virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
+    uint32_t ai, s, w;
+    CMMetadataBase *meta = nullptr;
+    CMDataBase *data = nullptr;
+    bool hit = false;
+
+    auto flush = policy->flush_need_sync();
+    if(flush.first) {
+      if(hit = this->cache->hit(addr, &ai, &s, &w)) {
+        std::tie(meta, data) = this->cache->access_line(ai, s, w);
+        probe_req(addr, meta, data, flush.second, delay);
+        auto writeback = policy->writeback_need_writeback(meta);
+        if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
+        this->cache->hook_manage(addr, ai, s, w, hit, coh_dec.is_evict(cmd), writeback.first, delay);
+      }
+    } else outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
+  }
+
+};
+
+class InnerCohPortBase : public InnerCohPortUncachedBase
+{
+public:
+  InnerCohPortBase(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : InnerCohPortUncachedBase(policy, coh_dec) {}
+  virtual ~InnerCohPortBase() {}
+
+  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
+    for(uint32_t i=0; i<this->coh.size(); i++) {
+      auto probe = policy->probe_need_probe(cmd, meta, i);
+      if(probe.first) this->coh[i]->probe_resp(addr, meta, data, probe.second, delay);
+    }
+  }
+};
+
+
+// interface with the processing core is a special InnerCohPort
+class CoreInterfaceBase : public InnerCohPortUncachedBase {
+protected:
+  CoreCMDDecoderBase *core_dec; // coherence command decoder
+public:
+  CoreInterfaceBase(CohPolicyBase *policy, CoreCMDDecoderBase *core_dec)
+    : InnerCohPortUncachedBase(policy, nullptr), core_dec(core_dec) {}
   virtual ~CoreInterfaceBase() {}
 
-  virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) = 0;
-  virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) = 0;
-  virtual void flush(uint64_t addr, uint64_t *delay) = 0; // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
-  virtual void writeback(uint64_t addr, uint64_t *delay) = 0; // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
-  virtual void writeback_invalidate(uint64_t *delay) = 0; // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
+public:
+
+  virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
+    auto cmd = core_dec->cmd_for_read();
+    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd);
+    this->cache->hook_read(addr, ai, s, w, hit, EnableDelay ? delay : nullptr);
+    return data;
+  }
+
+  virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
+    auto cmd = core_dec->cmd_for_write();
+    auto [meta, m_data, ai, s, w, hit] = access_line(addr, cmd);
+    meta->to_dirty();
+    this->cache->hook_write(addr, ai, s, w, hit, EnableDelay ? delay : nullptr);
+    if(m_data) m_data->copy(data);
+  }
+
+  // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
+  virtual void flush(uint64_t addr, uint64_t *delay)     { flush_line(addr, core_dec->cmd_for_flush(), delay); }
+
+  // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
+  virtual void writeback(uint64_t addr, uint64_t *delay) { flush_line(addr, core_dec->cmd_for_writeback(), delay); }
+
+  // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
+  virtual void writeback_invalidate(uint64_t *delay) {
+    assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
+  }
 
 private:
   // hide and prohibit calling these functions
   virtual uint32_t connect(CohClientBase *c) { return 0;}
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {}
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {}
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {}
 };
 
 
@@ -150,10 +328,10 @@ public:
   virtual void connect(CohMasterBase *c) {
     cohm.push_back(c);
   }
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay){
     this->cohm[hasher(addr)]->acquire_resp(addr, data, cmd, delay);
   }
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay){
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay){
     this->cohm[hasher(addr)]->writeback_resp(addr, data, cmd, delay);
   }
 };
