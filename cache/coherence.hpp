@@ -23,16 +23,16 @@ typedef InnerCohPortBase CohMasterBase;
 class OuterCohPortBase
 {
 protected:
-  CacheBase *cache; // reverse pointer for the cache parent
+  CacheBase *cache;        // reverse pointer for the cache parent
   InnerCohPortBase *inner; // inner port for probe when sync
-  CohMasterBase *coh; // hook up with the coherence hub
-  uint32_t coh_id; // the identifier used in locating this cache client by the coherence master
-  CohPolicyBase *policy; // the coherence policy
+  CohMasterBase *coh;      // hook up with the coherence hub
+  int32_t coh_id;          // the identifier used in locating this cache client by the coherence master
+  CohPolicyBase *policy;   // the coherence policy
 public:
   OuterCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~OuterCohPortBase() { delete policy; }
 
-  virtual void connect(CohMasterBase *h, uint32_t id) {coh = h; coh_id = id;}
+  virtual void connect(CohMasterBase *h, int32_t id) {coh = h; coh_id = id;}
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
@@ -174,7 +174,7 @@ protected:
     bool hit = this->cache->hit(addr, &ai, &s, &w); assert(hit); // must hit
     std::tie(meta, data) = this->cache->access_line(ai, s, w);
     if(data_inner) data->copy(data_inner);
-    policy->meta_after_release(cmd, meta);
+    policy->meta_after_release(meta);
     this->cache->hook_write(addr, ai, s, w, hit, delay);
   }
 
