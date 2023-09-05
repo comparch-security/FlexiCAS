@@ -16,10 +16,13 @@ struct coh_cmd_t {
   uint32_t act   : 8;
 };
 
+class CoherentCacheBase;
+
 // functions default on MSI
 class CohPolicyBase {
 
 protected:
+  CacheBase *cache;        // reverse pointer for the cache parent
   const uint32_t acquire_msg, release_msg, probe_msg, flush_msg;
   const uint32_t fetch_read_act, fetch_write_act, evict_act, writeback_act;
 
@@ -28,6 +31,8 @@ public:
   CohPolicyBase(uint32_t a, uint32_t r, uint32_t p, uint32_t f, uint32_t fr, uint32_t fw, uint32_t ev, uint32_t wb)
     : acquire_msg(a), release_msg(r), probe_msg(p), flush_msg(f), fetch_read_act(fr), fetch_write_act(fw), evict_act(ev), writeback_act(wb) {}
   virtual ~CohPolicyBase() {}
+
+  friend CoherentCacheBase; // deferred assignment for cache
 
   // message type
   inline bool is_acquire(coh_cmd_t cmd) const     { return cmd.msg == acquire_msg;     }
@@ -50,13 +55,37 @@ public:
   // acquire
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
-  virtual void meta_after_fetch(coh_cmd_t cmd, CMMetadataBase *meta, uint64_t addr) const = 0; // after fetch from outer
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta) const = 0; // after grant to inner
+  virtual void meta_after_fetch(coh_cmd_t cmd, CMMetadataBase *meta, uint64_t addr) const { // after fetch from outer
+    assert(is_probe(cmd));
+    assert(!meta->is_dirty());
+    meta->init(addr);
+    if(is_fetch_read(cmd)) meta->to_shared();
+    else {
+      assert(is_fetch_write(cmd));
+      meta->to_modified();
+    }
+  }
+
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta) const { // after grant to inner
+    assert(is_acquire(cmd));
+    if(is_fetch_read(cmd)) meta->to_shared();
+    else {
+      assert(is_fetch_write(cmd));
+      meta->to_modified();
+    }
+  }
 
   // probe
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, uint32_t target_inner_id) const = 0;
-  virtual void meta_after_probe(coh_cmd_t cmd, CMMetadataBase *meta) const = 0;
+  virtual void meta_after_probe(coh_cmd_t cmd, CMMetadataBase *meta) const {
+    assert(is_probe(cmd));
+    if(is_evict(cmd)) meta->to_invalid();
+    else {
+      assert(is_writeback(cmd));
+      meta->to_shared();
+    }
+  }
 
   // writeback due to conflict, probe, flush
   virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const = 0;
@@ -64,13 +93,19 @@ public:
     if(meta->is_dirty()) return std::make_pair(true, {-1, release_msg, evict_act});
     else                 return std::make_pair(false, {-1, 0, 0});
   }
-  virtual void meta_after_writeback(coh_cmd_t cmd, CMMetadataBase *meta) const = 0;
+
+  virtual void meta_after_writeback(coh_cmd_t cmd, CMMetadataBase *meta) const {
+    if(meta) meta->to_clean(); // flush may send out writeback request with null meta
+  }
 
   // release from inner
   virtual void meta_after_release(CMMetadataBase *meta) const { meta->to_dirty();}
 
   // flush
   virtual std::pair<bool, coh_cmd_t> flush_need_sync() const = 0;
+  virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const  {
+    if(is_evict(cmd)) meta->to_invalid();
+  }
 
 private:
   inline std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
