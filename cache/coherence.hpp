@@ -123,7 +123,7 @@ public:
   virtual ~InnerCohPortUncachedBase() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd);
+    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
 
     if (data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
     policy->meta_after_grant(cmd, meta);
@@ -138,8 +138,19 @@ public:
   }
 
 protected:
+  virtual void evict(CMMetadataBase *meta, CMDataBase *data, int32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
+    // evict a block due to conflict
+    auto addr = meta->addr(s);
+    assert(this->cache->hit(addr));
+    auto sync = policy->writeback_need_sync(meta);
+    if(sync.first) probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+    auto writeback = policy->writeback_need_writeback(meta);
+    if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
+    this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay);
+  }
+
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
-  access_line(uint64_t addr, coh_cmd_t cmd) { // common function for access a line in the cache
+  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
@@ -154,14 +165,7 @@ protected:
       // get the way to be replaced
       this->cache->replace(addr, &ai, &s, &w);
       std::tie(meta, data) = this->cache->access_line(ai, s, w);
-      if(meta->is_valid()) {
-        auto replace_addr = meta->addr(s);
-        auto sync = policy->writeback_need_sync(meta);
-        if(sync.first) probe_req(replace_addr, meta, data, sync.second, delay); // sync if necessary
-        auto writeback = policy->writeback_need_writeback(meta);
-        if(writeback.first) outer->writeback_req(replace_addr, meta, data, writeback.second, delay); // writeback if dirty
-        this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback.first, delay);
-      }
+      if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
@@ -191,6 +195,7 @@ protected:
         probe_req(addr, meta, data, flush.second, delay);
         auto writeback = policy->writeback_need_writeback(meta);
         if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
+        policy->meta_after_flush(cmd, meta);
         this->cache->hook_manage(addr, ai, s, w, hit, coh_dec.is_evict(cmd), writeback.first, delay);
       }
     } else outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
