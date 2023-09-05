@@ -61,11 +61,12 @@ public:
 };
 
 // common behavior for cached outer ports
-class OuterCohPortBase : public OuterCohPortUncachedBase
+template<class OPUCB>
+class OuterCohPortBaseT : public OuterCohPortUncachedBase
 {
 public:
-  OuterCohPortBase(CohPolicyBase *policy) : OuterCohPortUncachedBase(policy) {}
-  virtual ~OuterCohPortBase() {}
+  OuterCohPortBaseT(CohPolicyBase *policy) : OuterCohPortUncachedBase(policy) {}
+  virtual ~OuterCohPortBaseT() {}
 
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
@@ -91,6 +92,7 @@ public:
   }
 };
 
+typedef OuterCohPortBaseT<OuterCohPortUncachedBase> OuterCohPortBase;
 
 /////////////////////////////////
 // Base interface for inner ports
@@ -203,11 +205,12 @@ protected:
 
 };
 
-class InnerCohPortBase : public InnerCohPortUncachedBase
+template<class IPUCB>
+class InnerCohPortBaseT : public IPUCB
 {
 public:
-  InnerCohPortBase(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : InnerCohPortUncachedBase(policy, coh_dec) {}
-  virtual ~InnerCohPortBase() {}
+  InnerCohPortBaseT(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : InnerCohPortUncachedBase(policy, coh_dec) {}
+  virtual ~InnerCohPortBaseT() {}
 
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
     for(uint32_t i=0; i<this->coh.size(); i++) {
@@ -217,6 +220,7 @@ public:
   }
 };
 
+typedef InnerCohPortBaseT<InnerCohPortUncachedBase> InnerCohPortBase;
 
 // interface with the processing core is a special InnerCohPort
 class CoreInterfaceBase : public InnerCohPortUncachedBase {
