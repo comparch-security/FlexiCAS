@@ -214,11 +214,11 @@ protected:
   RPC replacer[P]; // replacer
 
 public:
-  CacheSkewed(std::string name = "")
+  CacheSkewed(std::string name = "", unsigned int extra_par = 0)
     : CacheBase(name)
   {
-    arrays.resize(P);
-    for(auto &a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
+    arrays.resize(P+extra_par);
+    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>();
     monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
   }
 
