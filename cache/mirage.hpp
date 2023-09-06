@@ -102,13 +102,13 @@ private:
 };
 
 // Mirage 
-// IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions, RW: max number of relocations
+// IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions, MaxRelocN: max number of relocations
 // MT: metadata type, DT: data type (void if not in use), DTMT: data meta type 
 // MIDX: indexer type, MRPC: replacer type
 // DIDX: data indexer type, DRPC: data replacer type
 // EnMon: whether to enable monitoring
 // EnableRelocation : whether to enable relocation
-template<int IW, int NW, int EW, int P, int RW, typename MT, typename DT,
+template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation, 
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<MirageMetadataSupport, MT>::value>::type,  // MT <- MirageMetadataSupport
@@ -173,84 +173,52 @@ public:
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
-    std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > equal_set(0);
-    uint32_t max_free = 0;
+    int8_t max_free = -1, p = 0;
+    std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > candidates(P);
+    uint32_t m_w, m_w;
     for(int i=0; i<P; i++) {
-      uint32_t m_s, m_w, free_num = 0;
-      m_s = m_indexer.index(addr, i);
-      m_replacer[i].replace(m_s, &m_w);
-      for(int j=0; j<NW+EW; j++) if(!access(i, m_s, j)->is_valid()) free_num++;
-      if(free_num > max_free) {
-        max_free = free_num;
-        equal_set.clear();
-        equal_set.resize(0);
+      m_s = indexer.index(addr, i);
+      auto free_num = replacer[i].replace(m_s, &m_w);
+      if(free_num > max_free) { p = 0; max_free = free_num; }
+      if(free_num >= max_free) candidates[p++] = std::make_tuple(i, m_s, m_w);
+    }
+    std::tie(*ai, *s, *w) = candidates[cm_get_random_uint32() % p];
+  }
+
+  void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase *meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack){
+    if constexpr (EnableRelocation) {
+      uint32_t relocation = 0;
+      uint32_t m_ai, m_s, m_w;
+      std::unordered_set<uint64_t> remapped;
+      auto addr = meta->addr(*s);
+      while(meta->is_valid() && relocation++ < MaxRelocN){
+        m_ai = (*ai+1)%P; // Do we need total random selection of partition here, does not matter for Mirage as P=2
+        m_s  = indexer.index(addr, m_ai);
+        replacer[m_ai].replace(m_s, m_w);
+        auto m_meta = access(m_ai, m_s, m_w);
+        auto m_addr = m_meta->addr(m_s);
+        if(remapped.count(m_addr)) break;
+        remapped.insert(addr);
+        stack.push(std::make_tuple(*ai, *s, *w));
+        auto [meta, addr, *ai, *s, *w] = {m_meta, m_addr, m_ai, m_s, m_w};
       }
-      if(free_num >= max_free) equal_set.push_back(std::make_tuple(i, m_s, m_w));
-    }
-    std::tie(*ai, *s, *w) = equal_set[cm_get_random_uint32() % equal_set.size()];
-  }
-
-  virtual void replace(uint64_t addr, uint32_t ai, uint32_t *s, uint32_t *w){
-    *s = m_indexer.index(addr, ai);
-    m_replacer[ai].replace(*s, w);
-  }
-
-  virtual void cuckoo_replace(uint64_t addr, uint32_t ai, uint32_t *m_ai, uint32_t *m_s, uint32_t *m_w, bool add){
-    if(add) *m_ai = (ai+1)%P; else *m_ai = (ai-1+P)%P;
-    replace(addr, *m_ai, m_s, m_w);
-  }
-
-  virtual void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase *meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &addr_stack){
-    uint32_t relocation = 0;
-    uint64_t addr;
-    uint32_t m_ai, m_s, m_w;
-    CMMetadataBase *mmeta;
-    std::unordered_set<uint64_t> remapped;
-    while(EnableRelocation && meta->is_valid() && relocation < RW){
-      relocation++;
-      addr = meta->addr(*s);
-      cuckoo_replace(addr, *ai, &m_ai, &m_s, &m_w, true);
-      mmeta = access(m_ai, m_s, m_w);
-      if(remapped.count(mmeta->addr(*s))) break;
-      remapped.insert(addr);
-      addr_stack.push(addr);
-      meta = mmeta;
-      *ai = m_ai;
-      *s  = m_s;
-      *w  = m_w;
     }
   }
 
-  virtual void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase *meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
+  void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase *meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
     auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
     auto m_meta = access(m_ai, m_s, m_w);
-    auto m_data_meta = get_data_meta(static_cast<MT *>(m_meta));
-    meta_copy_state(addr, ai, s, w, meta, m_meta, m_data_meta);
-    m_meta->to_clean(); m_meta->to_invalid();
+    auto addr = m_meta->addr(m_s);
+    meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
+    get_data_meta(static_cast<MT *>(m_meta))->bind(*ai, *s, *w);
     cache->hook_manage(addr, m_ai, m_s, m_w, true, true, false, delay);
-    cache->hook_read(addr, ai, s, w, false, delay); // hit is true or false? may have impact on delay
-    std::tie(ai, s, w, meta) = std::make_tuple(m_ai, m_s, m_w, m_meta);
+    cache->hook_read(addr, *ai, *s, *w, false, delay); // hit is true or false? may have impact on delay
+    std::tie(*ai, *s, *w, meta) = std::make_tuple(m_ai, m_s, m_w, m_meta);
   }
 
 };
 
 typedef OuterCohPortUncachedBase OuterPortMSI; // MirageCache is always the LLC, no need to support probe() from memory
-
-// MirageInnerPortSupport:
-//   helper class for the common methods used in all MIRAGE inner ports
-template<typename MT>
-class MirageInnerPortSupport
-{
-public:
-  void meta_copy_state(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, MT *meta, MT* mmeta, MirageDataMeta* data_mmeta){
-    uint32_t m_ds, m_dw;
-    mmeta->data(&m_ds, &m_dw);
-    meta->init(addr);
-    meta->bind(m_ds, m_dw); data_mmeta->bind(ai, s, w);
-    if(mmeta->is_dirty()) meta->to_dirty();
-    if(mmeta->is_shared()) meta->to_shared(); else meta->to_modified();
-  }
-};
 
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
@@ -259,7 +227,7 @@ template<typename MT, typename CT,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<MirageMetadataSupport, MT>::value>::type,  // MT <- MirageMetadataSupport
          typename = typename std::enable_if<std::is_base_of<CacheBase, CT>::value>::type>             // CT <- CacheBase
-class MirageInnerPortUncached : public InnerCohPortUncachedBase, protected MirageInnerPortSupport<MT>
+class MirageInnerPortUncached : public InnerCohPortUncachedBase
 {
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
