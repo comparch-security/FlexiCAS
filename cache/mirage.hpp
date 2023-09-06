@@ -17,6 +17,11 @@ public:
   virtual void to_invalid() { state = false; }
   virtual bool is_valid() const { return state; }
   
+  virtual void copy(const CMMetadataBase *m_meta) {
+    auto meta = static_cast<MirageDataMeta *>(m_meta);
+    auto [state, mai, ms, mw] = {meta->state, meta->mai, meta->ms, meta->mw};
+  }
+
   virtual ~MirageDataMeta() {}
 
 private:
@@ -54,6 +59,12 @@ class MirageMetadataMSI : public MetadataMSI<AW, IW, TOfst>, public MirageMetada
 public:
   MirageMetadataMSI() : MetadataMSI(), MirageMetadataSupport() {}
   virtual ~MirageMetadataMSI() {}
+
+  virtual void copy(const CMMetadataBase *m_meta) {
+    MetadataMSI::copy(m_meta);
+    auto meta = static_cast<MirageMetadataMSI *>(m_meta);
+    auto [ds, dw] = {meta->ds, meta->dw};
+  }
 };
 
 // MirageMSI protocol

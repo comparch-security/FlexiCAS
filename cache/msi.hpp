@@ -23,6 +23,11 @@ public:
   virtual bool is_modified() const {return state == 2; }
   virtual bool is_dirty() const { return dirty; }
 
+  virtual void copy(const CMMetadataBase *m_meta) {
+    auto meta = static_cast<MetadataMSIBase *>(m_meta);
+    auto [state, dirty] = {meta->state, meta->dirty};
+  }
+
 private:
   virtual void to_owned() {}
   virtual void to_exclusive() {}
@@ -70,6 +75,12 @@ public:
       addr |= (s & index_mask) << (TOfst - IW);
     }
     return addr;
+  }
+
+  virtual void copy(const CMMetadataBase *m_meta) {
+    MetadataMSIBase::copy(m_meta);
+    auto meta = static_cast<MetadataMSI *>(m_meta);
+    tag = meta->tag;
   }
 };
 

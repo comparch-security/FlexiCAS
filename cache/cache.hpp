@@ -37,6 +37,8 @@ public:
   virtual bool is_exclusive() const { return false; }
   virtual bool is_dirty() const { return false; }
 
+  virtual void copy(const CMMetadataBase *meta) = 0; // copy the content of meta
+
   virtual ~CMMetadataBase() {}
 };
 
@@ -48,7 +50,7 @@ public:
   virtual uint64_t read(unsigned int index) const { return 0; } // read a 64b data
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) {} // write a 64b data with wmask
   virtual void write(uint64_t *wdata) {} // write the whole cache block
-  virtual void copy(const CMDataBase *block) {} // copy the content of block
+  virtual void copy(const CMDataBase *block) = 0; // copy the content of block
 
   virtual ~CMDataBase() {}
 };
