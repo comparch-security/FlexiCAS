@@ -28,11 +28,12 @@ protected:
   CohMasterBase *coh;      // hook up with the coherence hub
   int32_t coh_id;          // the identifier used in locating this cache client by the coherence master
   CohPolicyBase *policy;   // the coherence policy
+
 public:
   OuterCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~OuterCohPortBase() {}
 
-  virtual void connect(CohMasterBase *h, int32_t id) {coh = h; coh_id = id;}
+  inline void connect(CohMasterBase *h, std::pair<int32_t, CohPolicyBase *> info) { coh = h; coh_id = info.first; policy->connect(info.second); }
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
@@ -48,15 +49,15 @@ public:
   OuterCohPortUncached(CohPolicyBase *policy) : OuterCohPortBase(policy) {}
   virtual ~OuterCohPortUncached() {}
 
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
-    cmd.id = this->coh_id;  // will need a policy converter for comm between policies
-    coh->acquire_resp(addr, data, cmd, delay);
-    policy->meta_after_fetch(cmd, meta, addr);
+  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
+    outer_cmd.id = this->coh_id;
+    coh->acquire_resp(addr, data, outer_cmd, delay);
+    policy->meta_after_fetch(outer_cmd, meta, addr);
   }
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
-    cmd.id = this->coh_id;  // will need a policy converter for comm between policies
-    coh->writeback_resp(addr, data, cmd, delay);
-    policy->meta_after_writeback(cmd, meta);
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
+    outer_cmd.id = this->coh_id;
+    coh->writeback_resp(addr, data, outer_cmd, delay);
+    policy->meta_after_writeback(outer_cmd, meta);
   }
 };
 
@@ -68,14 +69,14 @@ public:
   OuterCohPortT(CohPolicyBase *policy) : OPUC(policy) {}
   virtual ~OuterCohPortT() {}
 
-  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     bool hit, writeback = false;
     if(hit = this->cache->hit(addr, &ai, &s, &w)) {
       auto [meta, data] = this->cache->access_line(ai, s, w); // need c++17 for auto type infer
 
       // sync if necessary
-      auto sync = policy->probe_need_sync(cmd, meta);
+      auto sync = policy->probe_need_sync(outer_cmd, meta);
       if(sync.first) this->inner->probe_req(addr, meta, data, sync.second, delay);
 
       // writeback if dirty
@@ -86,9 +87,9 @@ public:
       }
 
       // update meta
-      policy->meta_after_probe(cmd, meta);
+      policy->meta_after_probe(outer_cmd, meta);
     }
-    this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
+    this->cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, delay);
   }
 };
 
@@ -106,9 +107,9 @@ protected:
   CohPolicyBase *policy; // the coherence policy
 public:
   InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
-  virtual ~InnerCohPortBase() {}
+  virtual ~InnerCohPortBase() { delete policy; }
 
-  virtual uint32_t connect(CohClientBase *c) { coh.push_back(c); return coh.size() - 1;}
+  inline std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c) { coh.push_back(c); return std::make_pair(coh.size()-1, policy);}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
@@ -167,7 +168,7 @@ protected:
       this->cache->replace(addr, &ai, &s, &w);
       std::tie(meta, data) = this->cache->access_line(ai, s, w);
       if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
-      outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
+      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
   }
@@ -199,7 +200,7 @@ protected:
         policy->meta_after_flush(cmd, meta);
         this->cache->hook_manage(addr, ai, s, w, hit, coh_dec.is_evict(cmd), writeback.first, delay);
       }
-    } else outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
+    } else outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_outer_flush(cmd), delay);
   }
 
 };
@@ -282,15 +283,15 @@ public:
     : name(name), cache(cache), outer(outer), inner(inner)
   {
     // deferred assignment for the reverse pointer to cache
-    if(outer) { outer->cache = cache; outer->inner = inner; outer->policy = policy; }
-    if(true)  { inner->cache = cache; inner->outer = outer; inner->policy = policy; }
+    outer->cache = cache; outer->inner = inner; outer->policy = policy;
+    inner->cache = cache; inner->outer = outer; inner->policy = policy;
+    policy->cache = cache;
   }
 
   virtual ~CoherentCacheBase() {
     delete cache;
-    if(outer) delete outer;
-    if(true) delete inner;
-    delete policy;
+    delete outer;
+    delete inner;
   }
 
   // monitor related
@@ -333,9 +334,7 @@ protected:
 public:
   SliceDispatcher(const std::string &n) : name(n) {}
   virtual ~SliceDispatcher() {}
-  virtual void connect(CohMasterBase *c) {
-    cohm.push_back(c);
-  }
+  inline void connect(CohMasterBase *c) { cohm.push_back(c); }
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay){
     this->cohm[hasher(addr)]->acquire_resp(addr, data, cmd, delay);
   }

@@ -25,6 +25,7 @@ protected:
   CacheBase *cache;        // reverse pointer for the cache parent
   const uint32_t acquire_msg, release_msg, probe_msg, flush_msg;
   const uint32_t fetch_read_act, fetch_write_act, evict_act, writeback_act;
+  CohPolicyBase *outer;    // the outer policy need for command translation
 
 public:
   // constructor
@@ -33,6 +34,8 @@ public:
   virtual ~CohPolicyBase() {}
 
   friend CoherentCacheBase; // deferred assignment for cache
+
+  inline void connect(CohPolicyBase *policy) { outer = policy ? policy : this; } // memory does not use policy and returns nullptr
 
   // message type
   inline bool is_acquire(coh_cmd_t cmd) const     { return cmd.msg == acquire_msg;     }
@@ -44,24 +47,30 @@ public:
   inline bool is_fetch_read(coh_cmd_t cmd) const  { return cmd.act == fetch_read_act;  }
   inline bool is_fetch_write(coh_cmd_t cmd) const { return cmd.act == fetch_write_act; }
   inline bool is_evict(coh_cmd_t cmd) const       { return cmd.act == evict_act;       }
+  inline bool is_outer_evict(coh_cmd_t cmd) const { return outer->is_evict(cmd);       }
   inline bool is_writeback(coh_cmd_t cmd) const   { return cmd.act == write_back_act;  }
 
-  // generate command for core interface
-  inline coh_cmd_t cmd_for_read()      const { return {-1, acquire_msg, fetch_read_act}; }
-  inline coh_cmd_t cmd_for_write()     const { return {-1, acquire_msg, fetch_write_act}; }
-  inline coh_cmd_t cmd_for_flush()     const { return {-1, flush_msg,   evict_act}; }
-  inline coh_cmd_t cmd_for_writeback() const { return {-1, flush_msg,   writeback_act}; }
+  // generate command
+  inline coh_cmd_t cmd_for_read()      const { return {id, acquire_msg, fetch_read_act }; }
+  inline coh_cmd_t cmd_for_write()     const { return {id, acquire_msg, fetch_write_act}; }
+  inline coh_cmd_t cmd_for_flush()     const { return {-1, flush_msg,   evict_act      }; }
+  inline coh_cmd_t cmd_for_writeback() const { return {-1, flush_msg,   writeback_act  }; }
+  inline coh_cmd_t cmd_for_release()   const { return {-1, release_msg, evict_act      }; }
+  inline coh_cmd_t cmd_for_null()      const { return {-1, 0,           0              }; }
+
+  virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
+  virtual coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const = 0;
 
   // acquire
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
-  virtual void meta_after_fetch(coh_cmd_t cmd, CMMetadataBase *meta, uint64_t addr) const { // after fetch from outer
-    assert(is_probe(cmd));
+  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const { // after fetch from outer
+    assert(outer->is_acquire(outer_cmd));
     assert(!meta->is_dirty());
     meta->init(addr);
-    if(is_fetch_read(cmd)) meta->to_shared();
+    if(outer->is_fetch_read(outer_cmd)) meta->to_shared();
     else {
-      assert(is_fetch_write(cmd));
+      assert(outer->is_fetch_write(outer_cmd));
       meta->to_modified();
     }
   }
@@ -76,13 +85,13 @@ public:
   }
 
   // probe
-  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
+  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, uint32_t target_inner_id) const = 0;
-  virtual void meta_after_probe(coh_cmd_t cmd, CMMetadataBase *meta) const {
-    assert(is_probe(cmd));
-    if(is_evict(cmd)) meta->to_invalid();
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
+    assert(outer->is_probe(outer_cmd));
+    if(outer->is_evict(outer_cmd)) meta->to_invalid();
     else {
-      assert(is_writeback(cmd));
+      assert(outer->is_writeback(outer_cmd));
       meta->to_shared();
     }
   }
@@ -90,11 +99,11 @@ public:
   // writeback due to conflict, probe, flush
   virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta) const {
-    if(meta->is_dirty()) return std::make_pair(true, {-1, release_msg, evict_act});
-    else                 return std::make_pair(false, {-1, 0, 0});
+    if(meta->is_dirty()) return std::make_pair(true, outer->cmd_for_release());
+    else                 return std::make_pair(false, cmd_for_null());
   }
 
-  virtual void meta_after_writeback(coh_cmd_t cmd, CMMetadataBase *meta) const {
+  virtual void meta_after_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
     if(meta) meta->to_clean(); // flush may send out writeback request with null meta
   }
 
@@ -109,7 +118,7 @@ public:
 
 private:
   inline std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
-    if(meta->is_shared()) return std::make_pair(false, {-1, 0, 0});
+    if(meta->is_shared()) return std::make_pair(false, cmd_for_null());
     // for all other potential states (M, O, E), the inner cache holds the latest copy
     else                  return std::make_pair(true, {coh_id, probe_msg, writeback_act});
   }

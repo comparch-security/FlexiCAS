@@ -79,11 +79,11 @@ public:
   MirageMSIPolicy() : MSIPolicy() {}
   virtual ~MirageMSIPolicy() {}
 
-  virtual void meta_after_probe(coh_cmd_t cmd, CMMetadataBase *meta) const {
-    assert(is_probe(cmd));
-    if(is_evict(cmd)) invalidate_cache_line(meta);
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
+    assert(outer->is_probe(outer_cmd));
+    if(outer->is_evict(outer_cmd)) invalidate_cache_line(meta);
     else {
-      assert(is_writeback(cmd));
+      assert(outer->is_writeback(outer_cmd));
       meta->to_shared();
     }
   }

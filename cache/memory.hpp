@@ -9,7 +9,7 @@
 template<typename DT, typename DLY,
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
          typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
-class SimpleMemoryModel : public CohMasterBase
+class SimpleMemoryModel : public InnerCohPortUncached
 {
 protected:
   const std::string name;
@@ -23,7 +23,7 @@ protected:
   }
   
 public:
-  SimpleMemoryModel(const std::string &n) : name(n) {
+  SimpleMemoryModel(const std::string &n) : InnerCohPortUncached(nullptr), name(n) {
     if constexpr (!std::is_void<DLY>::value) timer = new DLY();
   }
   virtual ~SimpleMemoryModel() {

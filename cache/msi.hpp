@@ -93,30 +93,42 @@ public:
   MSIPolicy() : CohPolicyBase(1, 2, 3, 4, 0, 1, 2, 3) {}
   virtual ~MSIPolicy();
 
+  virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const {
+    assert(is_acquire(cmd));
+    if(is_fetch_write(cmd)) return outer->cmd_for_write();
+    else                    return outer->cmd_for_read();
+  }
+
+  virtual coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const {
+    assert(is_flush(cmd));
+    if(is_evict(cmd)) return outer->cmd_for_flush();
+    else              return outer->cmd_for_writeback();
+  }
+
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
       assert(is_acquire(cmd));
       if(is_fetch_write(cmd)) return std::make_pair(true, {cmd.id, probe_msg, evict_act});
       else                    return need_sync(meta, cmd.id);
-    } else return std::make_pair(false, {-1, 0, 0});
+    } else return std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (!isLLC) {
       assert(is_acquire(cmd));
       if(is_fetch_write(cmd) || meta->need_promote())
-        return std::make_pair(true, {-1, acquire_msg, fetch_write_act}); // reconstruct cmd especially when cross coherence policies
+        return std::make_pair(true, outer->cmd_for_write());
       else
-        return std::make_pair(false, {-1, 0, 0});
-    } else return std::make_pair(false, {-1, 0, 0});
+        return std::make_pair(false, cmd_for_null());
+    } else return std::make_pair(false, cmd_for_null());
   }
 
-  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
-      assert(is_probe(cmd));
-      if(is_evict(cmd)) return std::make_pair(true, {-1, probe_msg, evict_act});
-      else              return need_sync(meta, -1);
-    } else return std::make_pair(false, {-1, 0, 0});
+      assert(outer->is_probe(outer_cmd));
+      if(outer->is_evict(outer_cmd)) return std::make_pair(true, {-1, probe_msg, evict_act});
+      else                           return need_sync(meta, -1);
+    } else return std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, uint32_t target_inner_id) const {
@@ -127,12 +139,12 @@ public:
       cmd.id = -1;
       return std::make_pair(true, cmd);
     } else
-      return std::make_pair(false, {-1, 0, 0});
+      return std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
     if constexpr (!isL1) return std::make_pair(true, {-1, probe_msg, evict_act});
-    else                 std::make_pair(false, {-1, 0, 0});
+    else                 std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> flush_need_sync() const {
@@ -141,7 +153,7 @@ public:
       if(is_evict(cmd)) return std::make_pair(true, {-1, probe_msg, evict_act});
       else              return need_sync(meta, -1);
     } else
-      return std::make_pair(false, {-1, 0, 0});
+      return std::make_pair(false, cmd_for_null());
   }
 
 };
