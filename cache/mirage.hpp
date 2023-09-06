@@ -142,9 +142,9 @@ public:
   }
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
-    auto meta = static_cast<MT *>(arrays[ai]->get_meta(s, w));
+    auto meta = arrays[ai]->get_meta(s, w);
     if constexpr (!std::is_void<DT>::value)
-      return std::make_pair(meta, get_data_data(meta));
+      return std::make_pair(meta, get_data_data(static_cast<MT *>(meta)));
     else
       return std::make_pair(meta, nullptr);
   }
@@ -164,11 +164,12 @@ public:
   // grammer sugar
   inline MirageDataMeta *get_data_meta(const MT *meta)   { return get_data_meta(meta->pointer()); }
   inline CMDataBase     *get_data_data(const MT *meta)   { return get_data_data(meta->pointer()); }
-  inline CMMetadataBase *get_meta_meta(const DTMT *meta) { return get_meta_meta(meta->pointer()); }
 
-  virtual void replace_data(uint64_t addr, uint32_t *d_s, uint32_t *d_w) { 
-    *d_s =  d_indexer.index(addr, 0);
-    d_replacer.replace(*d_s, d_w); 
+  std::pair<uint32_t, uint32_t> replace_data(uint64_t addr) {
+    uint32_t d_s, d_w;
+    auto d_s =  d_indexer.index(addr, 0);
+    d_replacer.replace(d_s, d_w);
+    return std::make_pair(d_s, d_w);
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
