@@ -146,10 +146,4 @@ public:
 
 };
 
-typedef OuterCohPortUncachedBase OuterPortMSIUncached;
-typedef OuterCohPortBase OuterPortMSI;
-typedef InnerCohPortUncachedBase InnerPortMSIUncached;
-typedef InnerCohPortBase InnerPortMSI;
-typedef CoreInterfaceBase CoreInterfaceMSI;
-
 #endif

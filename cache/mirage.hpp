@@ -119,7 +119,7 @@ template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, MRPC>::value>::type,  // MRPC <- ReplaceFuncBase
          typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, DRPC>::value>::type,  // DRPC <- ReplaceFuncBase
          typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
-class CacheMirage : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>
+class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
 protected:
@@ -127,14 +127,14 @@ protected:
   DRPC d_replacer;  // data replacer
 
 public:
-  CacheMirage(std::string name = "")
+  MirageCache(std::string name = "")
     : CacheSkewed(name, 1), MirageCacheSupport()
   { 
     // CacheMirage has P+1 CacheArray
     arrays[P] = new CacheArrayNorm<IW,P*NW,DTMT,DT>(); // the separated data array
   }
 
-  virtual ~CacheMirage() {}
+  virtual ~MirageCache() {}
 
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
     auto pointer = static_cast<MT *>(access(ai, s, w))->pointer();
@@ -218,7 +218,7 @@ public:
 
 };
 
-typedef OuterCohPortUncachedBase OuterPortMSI; // MirageCache is always the LLC, no need to support probe() from memory
+typedef OuterPortUncached MirageOuterPort; // MirageCache is always the LLC, no need to support probe() from memory
 
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
@@ -227,7 +227,7 @@ template<typename MT, typename CT,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<MirageMetadataSupport, MT>::value>::type,  // MT <- MirageMetadataSupport
          typename = typename std::enable_if<std::is_base_of<CacheBase, CT>::value>::type>             // CT <- CacheBase
-class MirageInnerPortUncached : public InnerCohPortUncachedBase
+class MirageInnerPortUncached : public InnerCohPortUncached
 {
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
@@ -276,6 +276,6 @@ template<typename MT, typename CT,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<MirageMetadataSupport, MT>::value>::type,  // MT <- MirageMetadataSupport
          typename = typename std::enable_if<std::is_base_of<CacheBase, CT>::value>::type>             // CT <- CacheBase
-using MirageInnerPort = InnerCohPortBaseT<MirageInnerPortUncached<MT, CT> >;
+using MirageInnerPort = InnerCohPortT<MirageInnerPortUncached<MT, CT> >;
 
 #endif

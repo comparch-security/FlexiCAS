@@ -42,11 +42,11 @@ public:
 };
 
 // common behvior for uncached outer ports
-class OuterCohPortUncachedBase : public OuterCohPortBase
+class OuterCohPortUncached : public OuterCohPortBase
 {
 public:
-  OuterCohPortUncachedBase(CohPolicyBase *policy) : OuterCohPortBase(policy) {}
-  virtual ~OuterCohPortUncachedBase() {}
+  OuterCohPortUncached(CohPolicyBase *policy) : OuterCohPortBase(policy) {}
+  virtual ~OuterCohPortUncached() {}
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
     cmd.id = this->coh_id;  // will need a policy converter for comm between policies
@@ -61,12 +61,12 @@ public:
 };
 
 // common behavior for cached outer ports
-template<class OPUCB>
-class OuterCohPortBaseT : public OPUCB
+template<class OPUC, typename = typename std::enable_if<std::is_base_of<OuterCohPortUncached, OPUC>::value>::type>
+class OuterCohPortT : public OPUC
 {
 public:
-  OuterCohPortBaseT(CohPolicyBase *policy) : OuterCohPortUncachedBase(policy) {}
-  virtual ~OuterCohPortBaseT() {}
+  OuterCohPortT(CohPolicyBase *policy) : OPUC(policy) {}
+  virtual ~OuterCohPortT() {}
 
   virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
@@ -104,9 +104,8 @@ protected:
   OuterCohPortBase *outer; // outer port for writeback when replace
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
   CohPolicyBase *policy; // the coherence policy
-  CohCMDDecoderBase *coh_dec; // coherence command decoder
 public:
-  InnerCohPortBase(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : policy(policy), coh_dec(coh_dec) {}
+  InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~InnerCohPortBase() { delete policy; delete doh_dec;}
 
   virtual uint32_t connect(CohClientBase *c) { coh.push_back(c); return coh.size() - 1;}
@@ -118,11 +117,11 @@ public:
   friend CoherentCacheBase; // deferred assignment for cache
 };
 
-class InnerCohPortUncachedBase : public InnerCohPortBase
+class InnerCohPortUncached : public InnerCohPortBase
 {
 public:
-  InnerCohPortUncachedBase(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : InnerCohPortBase(policy, coh_dec) {}
-  virtual ~InnerCohPortUncachedBase() {}
+  InnerCohPortUncached(CohPolicyBase *policy) : InnerCohPortBase(policy) {}
+  virtual ~InnerCohPortUncached() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
@@ -205,12 +204,12 @@ protected:
 
 };
 
-template<class IPUCB>
-class InnerCohPortBaseT : public IPUCB
+template<class IPUC, typename = typename std::enable_if<std::is_base_of<InnerCohPortUncached, IPUC>::value>::type>>
+class InnerCohPortT : public IPUC
 {
 public:
-  InnerCohPortBaseT(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : InnerCohPortUncachedBase(policy, coh_dec) {}
-  virtual ~InnerCohPortBaseT() {}
+  InnerCohPortT(CohPolicyBase *policy, CohCMDDecoderBase *coh_dec) : IPUC(policy) {}
+  virtual ~InnerCohPortT() {}
 
   virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
     for(uint32_t i=0; i<this->coh.size(); i++) {
@@ -220,16 +219,15 @@ public:
   }
 };
 
-typedef InnerCohPortBaseT<InnerCohPortUncachedBase> InnerCohPortBase;
+typedef InnerCohPortT<InnerCohPortUncached> InnerCohPort;
 
 // interface with the processing core is a special InnerCohPort
-class CoreInterfaceBase : public InnerCohPortUncachedBase {
+class CoreInterface : public InnerCohPortUncached {
 protected:
-  CoreCMDDecoderBase *core_dec; // coherence command decoder
+  CoreCMDDecoder *core_dec; // coherence command decoder
 public:
-  CoreInterfaceBase(CohPolicyBase *policy, CoreCMDDecoderBase *core_dec)
-    : InnerCohPortUncachedBase(policy, nullptr), core_dec(core_dec) {}
-  virtual ~CoreInterfaceBase() {}
+  CoreInterface(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
+  virtual ~CoreInterface() {}
 
 public:
 
