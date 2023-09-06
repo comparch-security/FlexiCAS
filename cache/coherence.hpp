@@ -62,7 +62,7 @@ public:
 
 // common behavior for cached outer ports
 template<class OPUCB>
-class OuterCohPortBaseT : public OuterCohPortUncachedBase
+class OuterCohPortBaseT : public OPUCB
 {
 public:
   OuterCohPortBaseT(CohPolicyBase *policy) : OuterCohPortUncachedBase(policy) {}
