@@ -30,7 +30,7 @@ protected:
   CohPolicyBase *policy;   // the coherence policy
 public:
   OuterCohPortBase(CohPolicyBase *policy) : policy(policy) {}
-  virtual ~OuterCohPortBase() { delete policy; }
+  virtual ~OuterCohPortBase() {}
 
   virtual void connect(CohMasterBase *h, int32_t id) {coh = h; coh_id = id;}
 
@@ -106,7 +106,7 @@ protected:
   CohPolicyBase *policy; // the coherence policy
 public:
   InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
-  virtual ~InnerCohPortBase() { delete policy; delete doh_dec;}
+  virtual ~InnerCohPortBase() {}
 
   virtual uint32_t connect(CohClientBase *c) { coh.push_back(c); return coh.size() - 1;}
 
@@ -276,20 +276,21 @@ protected:
 
 public:
   OuterCohPortBase *outer; // coherence outer port, nullptr if last level
-  InnerCohPortBase *inner; // coherence inner port, nullptr if 1st level
+  InnerCohPortBase *inner; // coherence inner port, always has inner
 
-  CoherentCacheBase(CacheBase *cache, OuterCohPortBase *outer, InnerCohPortBase *inner, std::string name)
+  CoherentCacheBase(CacheBase *cache, OuterCohPortBase *outer, InnerCohPortBase *inner, CohPolicyBase *policy, std::string name)
     : name(name), cache(cache), outer(outer), inner(inner)
   {
     // deferred assignment for the reverse pointer to cache
-    if(outer) { outer->cache = cache; outer->inner = inner; }
-    if(inner) { inner->cache = cache; inner->outer = outer; }
+    if(outer) { outer->cache = cache; outer->inner = inner; outer->policy = policy; }
+    if(true)  { inner->cache = cache; inner->outer = outer; inner->policy = policy; }
   }
 
   virtual ~CoherentCacheBase() {
     delete cache;
     if(outer) delete outer;
-    if(inner) delete inner;
+    if(true) delete inner;
+    delete policy;
   }
 
   // monitor related
@@ -307,7 +308,7 @@ template<typename CacheT, typename OuterT, typename InnerT,
 class CoherentCacheNorm : public CoherentCacheBase
 {
 public:
-  CoherentCacheNorm(std::string name = "") : CoherentCacheBase(new CacheT(), new OuterT(), new InnerT(), name) {}
+  CoherentCacheNorm(CohPolicyBase *policy, std::string name = "") : CoherentCacheBase(new CacheT(), new OuterT(), new InnerT(), policy, name) {}
   virtual ~CoherentCacheNorm() {}
 };
 
