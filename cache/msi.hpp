@@ -254,17 +254,14 @@ public:
         if(meta->is_dirty()) return std::make_pair(true , this->cmd_for_release());
         else                 return std::make_pair(false, this->cmd_for_null());
       }
-      else return this->outer->need_release(meta);
+      else return this->outer->inner_need_release(meta);
     }else return std::make_pair(false, this->cmd_for_null());
   }
 
   virtual bool need_writeback(const CMMetadataBase* meta) { return true; }
 
-  virtual std::pair<bool, coh_cmd_t> need_release(const CMMetadataBase* meta){
-    if constexpr (!isLLC)  return std::make_pair(true , this->cmd_for_release());
-    else
-      if(meta->is_dirty()) return std::make_pair(true , this->cmd_for_release());
-      else                 return std::make_pair(false, this->cmd_for_null());
+  virtual std::pair<bool, coh_cmd_t> inner_need_release(const CMMetadataBase* meta){
+    return std::make_pair(true , this->cmd_for_release());
   }
 };
 

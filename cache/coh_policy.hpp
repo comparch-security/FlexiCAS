@@ -104,7 +104,7 @@ public:
   // writeback due to conflict, probe, flush
   virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta) const {
-    return outer->need_release(meta);
+    return outer->inner_need_release(meta);
   }
 
   virtual void meta_after_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
@@ -128,8 +128,8 @@ public:
     else                 return false;
   }
 
-  virtual std::pair<bool, coh_cmd_t> need_release(const CMMetadataBase* meta){
-    if(need_writeback(meta)) return std::make_pair(true, cmd_for_release());
+  virtual std::pair<bool, coh_cmd_t> inner_need_release(const CMMetadataBase* meta_inner){
+    if(need_writeback(meta_inner)) return std::make_pair(true, cmd_for_release());
     else                    return std::make_pair(false, cmd_for_null());
   }
 
