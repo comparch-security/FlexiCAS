@@ -22,14 +22,15 @@ public:
   virtual void reset() {}                                   // reset the metadata
   virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
   virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
+  virtual void sync(int32_t coh_id) = 0;                    // sync after probe
 
-  virtual void to_invalid() = 0;     // change state to invalid
-  virtual void to_shared() = 0;      // change to shared
-  virtual void to_modified() = 0;    // change to modified
-  virtual void to_owned() = 0;       // change to owned
-  virtual void to_exclusive() = 0;   // change to exclusive
-  virtual void to_dirty() = 0;       // change to dirty
-  virtual void to_clean() = 0;       // change to dirty
+  virtual void to_invalid() = 0;                            // change state to invalid
+  virtual void to_shared(int32_t coh_id) = 0;               // change to shared
+  virtual void to_modified(int32_t coh_id) = 0;             // change to modified
+  virtual void to_owned(int32_t coh_id) = 0;                // change to owned
+  virtual void to_exclusive(int32_t coh_id) = 0;            // change to exclusive
+  virtual void to_dirty() = 0;                              // change to dirty
+  virtual void to_clean() = 0;                              // change to clean
   virtual bool is_valid() const { return false; }
   virtual bool is_shared() const { return false; }
   virtual bool is_modified() const { return false; }
@@ -37,9 +38,24 @@ public:
   virtual bool is_exclusive() const { return false; }
   virtual bool is_dirty() const { return false; }
 
-  virtual void copy(const CMMetadataBase *meta) = 0; // copy the content of meta
+  virtual void copy(const CMMetadataBase *meta) = 0;        // copy the content of meta
 
   virtual ~CMMetadataBase() {}
+};
+
+// TODO : support owner
+class  MetadataDirectorySupportBase
+{
+protected:
+  uint64_t sharer = 0;
+  virtual void add_sharer(int32_t coh_id) = 0;
+  virtual void clean_sharer() = 0;
+  virtual void delete_sharer(int32_t coh_id) = 0;
+  virtual bool is_sharer(int32_t coh_id) const = 0;
+public:
+  MetadataDirectorySupportBase() : sharer(0) {}
+  virtual ~MetadataDirectorySupportBase() {}
+
 };
 
 class CMDataBase
@@ -87,7 +103,7 @@ public:
   CacheArrayBase(std::string name = "") : name(name) {}
   virtual ~CacheArrayBase() {}
 
-  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
+  virtual int32_t hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
 };
@@ -121,7 +137,7 @@ public:
     if constexpr (!std::is_void<DT>::value) for(auto d:data) delete d;
   }
 
-  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
+  virtual int32_t hit(uint64_t addr, uint32_t s, uint32_t *w) const {
     for(int i=0; i<NW; i++)
       if(meta[s*NW + i]->match(addr)) {
         *w = i;
@@ -166,12 +182,12 @@ public:
     delete monitors;
   }
 
-  virtual bool hit(uint64_t addr,
+  virtual int32_t hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w
                    ) = 0;
 
-  bool hit(uint64_t addr) {
+  int32_t hit(uint64_t addr) {
     uint32_t ai, s, w;
     return hit(addr, &ai, &s, &w);
   }
@@ -179,10 +195,10 @@ public:
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
   // hook interface for replacer state update, Monitor and delay estimation
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, uint64_t *delay) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, uint64_t *delay) = 0;
   // probe, invalidate and writeback
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, bool evict, bool writeback, uint64_t *delay) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_meta(s, w);
@@ -226,13 +242,13 @@ public:
 
   virtual ~CacheSkewed() {}
 
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+  virtual int32_t hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
       for(*w=0; *w<NW; (*w)++)
-        if(access(*ai, *s, *w)->match(addr)) return true;
+        if(access(*ai, *s, *w)->match(addr)) return 1;
     }
-    return false;
+    return 0;
   }
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
@@ -250,17 +266,17 @@ public:
     replacer[*ai].replace(*s, w);
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, uint64_t *delay) {
     replacer[ai].access(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, uint64_t *delay) {
     replacer[ai].access(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, bool evict, bool writeback, uint64_t *delay) {
     if(hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }

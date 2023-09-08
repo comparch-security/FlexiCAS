@@ -14,8 +14,8 @@ public:
   virtual ~MetadataMSIBase() {}
 
   virtual void to_invalid() { state = 0; }
-  virtual void to_shared() { state = 1; }
-  virtual void to_modified() { state = 2; }
+  virtual void to_shared(int32_t coh_id) { state = 1; }
+  virtual void to_modified(int32_t coh_id) { state = 2; }
   virtual void to_dirty() { dirty = 1; }
   virtual void to_clean() { dirty = 0; }
   virtual bool is_valid() const { return state; }
@@ -24,13 +24,14 @@ public:
   virtual bool is_dirty() const { return dirty; }
 
   virtual void copy(const CMMetadataBase *m_meta) {
-    auto meta = static_cast<MetadataMSIBase *>(m_meta);
-    auto [state, dirty] = {meta->state, meta->dirty};
+    auto meta = static_cast<const MetadataMSIBase *>(m_meta);
+    state = meta->state;
+    dirty = meta->dirty;
   }
 
 private:
-  virtual void to_owned() {}
-  virtual void to_exclusive() {}
+  virtual void to_owned(int32_t coh_id) {}
+  virtual void to_exclusive(int32_t coh_id) {}
 };
 
 class MetadataMSISupport // handle extra functions needed by MSI
@@ -42,11 +43,24 @@ public:
 
 typedef MetadataMSISupport MetadataMSIBrodcast;
 
-class MetadataMSIDirectory : public MetadataMSISupport
+class MetadataMSIDirectorySupport : public MetadataMSISupport, public MetadataDirectorySupportBase
 {
+protected:
+  virtual void add_sharer(int32_t coh_id) {
+    sharer |= (1ull << coh_id);
+  }
+  virtual void clean_sharer(){
+    sharer = 0;
+  }
+  virtual void delete_sharer(int32_t coh_id){
+    sharer &= ~(1ull << coh_id);
+  }
+  virtual bool is_sharer(int32_t coh_id) const {
+    return ((1ull << coh_id) & (sharer))!= 0;
+  }
 public:
-  virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const = 0; // ToDo
-  virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const = 0; // ToDo
+  virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);}
+  virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);} 
 };
 
 // Metadata with match function
@@ -76,13 +90,47 @@ public:
     }
     return addr;
   }
+  virtual void sync(int32_t coh_id) {}
 
   virtual void copy(const CMMetadataBase *m_meta) {
     MetadataMSIBase::copy(m_meta);
-    auto meta = static_cast<MetadataMSI *>(m_meta);
+    auto meta = static_cast<const MetadataMSI *>(m_meta);
     tag = meta->tag;
   }
 };
+
+// Directory Metadata with match function
+// AW    : address width
+// IW    : index width
+// TOfst : tag offset
+// ST    : MSI support
+template <int AW, int IW, int TOfst, typename ST>
+class MetadataMSIDirectory : public MetadataMSI<AW, IW, TOfst, ST>
+{
+public:
+  virtual void to_invalid() {
+    this->state = 0; 
+    this->clean_sharer(); 
+  }
+  virtual void to_shared(int32_t coh_id)  {
+    this->state = 1; 
+    if(coh_id != -1){
+      this->add_sharer(coh_id); 
+    }
+  }
+  virtual void to_modified(int32_t coh_id) {
+    this->state = 2;
+    if(coh_id != -1){
+      this->add_sharer(coh_id); 
+    } 
+  }
+  virtual void sync(int32_t coh_id){
+    if(coh_id != -1){
+      this->delete_sharer(coh_id);
+    }
+  }
+};
+
 
 template<typename MT, bool isL1, bool isLLC,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
@@ -91,7 +139,7 @@ class MSIPolicy : public CohPolicyBase
 {
 public:
   MSIPolicy() : CohPolicyBase(1, 2, 3, 4, 0, 1, 2, 3) {}
-  virtual ~MSIPolicy();
+  virtual ~MSIPolicy() {}
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const {
     assert(is_acquire(cmd));
@@ -108,7 +156,7 @@ public:
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
       assert(is_acquire(cmd));
-      if(is_fetch_write(cmd)) return std::make_pair(true, {cmd.id, probe_msg, evict_act});
+      if(is_fetch_write(cmd)) return std::make_pair(true, coh_cmd_t{cmd.id, probe_msg, evict_act});
       else                    return need_sync(meta, cmd.id);
     } else return std::make_pair(false, cmd_for_null());
   }
@@ -116,7 +164,7 @@ public:
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (!isLLC) {
       assert(is_acquire(cmd));
-      if(is_fetch_write(cmd) || meta->need_promote())
+      if(is_fetch_write(cmd) || !meta->is_modified())
         return std::make_pair(true, outer->cmd_for_write());
       else
         return std::make_pair(false, cmd_for_null());
@@ -126,14 +174,14 @@ public:
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
       assert(outer->is_probe(outer_cmd));
-      if(outer->is_evict(outer_cmd)) return std::make_pair(true, {-1, probe_msg, evict_act});
+      if(outer->is_evict(outer_cmd)) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
       else                           return need_sync(meta, -1);
     } else return std::make_pair(false, cmd_for_null());
   }
 
-  virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, uint32_t target_inner_id) const {
+  virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const {
     assert(is_probe(cmd));
-    auto meta_msi = static_cast<MetadataMSIBase *>(meta);
+    auto meta_msi = static_cast<const MT *>(meta);
     if((is_evict(cmd)     && meta_msi->evict_need_probe(target_inner_id, cmd.id))     ||
        (is_writeback(cmd) && meta_msi->writeback_need_probe(target_inner_id, cmd.id)) ) {
       cmd.id = -1;
@@ -141,21 +189,90 @@ public:
     } else
       return std::make_pair(false, cmd_for_null());
   }
+  virtual bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase *meta_outer, int32_t inner_id){
+    assert(outer->is_probe(outer_cmd));
+    if(meta->is_dirty()) meta_outer->to_modified(is_evict(outer_cmd) ? -1 : inner_id);
+    else                 meta_outer->to_shared(is_evict(outer_cmd) ? -1 : inner_id);
+    return outer->need_writeback(meta);
+  }
+  
 
   virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
-    if constexpr (!isL1) return std::make_pair(true, {-1, probe_msg, evict_act});
-    else                 std::make_pair(false, cmd_for_null());
+    if constexpr (!isL1) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
+    else                 return std::make_pair(false, cmd_for_null());
   }
 
-  virtual std::pair<bool, coh_cmd_t> flush_need_sync() const {
+  virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (isLLC) {
       assert(is_flush(cmd));
-      if(is_evict(cmd)) return std::make_pair(true, {-1, probe_msg, evict_act});
+      if(is_evict(cmd)) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
       else              return need_sync(meta, -1);
     } else
       return std::make_pair(false, cmd_for_null());
   }
 
 };
+
+template<typename MT, typename DT, bool isL1, bool isLLC,
+         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
+         typename = typename std::enable_if<std::is_base_of<MetadataMSISupport, MT>::value>::type>  // MT <- MetadataMSISupport
+class ExclusiveMSIPolicy : public MSIPolicy<MT, isL1, isLLC>, public ExclusivePolicySupportBase
+{
+public:
+  virtual std::tuple<CMMetadataBase*, CMDataBase*, bool>acquire_need_create(CMMetadataBase *meta) const{
+    bool create = false;
+    DT* data = new DT();
+    MT* mmeta;
+    if(meta == nullptr){
+      create = true;
+      mmeta = new MT();
+    }
+    return std::make_tuple(create ? mmeta : meta, data, create);
+  }
+  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* directory_meta, uint64_t addr, bool dirty){
+    assert(!meta->is_dirty());
+    // meta transfer from directory (if use directory coherence protocol) to cache
+    if(directory_meta) { directory_meta->to_invalid(); directory_meta->to_clean(); }
+    meta->init(addr);
+    if(dirty){
+      meta->to_dirty();
+      meta->to_modified(-1);
+    }else{
+      meta->to_shared(-1);
+    }
+  } 
+  virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) {
+    assert(this->is_release(cmd));
+    if constexpr (!isL1) {
+      return std::make_pair(true, coh_cmd_t{cmd.id, this->probe_msg, this->evict_act});
+    } else return std::make_pair(false, coh_cmd_t{-1, 0, 0});
+  }
+
+  virtual std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta) const {
+    if(meta->is_valid()){ // exclusive snooping cache flush may use invalid meta
+      if constexpr(isLLC){
+        if(meta->is_dirty()) return std::make_pair(true , this->cmd_for_release());
+        else                 return std::make_pair(false, this->cmd_for_null());
+      }
+      else return this->outer->need_release(meta);
+    }else return std::make_pair(false, this->cmd_for_null());
+  }
+
+  virtual bool need_writeback(const CMMetadataBase* meta) { return true; }
+
+  virtual std::pair<bool, coh_cmd_t> need_release(const CMMetadataBase* meta){
+    if constexpr (!isLLC)  return std::make_pair(true , this->cmd_for_release());
+    else
+      if(meta->is_dirty()) return std::make_pair(true , this->cmd_for_release());
+      else                 return std::make_pair(false, this->cmd_for_null());
+  }
+};
+
+
+typedef OuterCohPortUncached OuterPortMSIUncached;
+typedef OuterCohPort OuterPortMSI;
+typedef InnerCohPortUncached InnerPortMSIUncached;
+typedef InnerCohPort InnerPortMSI;
+typedef CoreInterface CoreInterfaceMSI;
 
 #endif

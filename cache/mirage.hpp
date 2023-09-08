@@ -18,8 +18,11 @@ public:
   virtual bool is_valid() const { return state; }
   
   virtual void copy(const CMMetadataBase *m_meta) {
-    auto meta = static_cast<MirageDataMeta *>(m_meta);
-    auto [state, mai, ms, mw] = {meta->state, meta->mai, meta->ms, meta->mw};
+    auto meta = static_cast<const MirageDataMeta *>(m_meta);
+    state = meta->state;
+    mai   = meta->mai;
+    ms    = meta->ms;
+    mw    = meta->mw;
   }
 
   virtual ~MirageDataMeta() {}
@@ -218,7 +221,7 @@ public:
 
 };
 
-typedef OuterPortUncached MirageOuterPort; // MirageCache is always the LLC, no need to support probe() from memory
+typedef OuterCohPortUncached MirageOuterPort; // MirageCache is always the LLC, no need to support probe() from memory
 
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
