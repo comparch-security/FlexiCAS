@@ -342,8 +342,8 @@ bool StatementDispatch::decode(const char* line) {
     codegendb.dispatch_connections.push_back(std::make_tuple(dispatcher_entity, std::make_pair(client_entity, i), std::make_pair(manager_entity, m1)));
 
   for(int i=m1+1; i<=m0; i++)
-    for(int j=c1+1; j<=c0; j++)
-      codegendb.dispatch_inner.push_back(std::make_pair(std::make_pair(client_entity, i), std::make_pair(manager_entity, j)));
+    for(int j=c1; j<=c0; j++)
+      codegendb.dispatch_inner.push_back(std::make_pair(std::make_pair(client_entity, j), std::make_pair(manager_entity, i)));
 
   return true;
 }
