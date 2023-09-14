@@ -31,12 +31,14 @@ public:
   virtual void to_exclusive(int32_t coh_id) = 0;            // change to exclusive
   virtual void to_dirty() = 0;                              // change to dirty
   virtual void to_clean() = 0;                              // change to clean
+  virtual void to_directory() = 0;                          // change to only directory meta
   virtual bool is_valid() const { return false; }
   virtual bool is_shared() const { return false; }
   virtual bool is_modified() const { return false; }
   virtual bool is_owned() const { return false; }
   virtual bool is_exclusive() const { return false; }
   virtual bool is_dirty() const { return false; }
+  virtual bool is_directory() const { return false; }
 
   virtual void copy(const CMMetadataBase *meta) = 0;        // copy the content of meta
 
@@ -103,7 +105,7 @@ public:
   CacheArrayBase(std::string name = "") : name(name) {}
   virtual ~CacheArrayBase() {}
 
-  virtual int32_t hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
+  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
 };
@@ -118,16 +120,18 @@ class CacheArrayNorm : public CacheArrayBase
 protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
+  unsigned int extra_way = 0;
 
 public:
   static constexpr uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(std::string name = "") : CacheArrayBase(name) {
-    constexpr size_t num = nset * NW;
-    meta.resize(num);
+  CacheArrayNorm( unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), extra_way(extra_way){
+    size_t meta_num = nset * (NW + extra_way);
+    constexpr size_t data_num = nset * NW;
+    meta.resize(meta_num);
     for(auto &m:meta) m = new MT();
     if constexpr (!std::is_void<DT>::value) {
-      data.resize(num);
+      data.resize(data_num);
       for(auto &d:data) d = new DT();
     }
   }
@@ -137,8 +141,8 @@ public:
     if constexpr (!std::is_void<DT>::value) for(auto d:data) delete d;
   }
 
-  virtual int32_t hit(uint64_t addr, uint32_t s, uint32_t *w) const {
-    for(int i=0; i<NW; i++)
+  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
+    for(int i=0; i<(NW+extra_way); i++)
       if(meta[s*NW + i]->match(addr)) {
         *w = i;
         return true;
@@ -147,7 +151,7 @@ public:
     return false;
   }
 
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*NW + w]; }
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*(NW+extra_way) + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
     if constexpr (std::is_void<DT>::value) {
       return nullptr;
@@ -182,12 +186,12 @@ public:
     delete monitors;
   }
 
-  virtual int32_t hit(uint64_t addr,
+  virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w
                    ) = 0;
 
-  int32_t hit(uint64_t addr) {
+  bool hit(uint64_t addr) {
     uint32_t ai, s, w;
     return hit(addr, &ai, &s, &w);
   }
@@ -195,10 +199,10 @@ public:
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
 
   // hook interface for replacer state update, Monitor and delay estimation
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, uint64_t *delay) = 0;
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, uint64_t *delay) = 0;
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
   // probe, invalidate and writeback
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, bool evict, bool writeback, uint64_t *delay) = 0;
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_meta(s, w);
@@ -242,7 +246,7 @@ public:
 
   virtual ~CacheSkewed() {}
 
-  virtual int32_t hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
       for(*w=0; *w<NW; (*w)++)
@@ -266,17 +270,17 @@ public:
     replacer[*ai].replace(*s, w);
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, uint64_t *delay) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, uint64_t *delay) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
     replacer[ai].access(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, int32_t hit, bool evict, bool writeback, uint64_t *delay) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
     if(hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
