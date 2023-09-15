@@ -91,14 +91,19 @@ public:
   // probe
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const = 0;
-  virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase *meta_outer, int32_t inner_id) = 0;
-  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
+  virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) = 0;
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id) const {
     assert(outer->is_probe(outer_cmd));
+    outer->meta_after_probe_ack(outer_cmd, meta_outer, inner_id);
     if(outer->is_evict(outer_cmd)) meta->to_invalid();
     else {
       assert(outer->is_writeback(outer_cmd));
       meta->to_shared(-1);
     }
+  }
+  virtual void meta_after_probe_ack(coh_cmd_t cmd, CMMetadataBase *meta, int32_t inner_id) const{
+    assert(is_probe(cmd));
+    if(is_evict(cmd)) meta->sync(inner_id);
   }
 
   // writeback due to conflict, probe, flush
@@ -147,7 +152,7 @@ protected:
 class ExclusivePolicySupportBase
 {
 public:
-  virtual std::tuple<CMMetadataBase*, CMDataBase*, bool>acquire_need_create(CMMetadataBase *meta) const = 0;
+  virtual std::tuple<CMMetadataBase*, bool>probe_need_create(CMMetadataBase *meta) const = 0;
   
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* directory_meta, uint64_t addr, bool dirty) = 0;
 

@@ -103,12 +103,14 @@ public:
       auto sync = OPUC::policy->probe_need_sync(outer_cmd, meta);
       if(sync.first) this->inner->probe_req(addr, meta, data, sync.second, delay);
 
-      // writeback if necessary
-      auto writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta, meta_outer, this->coh_id);
+      // writeback if dirty
+      auto writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta);
       if(writeback.first) this->writeback_req(addr, meta, data, writeback.second, delay);
 
+      if(data_outer) data_outer->copy(data);
+
       // update meta
-      OPUC::policy->meta_after_probe(outer_cmd, meta);
+      OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, this->coh_id);
     }
     this->cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, delay);
   }
@@ -123,7 +125,7 @@ public:
   virtual ~InnerCohPortUncached() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, cmd, delay);
 
     if (data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
     policy->meta_after_grant(cmd, meta);
@@ -151,7 +153,7 @@ protected:
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, int32_t>
-  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
+  access_line(uint64_t addr, CMDataBase* data_inner, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
@@ -231,14 +233,14 @@ public:
 
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
     auto cmd = policy->cmd_for_read();
-    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line(addr, nullptr, cmd, delay);
     this->cache->hook_read(addr, ai, s, w, hit, delay);
     return data;
   }
 
   virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
     auto cmd = policy->cmd_for_write();
-    auto [meta, m_data, ai, s, w, hit] = access_line(addr, cmd, delay);
+    auto [meta, m_data, ai, s, w, hit] = access_line(addr, nullptr, cmd, delay);
     meta->to_dirty();
     this->cache->hook_write(addr, ai, s, w, hit, delay);
     if(m_data) m_data->copy(data);

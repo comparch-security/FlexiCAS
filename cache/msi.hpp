@@ -1,7 +1,7 @@
 #ifndef CM_CACHE_MSI_HPP
 #define CM_CACHE_MSI_HPP
 
-#include "cache/coherence.hpp"
+#include "cache/exclusive.hpp"
 
 // metadata supporting MSI coherency
 class MetadataMSIBase : public CMMetadataBase
@@ -200,11 +200,10 @@ public:
     } else
       return std::make_pair(false, cmd_for_null());
   }
-  virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase *meta_outer, int32_t inner_id){
+  virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
     assert(outer->is_probe(outer_cmd));
     if(meta->is_dirty()) return std::make_pair(true , outer->cmd_for_release_writeback());
     else                 return std::make_pair(false, outer->cmd_for_null());
-      
   }
   
 
@@ -222,29 +221,37 @@ public:
       return std::make_pair(false, cmd_for_null());
   }
 
+  virtual void meta_after_probe_ack(coh_cmd_t cmd, CMMetadataBase *meta, int32_t inner_id) const{
+    assert(is_probe(cmd));
+    if(meta->is_directory())
+      if(is_evict(cmd)) meta->sync(inner_id);
+    else
+      // for exclusive, probe meta is not directory meta means is temporarily new
+      meta->to_shared(is_evict(cmd) ? (-1) : inner_id);
+  }
+
 };
 
-template<typename MT, typename DT, bool isLLC,
+template<typename MT, bool isLLC,
          typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,     // MT <- MetadataMSIBase
          typename = typename std::enable_if<std::is_base_of<MetadataMSISupport, MT>::value>::type>  // MT <- MetadataMSISupport
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>, public ExclusivePolicySupportBase    // always not L1
 {
 public:
-  virtual std::tuple<CMMetadataBase*, CMDataBase*, bool>acquire_need_create(CMMetadataBase *meta) const{
+  virtual std::tuple<CMMetadataBase*, bool>probe_need_create(CMMetadataBase *meta) const{
     bool create = false;
-    DT* data = new DT();
     MT* mmeta;
     if(meta == nullptr){
       create = true;
       mmeta = new MT();
     }
-    return std::make_tuple(create ? mmeta : meta, data, create);
+    return std::make_tuple(create ? mmeta : meta, create);
   }
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *mmeta, CMMetadataBase* meta, uint64_t addr, bool dirty){
     // meta transfer from directory (if use directory coherence protocol) to cache
     if(meta) { meta->to_invalid(); assert(!meta->is_dirty()); }
     mmeta->init(addr);
-    mmeta->to_shared(-1); // WARNING: this is a bug here
+    mmeta->to_shared(-1); // WARNING: This is may be a bug
     if(dirty) mmeta->to_dirty();
   } 
   virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) {
@@ -263,8 +270,10 @@ public:
 
 typedef OuterCohPortUncached OuterPortMSIUncached;
 typedef OuterCohPort OuterPortMSI;
+typedef ExclusiveOuterCohPort ExclusiveOuterPortMSI;
 typedef InnerCohPortUncached InnerPortMSIUncached;
 typedef InnerCohPort InnerPortMSI;
+typedef ExclusiveInnerCohPort ExclusiveInnerPortMSI;
 typedef CoreInterface CoreInterfaceMSI;
 
 #endif
