@@ -67,12 +67,14 @@ public:
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const { // after fetch from outer
     assert(outer->is_acquire(outer_cmd));
-    assert(!meta->is_dirty());
-    meta->init(addr);
-    if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
-    else {
-      assert(outer->is_fetch_write(outer_cmd));
-      meta->to_modified(-1);
+    if(meta){ // exclusive snooping cache use nullptr as meta when acquire outer
+      assert(!meta->is_dirty());
+      meta->init(addr);
+      if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
+      else {
+        assert(outer->is_fetch_write(outer_cmd));
+        meta->to_modified(-1);
+      }
     }
   }
 
@@ -94,11 +96,14 @@ public:
   virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) = 0;
   virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id) const {
     assert(outer->is_probe(outer_cmd));
-    outer->meta_after_probe_ack(outer_cmd, meta_outer, inner_id);
-    if(outer->is_evict(outer_cmd)) meta->to_invalid();
-    else {
-      assert(outer->is_writeback(outer_cmd));
-      meta->to_shared(-1);
+    // meta and meta_outer may be nullptr
+    if(meta_outer) outer->meta_after_probe_ack(outer_cmd, meta_outer, inner_id);
+    if(meta){
+      if(outer->is_evict(outer_cmd)) meta->to_invalid();
+      else {
+        assert(outer->is_writeback(outer_cmd));
+        meta->to_shared(-1);
+      }
     }
   }
   virtual void meta_after_probe_ack(coh_cmd_t cmd, CMMetadataBase *meta, int32_t inner_id) const{
@@ -128,7 +133,7 @@ public:
   // flush
   virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const  {
-    if(is_evict(cmd)) meta->to_invalid();
+    if(meta && is_evict(cmd)) meta->to_invalid();
   }
 
   virtual bool need_writeback(const CMMetadataBase* meta){
@@ -151,9 +156,7 @@ protected:
 
 class ExclusivePolicySupportBase
 {
-public:
-  virtual std::tuple<CMMetadataBase*, bool>probe_need_create(CMMetadataBase *meta) const = 0;
-  
+public:  
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* directory_meta, uint64_t addr, bool dirty) = 0;
 
   virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) = 0;

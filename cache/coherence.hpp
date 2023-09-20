@@ -37,7 +37,7 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
-  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {} // may not implement if not supported
+  virtual bool probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -60,7 +60,7 @@ public:
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
-  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {} // may not implement if not supported
+  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -92,7 +92,7 @@ public:
   OuterCohPortT(CohPolicyBase *policy) : OPUC(policy) {}
   virtual ~OuterCohPortT() {}
 
-  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual bool probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     bool writeback = false;
     bool hit = this->cache->hit(addr, &ai, &s, &w);
@@ -113,6 +113,7 @@ public:
       OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, this->coh_id);
     }
     this->cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, delay);
+    return hit;
   }
 };
 
@@ -152,7 +153,7 @@ protected:
     this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay);
   }
 
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, int32_t>
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, CMDataBase* data_inner, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta;
@@ -213,11 +214,15 @@ public:
   InnerCohPortT(CohPolicyBase *policy) : IPUC(policy) {}
   virtual ~InnerCohPortT() {}
 
-  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
+  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
+    bool hit = false;
     for(uint32_t i=0; i<this->coh.size(); i++) {
       auto probe = IPUC::policy->probe_need_probe(cmd, meta, i);
-      if(probe.first) this->coh[i]->probe_resp(addr, meta, data, probe.second, delay);
+      if(probe.first) 
+        if(this->coh[i]->probe_resp(addr, meta, data, probe.second, delay))
+          hit = true;
     }
+    return hit;
   }
 };
 

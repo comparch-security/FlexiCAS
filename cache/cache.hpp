@@ -31,14 +31,14 @@ public:
   virtual void to_exclusive(int32_t coh_id) = 0;            // change to exclusive
   virtual void to_dirty() = 0;                              // change to dirty
   virtual void to_clean() = 0;                              // change to clean
-  virtual void to_directory() = 0;                          // change to only directory meta
+  virtual void to_extend() = 0;                             // change to extend directory meta
   virtual bool is_valid() const { return false; }
   virtual bool is_shared() const { return false; }
   virtual bool is_modified() const { return false; }
   virtual bool is_owned() const { return false; }
   virtual bool is_exclusive() const { return false; }
   virtual bool is_dirty() const { return false; }
-  virtual bool is_directory() const { return false; }
+  virtual bool is_extend() const { return false; }
 
   virtual void copy(const CMMetadataBase *meta) = 0;        // copy the content of meta
 
@@ -125,7 +125,7 @@ protected:
 public:
   static constexpr uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm( unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), extra_way(extra_way){
+  CacheArrayNorm(unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), extra_way(extra_way){
     size_t meta_num = nset * (NW + extra_way);
     constexpr size_t data_num = nset * NW;
     meta.resize(meta_num);
@@ -196,7 +196,7 @@ public:
     return hit(addr, &ai, &s, &w);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
@@ -263,11 +263,12 @@ public:
       return std::make_pair(meta, nullptr);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
     if constexpr (P==1) *ai = 0;
     else                *ai = (cm_get_random_uint32() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
+    return true;
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
