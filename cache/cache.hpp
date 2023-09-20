@@ -250,9 +250,9 @@ public:
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
       for(*w=0; *w<NW; (*w)++)
-        if(access(*ai, *s, *w)->match(addr)) return 1;
+        if(access(*ai, *s, *w)->match(addr)) return true;
     }
-    return 0;
+    return false;
   }
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {

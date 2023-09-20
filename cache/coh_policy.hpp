@@ -97,7 +97,7 @@ public:
   virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id) const {
     assert(outer->is_probe(outer_cmd));
     // meta and meta_outer may be nullptr
-    if(meta_outer) outer->meta_after_probe_ack(outer_cmd, meta_outer, inner_id);
+    if(meta_outer) outer->meta_after_probe_ack(outer_cmd, meta_outer, inner_id); // meta_outer needed to be inited
     if(meta){
       if(outer->is_evict(outer_cmd)) meta->to_invalid();
       else {
@@ -124,6 +124,7 @@ public:
     if(meta) meta->to_clean(); // flush may send out writeback request with null meta
   }
   virtual void meta_after_evict(CMMetadataBase *meta) const{
+    assert(!meta->is_dirty());
     meta->to_invalid();
   }
 
@@ -136,13 +137,8 @@ public:
     if(meta && is_evict(cmd)) meta->to_invalid();
   }
 
-  virtual bool need_writeback(const CMMetadataBase* meta){
-    if(meta->is_dirty()) return true;
-    else                 return false;
-  }
-
   virtual std::pair<bool, coh_cmd_t> inner_need_release(){
-    // here we suppose inner meta is clean
+    // here we suppose inner meta is clean and inner cache is asking outer cache if it need to be released
     return std::make_pair(false, cmd_for_null());
   }
 

@@ -165,8 +165,12 @@ protected:
       if(!probe_hit){
         bool replace = this->cache->replace(addr, &ai, &s, &w, 1);
         if(replace){
+          // replace is true means use directory coherence protocol
           meta = this->cache->access(ai, s, w);
-          if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
+          if(meta->is_valid()) {
+            assert(meta->is_extend());
+            evict(meta, data, ai, s, w, delay);
+          }
         }
         outer->acquire_req(addr, meta, data, cmd, delay);
       }

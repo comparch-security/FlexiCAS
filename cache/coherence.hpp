@@ -79,7 +79,7 @@ public:
   }
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = this->coh_id;
-    coh->writeback_resp(addr, data, outer_cmd, delay, meta?meta->is_dirty():false);
+    coh->writeback_resp(addr, data, outer_cmd, delay, meta ? meta->is_dirty() : false);
     policy->meta_after_writeback(outer_cmd, meta);
   }
 };
