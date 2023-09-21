@@ -230,13 +230,15 @@ typedef InnerCohPortT<InnerCohPortUncached> InnerCohPort;
 
 // interface with the processing core is a special InnerCohPort
 class CoreInterface : public InnerCohPortUncached {
+protected:
+  inline uint64_t normalize(uint64_t addr) const { return addr & ~0x3full ;}
+
 public:
   CoreInterface(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
   virtual ~CoreInterface() {}
 
-public:
-
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
+    addr = normalize(addr);
     auto cmd = policy->cmd_for_read();
     auto [meta, data, ai, s, w, hit] = access_line(addr, nullptr, cmd, delay);
     this->cache->hook_read(addr, ai, s, w, hit, delay);
@@ -244,6 +246,7 @@ public:
   }
 
   virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
+    addr = normalize(addr);
     auto cmd = policy->cmd_for_write();
     auto [meta, m_data, ai, s, w, hit] = access_line(addr, nullptr, cmd, delay);
     meta->to_dirty();
@@ -252,10 +255,10 @@ public:
   }
 
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
-  virtual void flush(uint64_t addr, uint64_t *delay)     { flush_line(addr, policy->cmd_for_flush(), delay); }
+  virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); flush_line(addr, policy->cmd_for_flush(), delay); }
 
   // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
-  virtual void writeback(uint64_t addr, uint64_t *delay) { flush_line(addr, policy->cmd_for_writeback(), delay); }
+  virtual void writeback(uint64_t addr, uint64_t *delay) { addr = normalize(addr); flush_line(addr, policy->cmd_for_writeback(), delay); }
 
   // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
   virtual void writeback_invalidate(uint64_t *delay) {

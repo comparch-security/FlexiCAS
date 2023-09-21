@@ -68,7 +68,6 @@ public:
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const { // after fetch from outer
     assert(outer->is_acquire(outer_cmd));
     if(meta){ // exclusive snooping cache use nullptr as meta when acquire outer
-      assert(!meta->is_dirty());
       meta->init(addr);
       if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
       else {
