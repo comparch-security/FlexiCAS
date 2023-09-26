@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <unordered_set>
 
+extern unsigned int cm_get_true_random();
 extern void cm_set_random_seed(uint64_t seed);
 extern uint64_t cm_get_random_uint64();
 extern uint32_t cm_get_random_uint32();

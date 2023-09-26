@@ -1,9 +1,17 @@
 
+CONFIG ?= example
+MODE ?=
+
 MAKE = make
 CXX = g++
-CXXFLAGS = --std=c++17 -O2 -I. -fPIC
 
-CONFIG ?= example
+ifeq ($(MODE), release)
+    CXXFLAGS = --std=c++17 -O2 -DNDEBUG -I. -fPIC
+else ifeq ($(MODE), debug)
+    CXXFLAGS = --std=c++17 -O1 -g -I. -fPIC
+else
+    CXXFLAGS = --std=c++17 -O2 -I. -fPIC
+endif
 
 ifneq ("$(wildcard $(CONFIG).def)","")
     CONFIG_FILE = $(CONFIG).def
