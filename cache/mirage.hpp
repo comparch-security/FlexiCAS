@@ -176,7 +176,7 @@ public:
     return std::make_pair(d_s, d_w);
   }
 
-  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
     int max_free = -1, p = 0;
     std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > candidates(P);
     uint32_t m_s, m_w;

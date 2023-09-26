@@ -61,7 +61,7 @@ public:
     return true;
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     if constexpr (EnDir)
       if(w < NW) this->replacer[ai].access(s, w);
       else       this->d_replacer[ai].access(s, w-NW);
@@ -71,7 +71,7 @@ public:
       if(w < NW) this->monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     if constexpr (EnDir)
       if(w < NW) this->replacer[ai].access(s, w);
       else       this->d_replacer[ai].access(s, w-NW);
@@ -81,7 +81,7 @@ public:
       if(w < NW) this->monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
     if(hit && evict) 
       if constexpr (EnDir)
         if(w < NW) this->replacer[ai].invalid(s, w);
@@ -117,7 +117,8 @@ public:
     if(meta){ 
       // using snooping protocol meta must be nullptr, only using directory protocol meta is valid
       policy->meta_after_grant(cmd, meta);
-      this->cache->hook_read(addr, ai, s, w, hit, delay);
+      assert(meta->is_extend());
+      this->cache->hook_read(addr, ai, s, w, hit, delay, 1);
     }
   }
 
@@ -132,7 +133,7 @@ protected:
     auto writeback = policy->writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay);
     policy->meta_after_evict(meta);
-    this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay);
+    this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay, meta->is_extend());
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
@@ -190,7 +191,7 @@ protected:
       if(hit){
         meta = this->cache->access(dai, ds, dw);
         assert(meta->is_extend()); // must use directory coherence protocol 
-        this->cache->hook_manage(addr, dai, ds, dw, true, true, false, delay);
+        this->cache->hook_manage(addr, dai, ds, dw, true, true, false, delay, 1);
       }
       this->cache->replace(addr, &ai, &s, &w);
       mmeta = this->cache->access(ai, s, w);
@@ -226,7 +227,7 @@ protected:
           // hit on extend meta  
           probe_req(addr, meta, data, flush.second, delay);
           // probe data don't writeback(if dirty) to exclusive cache, then we just need invalid the extend meta
-         this->cache->hook_manage(addr, ai, s, w, true, policy->is_evict(cmd), false, delay);
+         this->cache->hook_manage(addr, ai, s, w, true, policy->is_evict(cmd), false, delay, 1);
         }
       }else{
         probe_req(addr, meta, data, flush.second, delay);
@@ -266,13 +267,15 @@ public:
 
   virtual bool probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
     uint32_t ai, s, w;
+    bool extend = false;
     bool hit = this->cache->hit(addr, &ai, &s, &w);
     CMMetadataBase* meta = nullptr;
     CMDataBase* data = nullptr;
 
     if(hit){
       meta = this->cache->access(ai, s, w);
-      if(!meta->is_extend()){
+      extend = meta->is_extend();
+      if(!extend){
         // hit on cache
         data = this->cache->get_data(ai, s, w);
         if(data_outer) data_outer->copy(data);
@@ -293,7 +296,7 @@ public:
 
     OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id);
 
-    this->cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback.first, delay);
+    this->cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback.first, delay, extend);
 
     return hit;
   }

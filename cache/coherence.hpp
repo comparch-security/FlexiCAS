@@ -339,7 +339,7 @@ protected:
   std::vector<CohMasterBase*> cohm;
   HT hasher;
 public:
-  SliceDispatcher(const std::string &n) : name(n) {}
+  SliceDispatcher(const std::string &n) : CohMasterBase(nullptr), name(n) {}
   virtual ~SliceDispatcher() {}
   inline void connect(CohMasterBase *c) { cohm.push_back(c); }
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay){

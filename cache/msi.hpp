@@ -62,6 +62,12 @@ protected:
     return ((1ull << coh_id) & (sharer))!= 0;
   }
 public:
+  virtual uint64_t get_sharer(){
+    return sharer;
+  }
+  virtual void set_sharer(uint64_t c_sharer){
+    sharer = c_sharer;
+  }
   virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);}
   virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);} 
 };
@@ -240,9 +246,13 @@ class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>, public ExclusiveP
 public:
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *mmeta, CMMetadataBase* meta, uint64_t addr, bool dirty){
     // meta transfer from directory (if use directory coherence protocol) to cache
-    if(meta) { meta->to_invalid(); assert(!meta->is_dirty()); }
     mmeta->init(addr);
-    mmeta->to_shared(-1); // WARNING: This is may be a bug
+    mmeta->to_shared(-1); 
+    if(meta) { 
+      static_cast<MT*>(mmeta)->set_sharer(static_cast<MT*>(meta)->get_sharer());  
+      assert(!meta->is_dirty());
+      meta->to_invalid(); 
+    }
     if(dirty) mmeta->to_dirty();
   } 
   virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) {

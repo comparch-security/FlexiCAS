@@ -143,8 +143,9 @@ public:
 
 protected:
   inline std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
-    if(meta && meta->is_shared()) return std::make_pair(false, cmd_for_null());
+    if(meta && meta->is_shared() && !meta->is_extend()) return std::make_pair(false, cmd_for_null());
     // for all other potential states (M, O, E), the inner cache holds the latest copy
+    // if meta is extend, the inner cache holds the copy
     else                  return std::make_pair(true, coh_cmd_t{coh_id, probe_msg, writeback_act});
   }
 };
