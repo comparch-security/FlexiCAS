@@ -33,7 +33,7 @@ public:
   OuterCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~OuterCohPortBase() {}
 
-  inline void connect(CohMasterBase *h, std::pair<int32_t, CohPolicyBase *> info) { coh = h; coh_id = info.first; policy->connect(info.second); }
+  void connect(CohMasterBase *h, std::pair<int32_t, CohPolicyBase *> info) { coh = h; coh_id = info.first; policy->connect(info.second); }
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
@@ -56,7 +56,7 @@ public:
   InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~InnerCohPortBase() { delete policy; }
 
-  inline std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c) { coh.push_back(c); return std::make_pair(coh.size()-1, policy);}
+  std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c) { coh.push_back(c); return std::make_pair(coh.size()-1, policy);}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
@@ -231,7 +231,7 @@ typedef InnerCohPortT<InnerCohPortUncached> InnerCohPort;
 // interface with the processing core is a special InnerCohPort
 class CoreInterface : public InnerCohPortUncached {
 protected:
-  inline uint64_t normalize(uint64_t addr) const { return addr & ~0x3full ;}
+  uint64_t normalize(uint64_t addr) const { return addr & ~0x3full ;}
 
 public:
   CoreInterface(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
@@ -341,7 +341,7 @@ protected:
 public:
   SliceDispatcher(const std::string &n) : CohMasterBase(nullptr), name(n) {}
   virtual ~SliceDispatcher() {}
-  inline void connect(CohMasterBase *c) { cohm.push_back(c); }
+  void connect(CohMasterBase *c) { cohm.push_back(c); }
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay){
     this->cohm[hasher(addr)]->acquire_resp(addr, data, cmd, delay);
   }

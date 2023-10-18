@@ -35,29 +35,29 @@ public:
 
   friend CoherentCacheBase; // deferred assignment for cache
 
-  inline void connect(CohPolicyBase *policy) { outer = policy ? policy : this; } // memory does not use policy and returns nullptr
+  void connect(CohPolicyBase *policy) { outer = policy ? policy : this; } // memory does not use policy and returns nullptr
 
   // message type
-  inline bool is_acquire(coh_cmd_t cmd) const     { return cmd.msg == acquire_msg;     }
-  inline bool is_release(coh_cmd_t cmd) const     { return cmd.msg == release_msg;     }
-  inline bool is_probe(coh_cmd_t cmd) const       { return cmd.msg == probe_msg;       }
-  inline bool is_flush(coh_cmd_t cmd) const       { return cmd.msg == flush_msg;       }
+  bool is_acquire(coh_cmd_t cmd) const     { return cmd.msg == acquire_msg;     }
+  bool is_release(coh_cmd_t cmd) const     { return cmd.msg == release_msg;     }
+  bool is_probe(coh_cmd_t cmd) const       { return cmd.msg == probe_msg;       }
+  bool is_flush(coh_cmd_t cmd) const       { return cmd.msg == flush_msg;       }
 
   // action type
-  inline bool is_fetch_read(coh_cmd_t cmd) const  { return cmd.act == fetch_read_act;  }
-  inline bool is_fetch_write(coh_cmd_t cmd) const { return cmd.act == fetch_write_act; }
-  inline bool is_evict(coh_cmd_t cmd) const       { return cmd.act == evict_act;       }
-  inline bool is_outer_evict(coh_cmd_t cmd) const { return outer->is_evict(cmd);       }
-  inline bool is_writeback(coh_cmd_t cmd) const   { return cmd.act == writeback_act;  }
+  bool is_fetch_read(coh_cmd_t cmd) const  { return cmd.act == fetch_read_act;  }
+  bool is_fetch_write(coh_cmd_t cmd) const { return cmd.act == fetch_write_act; }
+  bool is_evict(coh_cmd_t cmd) const       { return cmd.act == evict_act;       }
+  bool is_outer_evict(coh_cmd_t cmd) const { return outer->is_evict(cmd);       }
+  bool is_writeback(coh_cmd_t cmd) const   { return cmd.act == writeback_act;  }
 
   // generate command
-  inline coh_cmd_t cmd_for_read()              const { return {-1, acquire_msg, fetch_read_act }; }
-  inline coh_cmd_t cmd_for_write()             const { return {-1, acquire_msg, fetch_write_act}; }
-  inline coh_cmd_t cmd_for_flush()             const { return {-1, flush_msg,   evict_act      }; }
-  inline coh_cmd_t cmd_for_writeback()         const { return {-1, flush_msg,   writeback_act  }; }
-  inline coh_cmd_t cmd_for_release()           const { return {-1, release_msg, evict_act      }; }
-  inline coh_cmd_t cmd_for_release_writeback() const { return {-1, release_msg, writeback_act  }; }
-  inline coh_cmd_t cmd_for_null()              const { return {-1, 0,           0              }; }
+  coh_cmd_t cmd_for_read()              const { return {-1, acquire_msg, fetch_read_act }; }
+  coh_cmd_t cmd_for_write()             const { return {-1, acquire_msg, fetch_write_act}; }
+  coh_cmd_t cmd_for_flush()             const { return {-1, flush_msg,   evict_act      }; }
+  coh_cmd_t cmd_for_writeback()         const { return {-1, flush_msg,   writeback_act  }; }
+  coh_cmd_t cmd_for_release()           const { return {-1, release_msg, evict_act      }; }
+  coh_cmd_t cmd_for_release_writeback() const { return {-1, release_msg, writeback_act  }; }
+  coh_cmd_t cmd_for_null()              const { return {-1, 0,           0              }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
   virtual coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const = 0;
@@ -142,7 +142,7 @@ public:
   }
 
 protected:
-  inline std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
+  std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
     if(meta && meta->is_shared() && !meta->is_extend()) return std::make_pair(false, cmd_for_null());
     // for all other potential states (M, O, E), the inner cache holds the latest copy
     // if meta is extend, the inner cache holds the copy

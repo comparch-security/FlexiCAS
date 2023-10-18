@@ -98,7 +98,7 @@ public:
   }
 
 private:
-  inline void invalidate_cache_line(CMMetadataBase *meta) const {
+  void invalidate_cache_line(CMMetadataBase *meta) const {
     static_cast<CT *>(this->cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
     meta->to_invalid();
   }
@@ -153,21 +153,21 @@ public:
       return std::make_pair(meta, nullptr);
   }
 
-  inline MirageDataMeta *get_data_meta(const std::pair<uint32_t, uint32_t>& pointer) {
+  MirageDataMeta *get_data_meta(const std::pair<uint32_t, uint32_t>& pointer) {
     return static_cast<MirageDataMeta *>(this->arrays[P]->get_meta(pointer.first, pointer.second));
   }
 
-  inline CMDataBase *get_data_data(const std::pair<uint32_t, uint32_t>& pointer) {
+  CMDataBase *get_data_data(const std::pair<uint32_t, uint32_t>& pointer) {
     return this->arrays[P]->get_data(pointer.first, pointer.second);
   }
 
-  inline CMMetadataBase *get_meta_meta(const std::tuple<uint32_t, uint32_t, uint32_t>& pointer) {
+  CMMetadataBase *get_meta_meta(const std::tuple<uint32_t, uint32_t, uint32_t>& pointer) {
     return this->arrays[std::get<0>(pointer)]->get_meta(std::get<1>(pointer), std::get<2>(pointer));
   }
 
   // grammer sugar
-  inline MirageDataMeta *get_data_meta(MT *meta)   { return get_data_meta(meta->pointer()); }
-  inline CMDataBase     *get_data_data(MT *meta)   { return get_data_data(meta->pointer()); }
+  MirageDataMeta *get_data_meta(MT *meta)   { return get_data_meta(meta->pointer()); }
+  CMDataBase     *get_data_data(MT *meta)   { return get_data_data(meta->pointer()); }
 
   std::pair<uint32_t, uint32_t> replace_data(uint64_t addr) {
     uint32_t d_s, d_w;
