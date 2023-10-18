@@ -1,168 +1,84 @@
 #ifndef CM_CACHE_MSI_HPP
 #define CM_CACHE_MSI_HPP
 
-#include <cassert>
-#include <type_traits>
-#include "cache/coherence.hpp"
-
-// MSI protocol
-class MSIPolicy {
-  // definition of command:
-  // [31  :   16] [15 : 8] [7 :0]
-  // coherence-id msg-type action
-  //---------------------------------------
-  // msg type:
-  // [1] Acquire [2] Release (writeback) [3] Probe [4] Flush
-  //---------------------------------------
-  // action:
-  // Acquire: fetch for [0] read / [1] write
-  // Release: [0] evict / [1] writeback (keep modified)
-  // Probe: [0] evict / [1] writeback (keep shared)
-  // Flush: [0] evict / [1] writeback
-
-  constexpr static uint32_t acquire_msg = 1 << 8;
-  constexpr static uint32_t release_msg = 2 << 8;
-  constexpr static uint32_t probe_msg = 3 << 8;
-  constexpr static uint32_t flush_msg = 4 << 8;
-
-  constexpr static uint32_t acquire_read = 0;
-  constexpr static uint32_t acquire_write = 1;
-
-  constexpr static uint32_t release_evict = 0;
-  constexpr static uint32_t release_writeback = 1;
-
-  constexpr static uint32_t probe_evict = 0;
-  constexpr static uint32_t probe_writeback = 1;
-
-  constexpr static uint32_t flush_evict = 0;
-  constexpr static uint32_t flush_writeback = 1;
-public:
-  static inline bool is_acquire(uint32_t cmd) {return (cmd & 0x0ff00ul) == acquire_msg; }
-  static inline bool is_release(uint32_t cmd) {return (cmd & 0x0ff00ul) == release_msg; }
-  static inline bool is_probe(uint32_t cmd)   {return (cmd & 0x0ff00ul) == probe_msg; }
-  static inline bool is_flush(uint32_t cmd)   {return (cmd & 0x0ff00ul) == flush_msg; }
-  static inline bool is_evict(uint32_t cmd)   {return (is_probe(cmd) && probe_evict == get_action(cmd)) ||
-      (is_flush(cmd) && flush_evict == get_action(cmd)); }
-  static inline uint32_t get_id(uint32_t cmd) {return cmd >> 16; }
-  static inline uint32_t get_action(uint32_t cmd) {return cmd & 0x0fful; }
-
-  // attach an id to a command
-  static inline uint32_t attach_id(uint32_t cmd, uint32_t id) {return (cmd & (0x0fffful)) | (id << 16); }
-
-  // check whether reverse probing is needed for a cache block when acquired (by inner) or probed by (outer)
-  static inline bool need_sync(uint32_t cmd, CMMetadataBase *meta) {
-    return (is_probe(cmd) && probe_evict == get_action(cmd)) || meta->is_modified() || (is_acquire(cmd) && acquire_write == get_action(cmd));
-  }
-
-  // check whether a permission upgrade is needed for the required action
-  static inline bool need_promote(uint32_t cmd, CMMetadataBase *meta) {
-    return (is_acquire(cmd) && acquire_write == get_action(cmd) && !meta->is_modified());
-  }
-
-  // avoid self probe
-  static inline bool need_probe(uint32_t cmd, uint32_t coh_id) { return coh_id != get_id(cmd); }
-
-  // generate the command for reverse probe
-  static inline uint32_t cmd_for_sync(uint32_t cmd) {
-    if(is_acquire(cmd) && acquire_read == get_action(cmd)) {
-      return attach_id(probe_msg | probe_writeback, get_id(cmd));
-    } else if ((is_probe(cmd)   && probe_writeback == get_action(cmd)) ||
-               (is_flush(cmd) && flush_writeback == get_action(cmd))) {
-      return attach_id(probe_msg | probe_writeback, -1);
-    } else {
-      assert((is_acquire(cmd) && acquire_write == get_action(cmd)) ||
-             (is_probe(cmd)   && probe_evict == get_action(cmd))   ||
-             (is_release(cmd) && release_evict == get_action(cmd)) ||
-             (is_flush(cmd)) && flush_evict == get_action(cmd));
-      return attach_id(probe_msg | probe_evict, -1);
-    }
-  }
-
-  static inline constexpr uint32_t cmd_for_evict()           { return release_msg | release_evict;     }
-  static inline constexpr uint32_t cmd_for_writeback()       { return release_msg | release_writeback; }
-  static inline constexpr uint32_t cmd_for_flush_evict()     { return flush_msg   | flush_evict;       }
-  static inline constexpr uint32_t cmd_for_flush_writeback() { return flush_msg   | flush_writeback;   }
-  static inline constexpr uint32_t cmd_for_core_read()       { return acquire_msg | acquire_read;      }
-  static inline constexpr uint32_t cmd_for_core_write()      { return acquire_msg | acquire_write;     }
-
-  // set the meta after processing an acquire
-  static inline void meta_after_acquire(uint32_t cmd, CMMetadataBase *meta) {
-    assert(is_acquire(cmd)); // must be an acquire
-    if(acquire_read == get_action(cmd))
-      meta->to_shared();
-    else {
-      assert(acquire_write == get_action(cmd));
-      meta->to_modified();
-    }
-  }
-
-  // set the metadata for a newly fetched block
-  static inline void meta_after_grant(uint32_t cmd, CMMetadataBase *meta, uint64_t addr) {
-    assert(is_acquire(cmd)); // must be an acquire
-    assert(!meta->is_dirty()); // by default an invalid block must be clean
-    meta->init(addr);
-    if(acquire_read == get_action(cmd))
-      meta->to_shared();
-    else {
-      assert(acquire_write == get_action(cmd));
-      meta->to_modified();
-    }
-  }
-
-  // set the metadata after a block is written back
-  static inline void meta_after_writeback(uint32_t cmd, CMMetadataBase *meta) {
-    if(is_release(cmd) || (is_flush(cmd) && meta != nullptr)){
-      meta->to_clean();
-      if(release_evict == get_action(cmd) || flush_evict == get_action(cmd)) meta->to_invalid();
-    }
-  }
-
-  // set the meta after the block is released
-  static inline void meta_after_release(uint32_t cmd, CMMetadataBase *meta) { meta->to_dirty(); }
-
-  // update the metadata for inner cache after ack a probe
-  static inline void meta_after_probe_ack(uint32_t cmd, CMMetadataBase *meta) {
-    assert(is_probe(cmd)); // must be a probe
-    if(probe_evict == get_action(cmd))
-      meta->to_invalid();
-    else {
-      assert(meta->is_modified()); // for MSI, probe degradation happens only for modified state
-      meta->to_shared();
-    }
-  }
-
-};
+#include "cache/exclusive.hpp"
 
 // metadata supporting MSI coherency
 class MetadataMSIBase : public CMMetadataBase
 {
 protected:
-  unsigned int state : 2; // 0: invalid, 1: shared, 2:modify
-  unsigned int dirty : 1; // 0: clean, 1: dirty
+  unsigned int state     : 2; // 0: invalid, 1: shared, 2:modify
+  unsigned int dirty     : 1; // 0: clean, 1: dirty
+  unsigned int extend    : 1; // 0: cache meta, 1: extend directory meta
 public:
-  MetadataMSIBase() : state(0), dirty(0) {}
+  MetadataMSIBase() : state(0), dirty(0), extend(0) {}
   virtual ~MetadataMSIBase() {}
 
   virtual void to_invalid() { state = 0; }
-  virtual void to_shared() { state = 1; }
-  virtual void to_modified() { state = 2; }
+  virtual void to_shared(int32_t coh_id) { state = 1; }
+  virtual void to_modified(int32_t coh_id) { state = 2; }
   virtual void to_dirty() { dirty = 1; }
   virtual void to_clean() { dirty = 0; }
+  virtual void to_extend() {}
   virtual bool is_valid() const { return state; }
   virtual bool is_shared() const { return state == 1; }
   virtual bool is_modified() const {return state == 2; }
   virtual bool is_dirty() const { return dirty; }
+  virtual bool is_extend() const { return extend; }
+
+  virtual void copy(const CMMetadataBase *m_meta) {
+    auto meta = static_cast<const MetadataMSIBase *>(m_meta);
+    state = meta->state;
+    dirty = meta->dirty;
+  }
+
 private:
-  virtual void to_owned() {}
-  virtual void to_exclusive() {}
+  virtual void to_owned(int32_t coh_id) {}
+  virtual void to_exclusive(int32_t coh_id) {}
+};
+
+class MetadataMSISupport // handle extra functions needed by MSI
+{
+public:
+  virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; }
+  virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; } 
+};
+
+typedef MetadataMSISupport MetadataMSIBrodcast;
+
+class MetadataMSIDirectorySupport : public MetadataMSISupport, public MetadataDirectorySupportBase
+{
+protected:
+  virtual void add_sharer(int32_t coh_id) {
+    sharer |= (1ull << coh_id);
+  }
+  virtual void clean_sharer(){
+    sharer = 0;
+  }
+  virtual void delete_sharer(int32_t coh_id){
+    sharer &= ~(1ull << coh_id);
+  }
+  virtual bool is_sharer(int32_t coh_id) const {
+    return ((1ull << coh_id) & (sharer))!= 0;
+  }
+public:
+  virtual uint64_t get_sharer(){
+    return sharer;
+  }
+  virtual void set_sharer(uint64_t c_sharer){
+    sharer = c_sharer;
+  }
+  virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);}
+  virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);} 
 };
 
 // Metadata with match function
 // AW    : address width
 // IW    : index width
 // TOfst : tag offset
-template <int AW, int IW, int TOfst>
-class MetadataMSI : public MetadataMSIBase
+// ST    : MSI support
+template <int AW, int IW, int TOfst, typename ST>
+class MetadataMSI : public MetadataMSIBase, public ST
 {
 protected:
   uint64_t     tag   : AW-TOfst;
@@ -183,217 +99,186 @@ public:
     }
     return addr;
   }
-};
+  virtual void sync(int32_t coh_id) {}
 
-// uncached MSI outer port:
-//   no support for reverse probe as if there is no internal cache
-//   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT, typename Policy,
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
-class OuterPortMSIUncached : public OuterCohPortBase
-{
-public:
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    coh->acquire_resp(addr, data, Policy::attach_id(cmd, this->coh_id), delay);
-    Policy::meta_after_grant(cmd, meta, addr);
-  }
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    coh->writeback_resp(addr, data, Policy::attach_id(cmd, this->coh_id), delay);
-    Policy::meta_after_writeback(cmd, meta);
+  virtual void copy(const CMMetadataBase *m_meta) {
+    MetadataMSIBase::copy(m_meta);
+    auto meta = static_cast<const MetadataMSI *>(m_meta);
+    tag = meta->tag;
   }
 };
 
-// full MSI Outer port
-template<typename MT, typename DT, typename Policy>
-class OuterPortMSI : public OuterPortMSIUncached<MT, DT, Policy>
+// Directory Metadata with match function
+// AW    : address width
+// IW    : index width
+// TOfst : tag offset
+// ST    : MSI support
+template <int AW, int IW, int TOfst, typename ST>
+class MetadataMSIDirectory : public MetadataMSI<AW, IW, TOfst, ST>
 {
 public:
-  virtual void probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, uint32_t cmd, uint64_t *delay) {
-    uint32_t ai, s, w;
-    bool hit, writeback = false;
-    if(hit = this->cache->hit(addr, &ai, &s, &w)) {
-      auto meta = this->cache->access(ai, s, w); // oddly here, `this->' is required by the g++ 11.3.0 @wsong83
-      CMDataBase *data = nullptr;
-      if constexpr (!std::is_void<DT>::value) {
-        data = this->cache->get_data(ai, s, w);
-      }
 
-      // sync if necessary
-      if(Policy::need_sync(cmd, meta)) this->inner->probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay);
+  virtual void to_extend(){
+    this->extend = 1;
+  }
 
-      // writeback if dirty
-      if(writeback = meta->is_dirty()) { // dirty, writeback
-        meta_outer->to_dirty();
-        if constexpr (!std::is_void<DT>::value) data_outer->copy(data);
-        meta->to_clean();
-      }
-
-      // update meta
-      Policy::meta_after_probe_ack(cmd, meta);
+  virtual void to_invalid() {
+    this->state = 0;
+    this->extend = 0;
+    this->clean_sharer(); 
+  }
+  virtual void to_shared(int32_t coh_id)  {
+    this->state = 1; 
+    if(coh_id != -1){
+      this->add_sharer(coh_id); 
+      to_extend();
     }
-    this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
   }
-};
-
-// uncached MSI inner port:
-//   no support for reverse probe as if there is no internal cache
-//   or the interl cache does not participate in the coherence communication
-template<typename MT, typename DT, typename Policy, bool isLLC, 
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
-class InnerPortMSIUncached : public InnerCohPortBase
-{
-public:
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd, uint64_t *delay) {
-    uint32_t ai, s, w;
-    CMMetadataBase *meta;
-    CMDataBase *data;
-    bool hit, writeback;
-    if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
-      meta = this->cache->access(ai, s, w);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-      if(Policy::need_sync(cmd, meta)) probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay); // sync if necessary
-      if constexpr (!isLLC) {
-        if(Policy::need_promote(cmd, meta)) {  // promote permission if needed
-          outer->acquire_req(addr, meta, data, cmd, delay);
-          hit = false;
-        }
-      }
-    } else { // miss
-      // get the way to be replaced
-      this->cache->replace(addr, &ai, &s, &w);
-      meta = this->cache->access(ai, s, w);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-      if(meta->is_valid()) {
-        auto replace_addr = meta->addr(s);
-        if(Policy::need_sync(Policy::cmd_for_evict(), meta)) probe_req(replace_addr, meta, data, Policy::cmd_for_sync(Policy::cmd_for_evict()), delay); // sync if necessary
-        if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
-        this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
-      }
-      outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
-    }
-    // grant
-    if constexpr (!std::is_void<DT>::value) data_inner->copy(this->cache->get_data(ai, s, w));
-    Policy::meta_after_acquire(cmd, meta);
-    this->cache->hook_read(addr, ai, s, w, hit, delay);
+  virtual void to_modified(int32_t coh_id) {
+    this->state = 2;
+    if(coh_id != -1){
+      this->add_sharer(coh_id); 
+      to_extend();
+    } 
   }
-
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, uint32_t cmd, uint64_t *delay) {
-    if (isLLC || Policy::is_release(cmd)) {
-      uint32_t ai, s, w;
-      bool writeback = false, hit = this->cache->hit(addr, &ai, &s, &w);
-      CMMetadataBase *meta = nullptr;
-      if(Policy::is_release(cmd)) {
-        assert(hit); // must hit
-        meta = this->cache->access(ai, s, w);
-        if constexpr (!std::is_void<DT>::value) this->cache->get_data(ai, s, w)->copy(data_inner);
-        Policy::meta_after_release(cmd, meta);
-        this->cache->hook_write(addr, ai, s, w, hit, delay);
-      } else {
-        assert(Policy::is_flush(cmd));
-        if(hit) {
-          CMDataBase *data = nullptr;
-          meta = this->cache->access(ai, s, w);
-          if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-          probe_req(addr, meta, data, Policy::cmd_for_sync(cmd), delay);
-          if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
-        }
-        this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
-      }
-    } else {
-      assert(Policy::is_flush(cmd) && !isLLC);
-      outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
+  virtual void sync(int32_t coh_id){
+    if(coh_id != -1){
+      this->delete_sharer(coh_id);
     }
   }
 };
 
-// full MSI inner port (broadcasting hub, snoop)
-template<typename MT, typename DT, typename Policy, bool isLLC>
-class InnerPortMSIBroadcast : public InnerPortMSIUncached<MT, DT, Policy, isLLC>
+
+template<typename MT, bool isL1, bool isLLC,
+         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
+         typename = typename std::enable_if<std::is_base_of<MetadataMSISupport, MT>::value>::type>  // MT <- MetadataMSISupport
+class MSIPolicy : public CohPolicyBase
 {
 public:
-  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    for(uint32_t i=0; i<this->coh.size(); i++)
-      if(Policy::need_probe(cmd, i))
-        this->coh[i]->probe_resp(addr, meta, data, cmd, delay);
-  }
-};
+  MSIPolicy() : CohPolicyBase(1, 2, 3, 4, 0, 1, 2, 3) {}
+  virtual ~MSIPolicy() {}
 
-// MSI core interface:
-template<typename MT, typename DT, typename Policy, bool EnableDelay, bool isLLC, 
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type, // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
-class CoreInterfaceMSI : public CoreInterfaceBase
-{
-  inline CMDataBase *access(uint64_t addr, uint32_t cmd, uint64_t *delay) {
-    uint32_t ai, s, w;
-    CMMetadataBase *meta;
-    CMDataBase *data = nullptr;
-    bool hit, writeback;
-    if(hit = this->cache->hit(addr, &ai, &s, &w)) { // hit
-      meta = this->cache->access(ai, s, w);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-      if constexpr (!isLLC) {
-        if(Policy::need_promote(cmd, meta)) {
-          outer->acquire_req(addr, meta, data, cmd, delay);
-          hit = false;
-        }
-      }
-    } else { // miss
-      // get the way to be replaced
-      this->cache->replace(addr, &ai, &s, &w);
-      meta = this->cache->access(ai, s, w);
-      if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-      if(meta->is_valid()) {
-        auto replace_addr = meta->addr(s);
-        if(writeback = meta->is_dirty()) outer->writeback_req(replace_addr, meta, data, Policy::cmd_for_evict(), delay); // writeback if dirty
-        this->cache->hook_manage(replace_addr, ai, s, w, true, true, writeback, delay);
-      }
-      outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
+  virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const {
+    assert(is_acquire(cmd));
+    if(is_fetch_write(cmd)) return outer->cmd_for_write();
+    else                    return outer->cmd_for_read();
+  }
+
+  virtual coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const {
+    assert(is_flush(cmd));
+    if(is_evict(cmd)) return outer->cmd_for_flush();
+    else              return outer->cmd_for_writeback();
+  }
+
+  virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+    if constexpr (!isL1) {
+      assert(is_acquire(cmd));
+      if(is_fetch_write(cmd)) return std::make_pair(true, coh_cmd_t{cmd.id, probe_msg, evict_act});
+      else                    return need_sync(meta, cmd.id);
+    } else return std::make_pair(false, cmd_for_null());
+  }
+
+  virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+    if constexpr (!isLLC) {
+      assert(is_acquire(cmd));
+      if(is_fetch_write(cmd) && !meta->is_modified())
+        return std::make_pair(true, outer->cmd_for_write());
+      else
+        return std::make_pair(false, cmd_for_null());
+    } else return std::make_pair(false, cmd_for_null());
+  }
+
+  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
+    if constexpr (!isL1) {
+      assert(outer->is_probe(outer_cmd));
+      if(outer->is_evict(outer_cmd)) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
+      else                           return need_sync(meta, -1);
+    } else return std::make_pair(false, cmd_for_null());
+  }
+
+  virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const {
+    assert(is_probe(cmd));
+    if(meta){
+      auto meta_msi = static_cast<const MT *>(meta);
+      if((is_evict(cmd)     && meta_msi->evict_need_probe(target_inner_id, cmd.id))     ||
+        (is_writeback(cmd) && meta_msi->writeback_need_probe(target_inner_id, cmd.id)) ) {
+        cmd.id = -1;
+        return std::make_pair(true, cmd);
+      } else
+        return std::make_pair(false, cmd_for_null());
+    }
+    else{
+      cmd.id = -1;
+      return std::make_pair(true, cmd);
     }
 
-    if(cmd == Policy::cmd_for_core_write()) {
-      meta->to_dirty();
-      this->cache->hook_write(addr, ai, s, w, hit, delay);
-    } else
-      this->cache->hook_read(addr, ai, s, w, hit, delay);
-    return data;
+  }
+  virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
+    assert(outer->is_probe(outer_cmd));
+    if(meta)
+      if(meta->is_dirty()) return std::make_pair(true , outer->cmd_for_release_writeback());
+      else                 return std::make_pair(false, outer->cmd_for_null());
+    else                   return std::make_pair(false, outer->cmd_for_null());
+  }
+  
+
+  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
+    if constexpr (!isL1) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
+    else                 return std::make_pair(false, cmd_for_null());
   }
 
-  inline void manage(uint64_t addr, uint32_t cmd, uint64_t *delay) {
+  virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (isLLC) {
-      uint32_t ai, s, w;
-      bool hit, writeback = false;
-      CMMetadataBase *meta = nullptr;
-      CMDataBase *data = nullptr;
-      if(hit = this->cache->hit(addr, &ai, &s, &w)){
-        meta = this->cache->access(ai, s, w);
-        if constexpr (!std::is_void<DT>::value) data = this->cache->get_data(ai, s, w);
-        if(writeback = meta->is_dirty()) outer->writeback_req(addr, meta, data, cmd, delay);
-      }
-      this->cache->hook_manage(addr, ai, s, w, hit, Policy::is_evict(cmd), writeback, delay);
-    } else {
-      outer->writeback_req(addr, nullptr, nullptr, cmd, delay);
-    }
-  }
-
-public:
-  virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
-    return access(addr, Policy::cmd_for_core_read(), EnableDelay ? delay : nullptr);
-  }
-
-  virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
-    auto m_data = access(addr, Policy::cmd_for_core_write(), EnableDelay ? delay : nullptr);
-    if constexpr (!std::is_void<DT>::value) m_data->copy(data);
-  }
-
-  virtual void flush(uint64_t addr, uint64_t *delay)     { manage(addr, Policy::cmd_for_flush_evict(),     delay); }
-  virtual void writeback(uint64_t addr, uint64_t *delay) { manage(addr, Policy::cmd_for_flush_writeback(), delay); }
-  virtual void writeback_invalidate(uint64_t *delay) {
-    assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
+      assert(is_flush(cmd));
+      if(is_evict(cmd)) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
+      else              return need_sync(meta, -1);
+    } else
+      return std::make_pair(false, cmd_for_null());
   }
 
 };
+
+template<typename MT, bool isLLC,
+         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,     // MT <- MetadataMSIBase
+         typename = typename std::enable_if<std::is_base_of<MetadataMSISupport, MT>::value>::type>  // MT <- MetadataMSISupport
+class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>, public ExclusivePolicySupportBase    // always not L1
+{
+public:
+  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *mmeta, CMMetadataBase* meta, uint64_t addr, bool dirty){
+    // meta transfer from directory (if use directory coherence protocol) to cache
+    mmeta->init(addr);
+    mmeta->to_shared(-1); 
+    if(meta) { 
+      static_cast<MT*>(mmeta)->set_sharer(static_cast<MT*>(meta)->get_sharer());  
+      assert(!meta->is_dirty());
+      meta->to_invalid(); 
+    }
+    if(dirty) mmeta->to_dirty();
+  } 
+  virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) {
+    assert(this->is_release(cmd));
+    return std::make_pair(true, coh_cmd_t{cmd.id, this->probe_msg, this->evict_act});
+  }
+
+  virtual bool need_writeback(const CMMetadataBase* meta) { return true; }
+
+  virtual std::pair<bool, coh_cmd_t> inner_need_release(){
+    return std::make_pair(true, this->cmd_for_release());
+  }
+
+  virtual void meta_after_probe_ack(coh_cmd_t cmd, CMMetadataBase *meta, int32_t inner_id) const{
+    assert(this->is_probe(cmd));
+    if(this->is_evict(cmd)) meta->sync(inner_id);
+  }
+};
+
+
+typedef OuterCohPortUncached OuterPortMSIUncached;
+typedef OuterCohPort OuterPortMSI;
+typedef ExclusiveOuterCohPort ExclusiveOuterPortMSI;
+typedef InnerCohPortUncached InnerPortMSIUncached;
+typedef InnerCohPort InnerPortMSI;
+typedef ExclusiveInnerCohPort ExclusiveInnerPortMSI;
+typedef CoreInterface CoreInterfaceMSI;
 
 #endif

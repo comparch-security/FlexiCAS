@@ -4,6 +4,7 @@
 #include <list>
 #include <unordered_set>
 #include <unordered_map>
+#include <cassert>
 #include "util/random.hpp"
 
 ///////////////////////////////////
@@ -15,7 +16,7 @@ protected:
   const uint32_t nset;
 public:
   ReplaceFuncBase(uint32_t nset) : nset(nset) {};
-  virtual uint32_t replace(uint32_t s, uint32_t *w) = 0;
+  virtual uint32_t replace(uint32_t s, uint32_t *w) = 0; // return the number of free places
   virtual void access(uint32_t s, uint32_t w) = 0;
   virtual void invalid(uint32_t s, uint32_t w) = 0;
   virtual ~ReplaceFuncBase() {}
@@ -42,7 +43,7 @@ public:
     else
       *w = used_map[s].front();
 
-    return 0;
+    return free_map[s].size();
   }
   virtual void access(uint32_t s, uint32_t w) {
     if(free_map[s].count(w)) {
@@ -100,7 +101,7 @@ public:
       *w = *(free_map[s].begin());
     else
       *w = cm_get_random_uint32() % NW;
-    return 0;
+    return free_map[s].size();
   }
 
   virtual void access(uint32_t s, uint32_t w){
@@ -119,8 +120,9 @@ public:
 template<int IW, int NW>
 class ReplaceCompleteRandom : public ReplaceFuncBase
 {
+  std::vector<uint8_t> free_blocks;
 public:
-  ReplaceCompleteRandom() : ReplaceFuncBase(1ul<<IW) {}
+  ReplaceCompleteRandom() : ReplaceFuncBase(1ul<<IW), free_blocks(this->nset,NW) {}
   virtual ~ReplaceCompleteRandom() {}
 
   virtual uint32_t replace(uint32_t s, uint32_t *w){
@@ -128,7 +130,7 @@ public:
     return 0;
   }
 
-  virtual void access(uint32_t s, uint32_t w) {}
-  virtual void invalid(uint32_t s, uint32_t w) {}
+  virtual void access(uint32_t s, uint32_t w) { free_blocks[s]--; assert(free_blocks[s]>=0); }
+  virtual void invalid(uint32_t s, uint32_t w) { free_blocks[s]++; assert(free_blocks[s]<=NW); }
 };
 #endif

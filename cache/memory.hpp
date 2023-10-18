@@ -9,7 +9,7 @@
 template<typename DT, typename DLY,
          typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
          typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
-class SimpleMemoryModel : public CohMasterBase
+class SimpleMemoryModel : public InnerCohPortUncached
 {
 protected:
   const std::string name;
@@ -23,37 +23,37 @@ protected:
   }
   
 public:
-  SimpleMemoryModel(const std::string &n) : name(n) {
+  SimpleMemoryModel(const std::string &n) : InnerCohPortUncached(nullptr), name(n) {
     if constexpr (!std::is_void<DLY>::value) timer = new DLY();
   }
   virtual ~SimpleMemoryModel() {
     if constexpr (!std::is_void<DLY>::value) delete timer;
   }
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
     if constexpr (!std::is_void<DT>::value) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       if(!pages.count(ppn)) allocate(ppn);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
-      data->write(mem_addr);
+      data_inner->write(mem_addr);
     }
     if constexpr (!std::is_void<DLY>::value) timer->read(addr, 0, 0, 0, 0, delay);
   }
 
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
     if constexpr (!std::is_void<DT>::value) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       assert(pages.count(ppn));
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
-      for(int i=0; i<8; i++) mem_addr[i] = data->read(i);
+      for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
     }
     if constexpr (!std::is_void<DLY>::value) timer->write(addr, 0, 0, 0, 0, delay);
   }
 
 private:
-  virtual void probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {} // hidden
+  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) { return false; } // hidden
 };
 
 #endif

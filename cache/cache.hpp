@@ -22,22 +22,44 @@ public:
   virtual void reset() {}                                   // reset the metadata
   virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
   virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
+  virtual void sync(int32_t coh_id) = 0;                    // sync after probe
 
-  virtual void to_invalid() = 0;     // change state to invalid
-  virtual void to_shared() = 0;      // change to shared
-  virtual void to_modified() = 0;    // change to modified
-  virtual void to_owned() = 0;       // change to owned
-  virtual void to_exclusive() = 0;   // change to exclusive
-  virtual void to_dirty() = 0;       // change to dirty
-  virtual void to_clean() = 0;       // change to dirty
+  virtual void to_invalid() = 0;                            // change state to invalid
+  virtual void to_shared(int32_t coh_id) = 0;               // change to shared
+  virtual void to_modified(int32_t coh_id) = 0;             // change to modified
+  virtual void to_owned(int32_t coh_id) = 0;                // change to owned
+  virtual void to_exclusive(int32_t coh_id) = 0;            // change to exclusive
+  virtual void to_dirty() = 0;                              // change to dirty
+  virtual void to_clean() = 0;                              // change to clean
+  virtual void to_extend() = 0;                             // change to extend directory meta
   virtual bool is_valid() const { return false; }
   virtual bool is_shared() const { return false; }
   virtual bool is_modified() const { return false; }
   virtual bool is_owned() const { return false; }
   virtual bool is_exclusive() const { return false; }
   virtual bool is_dirty() const { return false; }
+  virtual bool is_extend() const { return false; }
+
+  virtual void copy(const CMMetadataBase *meta) = 0;        // copy the content of meta
 
   virtual ~CMMetadataBase() {}
+};
+
+// TODO : support owner
+class  MetadataDirectorySupportBase
+{
+protected:
+  uint64_t sharer = 0;
+  virtual void add_sharer(int32_t coh_id) = 0;
+  virtual void clean_sharer() = 0;
+  virtual void delete_sharer(int32_t coh_id) = 0;
+  virtual bool is_sharer(int32_t coh_id) const = 0;
+public:
+  virtual uint64_t get_sharer()= 0;
+  virtual void set_sharer(uint64_t c_sharer) = 0;
+  MetadataDirectorySupportBase() : sharer(0) {}
+  virtual ~MetadataDirectorySupportBase() {}
+
 };
 
 class CMDataBase
@@ -48,7 +70,7 @@ public:
   virtual uint64_t read(unsigned int index) const { return 0; } // read a 64b data
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) {} // write a 64b data with wmask
   virtual void write(uint64_t *wdata) {} // write the whole cache block
-  virtual void copy(const CMDataBase *block) {} // copy the content of block
+  virtual void copy(const CMDataBase *block) = 0; // copy the content of block
 
   virtual ~CMDataBase() {}
 };
@@ -100,16 +122,18 @@ class CacheArrayNorm : public CacheArrayBase
 protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
+  unsigned int extra_way = 0;
 
 public:
   static constexpr uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(std::string name = "") : CacheArrayBase(name) {
-    constexpr size_t num = nset * NW;
-    meta.resize(num);
+  CacheArrayNorm(unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), extra_way(extra_way){
+    size_t meta_num = nset * (NW + extra_way);
+    constexpr size_t data_num = nset * NW;
+    meta.resize(meta_num);
     for(auto &m:meta) m = new MT();
     if constexpr (!std::is_void<DT>::value) {
-      data.resize(num);
+      data.resize(data_num);
       for(auto &d:data) d = new DT();
     }
   }
@@ -120,7 +144,7 @@ public:
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
-    for(int i=0; i<NW; i++)
+    for(int i=0; i<(NW+extra_way); i++)
       if(meta[s*NW + i]->match(addr)) {
         *w = i;
         return true;
@@ -129,7 +153,7 @@ public:
     return false;
   }
 
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*NW + w]; }
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*(NW+extra_way) + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
     if constexpr (std::is_void<DT>::value) {
       return nullptr;
@@ -174,13 +198,13 @@ public:
     return hit(addr, &ai, &s, &w);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) = 0;
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
   // hook interface for replacer state update, Monitor and delay estimation
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
   // probe, invalidate and writeback
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_meta(s, w);
@@ -189,6 +213,9 @@ public:
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_data(s, w);
   }
+
+  // access both meta and data in one function call
+  virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
 };
@@ -211,11 +238,11 @@ protected:
   RPC replacer[P]; // replacer
 
 public:
-  CacheSkewed(std::string name = "")
+  CacheSkewed(std::string name = "", unsigned int extra_par = 0)
     : CacheBase(name)
   {
-    arrays.resize(P);
-    for(auto &a:arrays) a = new CacheArrayNorm<IW,NW,MT,DT>();
+    arrays.resize(P+extra_par);
+    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>();
     monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
   }
 
@@ -230,24 +257,33 @@ public:
     return false;
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
+  virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
+    auto meta = arrays[ai]->get_meta(s, w);
+    if constexpr (!std::is_void<DT>::value)
+      return std::make_pair(meta, arrays[ai]->get_data(s, w));
+    else
+      return std::make_pair(meta, nullptr);
+  }
+
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
     if constexpr (P==1) *ai = 0;
     else                *ai = (cm_get_random_uint32() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
+    return true;
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     replacer[ai].access(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     replacer[ai].access(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
     if(hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
@@ -261,6 +297,10 @@ public:
 };
 
 // Normal set-associative cache
+// IW: index width, NW: number of ways
+// MT: metadata type, DT: data type (void if not in use)
+// IDX: indexer type, RPC: replacer type
+// EnMon: whether to enable monitoring
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
 
