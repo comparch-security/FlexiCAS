@@ -18,20 +18,24 @@ public:
   virtual bool is_valid() const { return state; }
   
   virtual void copy(const CMMetadataBase *m_meta) {
-    auto meta = static_cast<MirageDataMeta *>(m_meta);
-    auto [state, mai, ms, mw] = {meta->state, meta->mai, meta->ms, meta->mw};
+    auto meta = static_cast<const MirageDataMeta *>(m_meta);
+    std::tie(state, mai, ms, mw) = std::make_tuple(meta->state, meta->mai, meta->ms, meta->mw);
   }
 
   virtual ~MirageDataMeta() {}
 
 private:
-  virtual void to_shared() {}
-  virtual void to_modified() {}
-  virtual void to_owned() {}
-  virtual void to_exclusive() {}
+  virtual void sync(int32_t coh_id) {}
+  virtual void to_shared(int32_t coh_id) {}
+  virtual void to_modified(int32_t coh_id) {}
+  virtual void to_owned(int32_t coh_id) {}
+  virtual void to_exclusive(int32_t coh_id) {}
+  virtual void to_dirty(int32_t coh_id) {}
+  virtual void to_clean(int32_t coh_id) {}
+  virtual void init(uint64_t addr) {}
   virtual void to_dirty() {}
   virtual void to_clean() {}
-  virtual void init(uint64_t addr) {}
+  virtual void to_extend() {}
   virtual uint64_t addr(uint32_t s) const { return 0; }
 };
 
@@ -53,17 +57,17 @@ public:
 // AW    : address width
 // IW    : index width
 // TOfst : tag offset
-template <int AW, int IW, int TOfst>
-class MirageMetadataMSI : public MetadataMSI<AW, IW, TOfst>, public MirageMetadataSupport
+template <int AW, int IW, int TOfst, typename ST>
+class MirageMetadataMSI : public MetadataMSI<AW, IW, TOfst, ST>, public MirageMetadataSupport
 {
 public:
-  MirageMetadataMSI() : MetadataMSI(), MirageMetadataSupport() {}
+  MirageMetadataMSI() : MetadataMSI<AW, IW, TOfst, ST>(), MirageMetadataSupport() {}
   virtual ~MirageMetadataMSI() {}
 
   virtual void copy(const CMMetadataBase *m_meta) {
-    MetadataMSI::copy(m_meta);
-    auto meta = static_cast<MirageMetadataMSI *>(m_meta);
-    auto [ds, dw] = {meta->ds, meta->dw};
+    MetadataMSI<AW, IW, TOfst, ST>::copy(m_meta);
+    auto meta = static_cast<const MirageMetadataMSI<AW, IW, TOfst, ST> *>(m_meta);
+    std::tie(ds, dw) = std::make_tuple(meta->ds, meta->dw);
   }
 };
 
@@ -76,26 +80,26 @@ template<typename MT, typename CT,
 class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
 {
 public:
-  MirageMSIPolicy() : MSIPolicy() {}
+  MirageMSIPolicy() : MSIPolicy<MT, false, true>() {}
   virtual ~MirageMSIPolicy() {}
 
   virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
-    assert(outer->is_probe(outer_cmd));
-    if(outer->is_evict(outer_cmd)) invalidate_cache_line(meta);
+    assert(this->outer->is_probe(outer_cmd));
+    if(this->outer->is_evict(outer_cmd)) invalidate_cache_line(meta);
     else {
-      assert(outer->is_writeback(outer_cmd));
-      meta->to_shared();
+      assert(this->outer->is_writeback(outer_cmd));
+      meta->to_shared(-1);
     }
   }
 
   virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const  {
-    assert(is_flush(cmd));
-    if(is_evict(cmd)) invalidate_cache_line(meta);
+    assert(this->is_flush(cmd));
+    if(this->is_evict(cmd)) invalidate_cache_line(meta);
   }
 
 private:
   inline void invalidate_cache_line(CMMetadataBase *meta) const {
-    static_cast<CT *>(cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
+    static_cast<CT *>(this->cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
     meta->to_invalid();
   }
 
@@ -128,21 +132,21 @@ protected:
 
 public:
   MirageCache(std::string name = "")
-    : CacheSkewed(name, 1), MirageCacheSupport()
+    : CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>(name, 1)
   { 
     // CacheMirage has P+1 CacheArray
-    arrays[P] = new CacheArrayNorm<IW,P*NW,DTMT,DT>(); // the separated data array
+    this->arrays[P] = new CacheArrayNorm<IW,P*NW,DTMT,DT>(); // the separated data array
   }
 
   virtual ~MirageCache() {}
 
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
-    auto pointer = static_cast<MT *>(access(ai, s, w))->pointer();
-    return arrays[P]->get_data(pointer.first, pointer.second);
+    auto pointer = static_cast<MT *>(this->access(ai, s, w))->pointer();
+    return this->arrays[P]->get_data(pointer.first, pointer.second);
   }
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
-    auto meta = arrays[ai]->get_meta(s, w);
+    auto meta = this->arrays[ai]->get_meta(s, w);
     if constexpr (!std::is_void<DT>::value)
       return std::make_pair(meta, get_data_data(static_cast<MT *>(meta)));
     else
@@ -150,42 +154,44 @@ public:
   }
 
   inline MirageDataMeta *get_data_meta(const std::pair<uint32_t, uint32_t>& pointer) {
-    return static_cast<MirageDataMeta *>(arrays[P]->get_meta(pointer.first, pointer.second));
+    return static_cast<MirageDataMeta *>(this->arrays[P]->get_meta(pointer.first, pointer.second));
   }
 
   inline CMDataBase *get_data_data(const std::pair<uint32_t, uint32_t>& pointer) {
-    return arrays[P]->get_data(pointer.first, pointer.second);
+    return this->arrays[P]->get_data(pointer.first, pointer.second);
   }
 
   inline CMMetadataBase *get_meta_meta(const std::tuple<uint32_t, uint32_t, uint32_t>& pointer) {
-    return arrays[std::get<0>(pointer)]->get_meta(std::get<1>(pointer), std::get<2>(pointer));
+    return this->arrays[std::get<0>(pointer)]->get_meta(std::get<1>(pointer), std::get<2>(pointer));
   }
 
   // grammer sugar
-  inline MirageDataMeta *get_data_meta(const MT *meta)   { return get_data_meta(meta->pointer()); }
-  inline CMDataBase     *get_data_data(const MT *meta)   { return get_data_data(meta->pointer()); }
+  inline MirageDataMeta *get_data_meta(MT *meta)   { return get_data_meta(meta->pointer()); }
+  inline CMDataBase     *get_data_data(MT *meta)   { return get_data_data(meta->pointer()); }
 
   std::pair<uint32_t, uint32_t> replace_data(uint64_t addr) {
     uint32_t d_s, d_w;
-    auto d_s =  d_indexer.index(addr, 0);
-    d_replacer.replace(d_s, d_w);
+    d_s =  d_indexer.index(addr, 0);
+    d_replacer.replace(d_s, &d_w);
     return std::make_pair(d_s, d_w);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
-    int8_t max_free = -1, p = 0;
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
+    int max_free = -1, p = 0;
     std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > candidates(P);
-    uint32_t m_w, m_w;
+    uint32_t m_s, m_w;
     for(int i=0; i<P; i++) {
-      m_s = indexer.index(addr, i);
-      auto free_num = replacer[i].replace(m_s, &m_w);
+      m_s = this->indexer.index(addr, i);
+      int free_num = this->replacer[i].replace(m_s, &m_w);
       if(free_num > max_free) { p = 0; max_free = free_num; }
-      if(free_num >= max_free) candidates[p++] = std::make_tuple(i, m_s, m_w);
+      if(free_num >= max_free)
+        candidates[p++] = std::make_tuple(i, m_s, m_w);
     }
     std::tie(*ai, *s, *w) = candidates[cm_get_random_uint32() % p];
+    return true;
   }
 
-  void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase *meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack){
+  void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack){
     if constexpr (EnableRelocation) {
       uint32_t relocation = 0;
       uint32_t m_ai, m_s, m_w;
@@ -193,32 +199,32 @@ public:
       auto addr = meta->addr(*s);
       while(meta->is_valid() && relocation++ < MaxRelocN){
         m_ai = (*ai+1)%P; // Do we need total random selection of partition here, does not matter for Mirage as P=2
-        m_s  = indexer.index(addr, m_ai);
-        replacer[m_ai].replace(m_s, m_w);
-        auto m_meta = access(m_ai, m_s, m_w);
+        m_s  = this->indexer.index(addr, m_ai);
+        this->replacer[m_ai].replace(m_s, &m_w);
+        auto m_meta = this->access(m_ai, m_s, m_w);
         auto m_addr = m_meta->addr(m_s);
         if(remapped.count(m_addr)) break;
         remapped.insert(addr);
         stack.push(std::make_tuple(*ai, *s, *w));
-        auto [meta, addr, *ai, *s, *w] = {m_meta, m_addr, m_ai, m_s, m_w};
+        std::tie(meta, addr, *ai, *s, *w) = std::make_tuple(m_meta, m_addr, m_ai, m_s, m_w);
       }
     }
   }
 
-  void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase *meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
+  void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
     auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
-    auto m_meta = access(m_ai, m_s, m_w);
+    auto m_meta = this->access(m_ai, m_s, m_w);
     auto addr = m_meta->addr(m_s);
     meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
-    get_data_meta(static_cast<MT *>(m_meta))->bind(*ai, *s, *w);
-    cache->hook_manage(addr, m_ai, m_s, m_w, true, true, false, delay);
-    cache->hook_read(addr, *ai, *s, *w, false, delay); // hit is true or false? may have impact on delay
+    get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
+    this->hook_manage(addr, m_ai, m_s, m_w, true, true, false, delay);
+    this->hook_read(addr, *ai, *s, *w, false, delay); // hit is true or false? may have impact on delay
     std::tie(*ai, *s, *w, meta) = std::make_tuple(m_ai, m_s, m_w, m_meta);
   }
 
 };
 
-typedef OuterPortUncached MirageOuterPort; // MirageCache is always the LLC, no need to support probe() from memory
+typedef OuterCohPortUncached MirageOuterPort; // MirageCache is always the LLC, no need to support probe() from memory
 
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
@@ -229,9 +235,11 @@ template<typename MT, typename CT,
          typename = typename std::enable_if<std::is_base_of<CacheBase, CT>::value>::type>             // CT <- CacheBase
 class MirageInnerPortUncached : public InnerCohPortUncached
 {
+public:
+  MirageInnerPortUncached(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
-  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
+  access_line(uint64_t addr, CMDataBase* data_inner, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
@@ -264,7 +272,7 @@ protected:
         evict(replace_meta, data, std::get<0>(meta_pointer), std::get<1>(meta_pointer), std::get<2>(meta_pointer), delay);
         replace_meta->to_invalid();
       }
-      meta->bind(data_pointer.first, data_pointer.second);
+      static_cast<MT *>(meta)->bind(data_pointer.first, data_pointer.second);
       data_meta->bind(ai, s, w);
       outer->acquire_req(addr, meta, data, cmd, delay); // fetch the missing block
     }

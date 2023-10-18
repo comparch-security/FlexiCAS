@@ -44,9 +44,9 @@ public:
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors.clear(); }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) = 0;
 };
 
 // Cache monitor and delay support
@@ -67,23 +67,23 @@ public:
 
   virtual void attach_monitor(MonitorBase *m) {
     if constexpr (EnMon) {
-      if(m->attach(MonitorContainerBase::id)) MonitorContainerBase::monitors.insert(m);
+      if(m->attach(id)) monitors.insert(m);
     }
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    if constexpr (EnMon) for(auto m:MonitorContainerBase::monitors) m->read(addr, ai, s, w, hit);
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
+    if constexpr (EnMon) for(auto m:monitors) m->read(addr, ai, s, w, hit);
     if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    if constexpr (EnMon) for(auto m:MonitorContainerBase::monitors) m->write(addr, ai, s, w, hit);
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
+    if constexpr (EnMon) for(auto m:monitors) m->write(addr, ai, s, w, hit);
     if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
     if(hit && evict) {
-      if constexpr (EnMon) for(auto m:this->monitors) m->invalid(addr, ai, s, w);
+      if constexpr (EnMon) for(auto m:monitors) m->invalid(addr, ai, s, w);
     }
     if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
