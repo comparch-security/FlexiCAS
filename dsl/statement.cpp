@@ -7,7 +7,7 @@ namespace {
   const std::string R_LE   = "(//.*)?\\s*$";            // line end
   const std::string R_SE   = ";\\s*"+R_LE;              // statement end
   const std::string R_VAR  = "\\s*([a-zA-Z0-9_]+)\\s*"; // variable (or a const number)
-  const std::string R_ARGL = "\\s*[(](.*)[)]\\s*";      // arguement list, need a 2nd level parsing
+  const std::string R_ARGL = "\\s*([(](.*)[)])?\\s*";      // arguement list, need a 2nd level parsing
   const std::string R_R    = R_VAR+"(:"+R_VAR+")?";     // range
   const std::string R_SI   = "(\\["+R_VAR+"])?\\s*";    // single index
   const std::string R_RI   = "(\\["+R_R+"])?\\s*";      // range index
@@ -169,7 +169,7 @@ StatementTypeDef::StatementTypeDef() : StatementBase(R_LS+"type"+R_VAR+"="+R_VAR
 bool StatementTypeDef::decode(const char* line) {
   if(!match(line)) return false;
   std::list<std::string> params;
-  parse_arglist(std::string(cm[3]).c_str(), params);
+  if(cm[3].length()) parse_arglist(std::string(cm[4]).c_str(), params);
   if(typedb.create(cm[1], cm[2], params)) return true;
 
   // report as failed to decode
@@ -194,16 +194,18 @@ bool StatementConst::decode(const char* line) {
   return true;
 }
 
-StatementCreate::StatementCreate() : StatementBase(R_LS+"create"+R_VAR+"="+R_VAR+R_SI+R_SE) {}
+StatementCreate::StatementCreate() : StatementBase(R_LS+"create"+R_VAR+"="+R_VAR+R_ARGL+R_SI+R_SE) {}
 
 bool StatementCreate::decode(const char* line) {
   if(!match(line)) return false;
 
   std::string name(cm[1]);
   std::string type_name(cm[2]);
+  std::list<std::string> params;
   int size = 1; // default
-  if(cm[3].length() && !codegendb.parse_int(cm[4], size)) return false;
-  entitydb.create(name, type_name, size);
+  if(cm[3].length()) parse_arglist(std::string(cm[4]).c_str(), params);
+  if(cm[5].length() && !codegendb.parse_int(cm[6], size)) return false;
+  entitydb.create(name, type_name, params, size);
   return true;
 }
 
