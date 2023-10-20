@@ -5,12 +5,22 @@ MODE ?=
 MAKE = make
 CXX = g++
 
+# c++17 + concept by default, c++20 would work as well
+CXXSTD = --std=c++17 -fconcepts
+
+
 ifeq ($(MODE), release)
-    CXXFLAGS = --std=c++17 -O2 -DNDEBUG -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O2 -DNDEBUG -I. -fPIC
 else ifeq ($(MODE), debug)
-    CXXFLAGS = --std=c++17 -O1 -g -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O1 -g -I. -fPIC
 else
-    CXXFLAGS = --std=c++17 -O2 -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
+endif
+
+ifeq ($(MODE), debug)
+    DSLCXXFLAGS = $(CXXSTD) -O1 -g -I. -fPIC
+else
+    DSLCXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
 
 ifneq ("$(wildcard $(CONFIG).def)","")
@@ -40,10 +50,10 @@ $(CONFIG).cpp : $(CONFIG_FILE) dsl-decoder
 	./dsl-decoder $(CONFIG_FILE) $(CONFIG)
 
 dsl-decoder : $(DSL_OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(DSLCXXFLAGS) $^ -o $@
 
 $(DSL_OBJS) : %o:%cpp $(DSL_HEADERS)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(DSLCXXFLAGS) -c $< -o $@
 
 $(UTIL_OBJS) : %o:%cpp $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
