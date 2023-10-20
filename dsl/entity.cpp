@@ -3,15 +3,11 @@
 #include "dsl/statement.hpp"
 
 void CacheEntity::emit_declaration(std::ofstream &file, bool hpp) {
-  if(hpp) file << "extern ";
-  file << "std::vector<" << etype->name << " *> " << name;
-  if(hpp)  file << ";" << std::endl;
-  else     file << "(" << size << ");" << std::endl;
+  etype->emit_declaration(file, hpp, name, params, size);
 }
 
 void CacheEntity::emit_initialization(std::ofstream &file) {
-  file << "  for(int i=0; i<" << size << "; i++) "
-       << name << "[i] = new " << etype->name << "(std::string(\"" << name << "\") + \"_\" + std::to_string(i));" << std::endl;
+  etype->emit_initialization(file, name, params, size);
 }
 
 EntityDB::~EntityDB() {

@@ -24,16 +24,10 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "CacheMirage")                 descriptor = new TypeCacheMirage(type_name);
   if(base_name == "MSIPolicy")                   descriptor = new TypeMSIPolicy(type_name);
   if(base_name == "MirageMSIPolicy")             descriptor = new TypeMirageMSIPolicy(type_name);
-  if(base_name == "OuterPortMSIUncached")        descriptor = new TypeOuterPortMSIUncached(type_name);
-  if(base_name == "OuterPortMSI")                descriptor = new TypeOuterPortMSI(type_name);
-  if(base_name == "InnerPortMSIUncached")        descriptor = new TypeInnerPortMSIUncached(type_name);
-  if(base_name == "InnerPortMSIBroadcast")       descriptor = new TypeInnerPortMSIBroadcast(type_name);
-  if(base_name == "CoreInterfaceMSI")            descriptor = new TypeCoreInterfaceMSI(type_name);
-  if(base_name == "MirageOuterPortMSIUncached")  descriptor = new TypeMirageOuterPortMSIUncached(type_name);
-  if(base_name == "MirageOuterPortMSI")          descriptor = new TypeMirageOuterPortMSI(type_name);
-  if(base_name == "MirageInnerPortMSIUncached")  descriptor = new TypeMirageInnerPortMSIUncached(type_name);
-  if(base_name == "MirageInnerPortMSIBroadcast") descriptor = new TypeMirageInnerPortMSIBroadcast(type_name);
-  if(base_name == "MirageCoreInterfaceMSI")      descriptor = new TypeMirageCoreInterfaceMSI(type_name);
+  if(base_name == "OuterCohPortUncached")        descriptor = new TypeOuterCohPortUncached(type_name);
+  if(base_name == "OuterCohPort")                descriptor = new TypeOuterCohPort(type_name);
+  if(base_name == "InnerCohPortUncached")        descriptor = new TypeInnerCohPortUncached(type_name);
+  if(base_name == "InnerCohPort")                descriptor = new TypeInnerCohPort(type_name);
   if(base_name == "CoherentCacheNorm")           descriptor = new TypeCoherentCacheNorm(type_name);
   if(base_name == "CoherentL1CacheNorm")         descriptor = new TypeCoherentL1CacheNorm(type_name);
   if(base_name == "SimpleMemoryModel")           descriptor = new TypeSimpleMemoryModel(type_name);
@@ -64,89 +58,18 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
 
 void Description::emit_header() { codegendb.add_header("cache/cache.hpp"); }
 
-bool TypeVoid::set(std::list<std::string> &values) {
-  if(values.size() != 0) {
-    std::cerr << "[Mismatch] " << tname << " has no parameter!" << std::endl;
-    return false;
-  }
-  return true;
-}
+#define PROGRESS_PAR(statement) if((statement)) ++it; else return false
+#define PROGRESS_STR(statement) if(it != values.end()) { statement; ++it; } else return false
+#define EARLY_TERM() if(it == values.end()) return true;
 
-void TypeVoid::emit(std::ofstream &file) {
-  file << "typedef " << tname << " " << this->name << ";" << std::endl;
-}
-
-bool TypeMetadataMSI::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  if(!codegendb.parse_int(*it, AW)) return false; it++;
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, TOfst)) return false; it++;
-  return true;
-}
-
-void TypeMetadataMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "> " << this->name << ";" << std::endl;
-}
-
-void TypeMetadataMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeMirageMetadataMSI::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  if(!codegendb.parse_int(*it, AW)) return false; it++;
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, TOfst)) return false; it++;
-  return true;
-}
-
-void TypeMirageMetadataMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "> " << this->name << ";" << std::endl;
-}
-
-void TypeMirageMetadataMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
-
-void TypeMirageDataMeta::emit(std::ofstream &file) {
-  file << "typedef " << tname << " " << this->name << ";" << std::endl;
-}
-
-void TypeMirageDataMeta::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
-
-bool TypeMirageDataMeta::set(std::list<std::string> &values) {
-  if(values.size() != 0) {
-    std::cerr << "[Mismatch] " << tname << " has no parameter!" << std::endl;
-    return false;
-  }
-  return true;
-}
-
-bool TypeData64B::set(std::list<std::string> &values) {
-  if(values.empty()) return true;
-  std::cerr << "[No Paramater] " << tname << " supports no parameter!" << std::endl;
-  return false;
-}
-
-void TypeData64B::emit(std::ofstream &file) {
-  if(!this->name.empty())
-    file << "typedef " << tname << " " << this->name << ";" << std::endl;
-}
+////////////////////////////// Cache Basic ///////////////////////////////////////////////
 
 bool TypeCacheArrayNorm::set(std::list<std::string> &values) {
-  if(values.size() != 4) {
-    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, NW)) return false; it++;
-  MT = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-  DT = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, IW));
+  PROGRESS_PAR(codegendb.parse_int(*it, NW));
+  PROGRESS_STR(MT = *it);
+  PROGRESS_STR(DT = *it);
   return true;
 }
 
@@ -155,20 +78,16 @@ void TypeCacheArrayNorm::emit(std::ofstream &file) {
 }
 
 bool TypeCacheSkewed::set(std::list<std::string> &values) {
-  if(values.size() != 9) {
-    std::cerr << "[Mismatch] " << tname << " needs 9 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, NW)) return false; it++;
-  if(!codegendb.parse_int(*it, P)) return false; it++;
-  MT  = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  IDX = *it; if(!this->check(tname, "IDX", *it, "IndexFuncBase", false)) return false; it++;
-  RPC = *it; if(!this->check(tname, "RPC", *it, "ReplaceFuncBase", false)) return false; it++;
-  DLY = *it; if(!this->check(tname, "DLY", *it, "DelayBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, EnMon)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, IW));
+  PROGRESS_PAR(codegendb.parse_int(*it, NW));
+  PROGRESS_PAR(codegendb.parse_int(*it, P));
+  PROGRESS_STR(MT  = *it);
+  PROGRESS_STR(DT  = *it);
+  PROGRESS_STR(IDX = *it);
+  PROGRESS_STR(RPC = *it);
+  PROGRESS_STR(DLY = *it);
+  PROGRESS_PAR(codegendb.parse_bool(*it, EnMon));
   return true;
 }
  
@@ -177,19 +96,15 @@ void TypeCacheSkewed::emit(std::ofstream &file) {
 }
 
 bool TypeCacheNorm::set(std::list<std::string> &values) {
-  if(values.size() != 8) {
-    std::cerr << "[Mismatch] " << tname << " needs 8 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, NW)) return false; it++;
-  MT  = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  IDX = *it; if(!this->check(tname, "IDX", *it, "IndexFuncBase", false)) return false; it++;
-  RPC = *it; if(!this->check(tname, "RPC", *it, "ReplaceFuncBase", false)) return false; it++;
-  DLY = *it; if(!this->check(tname, "DLY", *it, "DelayBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, EnMon)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, IW));
+  PROGRESS_PAR(codegendb.parse_int(*it, NW));
+  PROGRESS_STR(MT  = *it);
+  PROGRESS_STR(DT  = *it);
+  PROGRESS_STR(IDX = *it);
+  PROGRESS_STR(RPC = *it);
+  PROGRESS_STR(DLY = *it);
+  PROGRESS_PAR(codegendb.parse_bool(*it, EnMon));
   return true;
 }
  
@@ -197,263 +112,42 @@ void TypeCacheNorm::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << IW << "," << NW << "," << MT << "," << DT << "," << IDX << "," << RPC << "," << DLY << "," << EnMon << "> " << this->name << ";" << std::endl;
 }
 
-bool TypeCacheMirage::set(std::list<std::string> &values) {
-  if(values.size() != 15) {
-    std::cerr << "[Mismatch] " << tname << " needs 15 parameters!" << std::endl;
-    return false;
-  }
+////////////////////////////// Coherent///////////////////////////////////////////////
+
+void TypeMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
+
+bool TypeMSIPolicy::set(std::list<std::string> &values) {
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, NW)) return false; it++;
-  if(!codegendb.parse_int(*it, EW)) return false; it++;
-  if(!codegendb.parse_int(*it, P)) return false; it++;
-  if(!codegendb.parse_int(*it, RW)) return false; it++;
-  MT   = *it; if(!this->check(tname, "MT", *it, "CMMetadataBase", false)) return false; it++;
-  DT   = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  MTDT = *it; if(!this->check(tname, "MTDT", *it, "CMMetadataBase", false)) return false; it++;
-  MIDX = *it; if(!this->check(tname, "MIDX", *it, "IndexFuncBase", false)) return false; it++;
-  DIDX = *it; if(!this->check(tname, "DIDX", *it, "IndexFuncBase", true)) return false; it++;
-  MRPC = *it; if(!this->check(tname, "MRPC", *it, "ReplaceFuncBase", false)) return false; it++;
-  DRPC = *it; if(!this->check(tname, "DRPC", *it, "ReplaceFuncBase", false)) return false; it++;
-  DLY  = *it; if(!this->check(tname, "DLY", *it, "DelayBase", true)) return false; it++;
-  if(!codegendb.parse_bool(*it, EnMon)) return false; it++;
-  if(!codegendb.parse_bool(*it, EnableRelocation)) return false; it++;
-  return true;
-}
- 
-void TypeCacheMirage::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << IW << "," << NW << "," << EW << "," << P << "," << RW <<  "," << MT << "," << DT << "," << MTDT << "," << MIDX << "," << DIDX << "," << MRPC << "," << DRPC << "," << DLY << "," << EnMon << "," << EnableRelocation << "> " << this->name << ";" << std::endl;
-}
-
-void TypeCacheMirage::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
-
-bool TypeMSIPolicy::set(std::list<std::string> &values){
-  if(values.size() != 0) {
-    std::cerr << "[Mismatch] " << tname << " needs 0 parameters!" << std::endl;
-    return false;
-  }
+  PROGRESS_STR(MT     = *it);
+  PROGRESS_PAR(codegendb.parse_bool(*it, isL1));
+  PROGRESS_PAR(codegendb.parse_bool(*it, isLLC));
   return true;
 }
 
-void TypeMSIPolicy::emit(std::ofstream &file){
-  file << "typedef " << tname << " " << this->name << ";" << std::endl;
+void TypeMSIPolicy::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << MT << "," << isL1 << "," << isLLC << "> " << this->name << ";" << std::endl;
 }
 
-void TypeMSIPolicy::emit_header(){ codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeMirageMSIPolicy::set(std::list<std::string> &values){
-  if(values.size() != 0) {
-    std::cerr << "[Mismatch] " << tname << " needs 0 parameters!" << std::endl;
-    return false;
-  }
-  return true;
-}
-
-void TypeMirageMSIPolicy::emit(std::ofstream &file){
-  file << "typedef " << tname << " " << this->name << ";" << std::endl;
-}
-
-void TypeMirageMSIPolicy::emit_header(){ codegendb.add_header("cache/mirage.hpp"); }
-
-bool TypeOuterPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
+bool TypeMetadataMSI::set(std::list<std::string> &values) {
   auto it = values.begin();
-  MT     = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT     = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, AW));
+  PROGRESS_PAR(codegendb.parse_int(*it, IW));
+  PROGRESS_PAR(codegendb.parse_int(*it, TOfst)); EARLY_TERM();
+  PROGRESS_STR(ST     = *it);
   return true;
 }
-  
-void TypeOuterPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "> " << this->name << ";" << std::endl;
-}  
 
-void TypeOuterPortMSIUncached::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeOuterPortMSI::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT     = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT     = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  return true;
+void TypeMetadataMSI::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "," << ST << "> " << this->name << ";" << std::endl;
 }
-  
-void TypeOuterPortMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "> " << this->name << ";" << std::endl;
-}  
 
-void TypeOuterPortMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeInnerPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 4) {
-    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  return true;
-}
-  
-void TypeInnerPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeInnerPortMSIBroadcast::set(std::list<std::string> &values) {
-  if(values.size() != 4) {
-    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  return true;
-}
-  
-void TypeInnerPortMSIBroadcast::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeCoreInterfaceMSI::set(std::list<std::string> &values) {
-  if(values.size() != 5) {
-    std::cerr << "[Mismatch] " << tname << " needs 5 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  if(!codegendb.parse_bool(*it, enableDelay)) return false; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  return true;
-}
-  
-void TypeCoreInterfaceMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << enableDelay << "," << isLLC << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeCoreInterfaceMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeMirageOuterPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  return true;
-}
-  
-void TypeMirageOuterPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT <<  "," << Policy << "> " << this->name << ";" << std::endl;
-}  
-
-void TypeMirageOuterPortMSIUncached::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeMirageOuterPortMSI::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  return true;
-}
-  
-void TypeMirageOuterPortMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "> " << this->name << ";" << std::endl;
-}  
-
-void TypeMirageOuterPortMSI::emit_header() { codegendb.add_header("cache/msi.hpp"); }
-
-bool TypeMirageInnerPortMSIUncached::set(std::list<std::string> &values) {
-  if(values.size() != 4) {
-    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  return true;
-}
-  
-void TypeMirageInnerPortMSIUncached::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeMirageInnerPortMSIUncached::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
-
-bool TypeMirageInnerPortMSIBroadcast::set(std::list<std::string> &values) {
-  if(values.size() != 4) {
-    std::cerr << "[Mismatch] " << tname << " needs 4 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  return true;
-}
-  
-void TypeMirageInnerPortMSIBroadcast::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << isLLC << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeMirageInnerPortMSIBroadcast::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
-
-bool TypeMirageCoreInterfaceMSI::set(std::list<std::string> &values) {
-  if(values.size() != 7) {
-    std::cerr << "[Mismatch] " << tname << " needs 7 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  MT  = *it; if(!this->check(tname, "MT", *it, "MirageMetadataMSIBase", false)) return false; it++;
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  Policy = *it; it++;
-  if(!codegendb.parse_bool(*it, enableDelay)) return false; it++;
-  if(!codegendb.parse_bool(*it, isLLC)) return false; it++;
-  return true;
-}
-  
-void TypeMirageCoreInterfaceMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << MT << "," << DT << "," << Policy << "," << enableDelay << "," << isLLC << "> " << this->name << ";" << std::endl;
-}    
-
-void TypeMirageCoreInterfaceMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
-
-void TypeCoherentCacheBase::emit_header() { codegendb.add_header("cache/coherence.hpp"); }
+void TypeCoherent::emit_header() { codegendb.add_header("cache/coherence.hpp"); }
 
 bool TypeCoherentCacheNorm::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  CacheT = *it; if(!this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
-  OuterT = *it; if(!this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
-  InnerT = *it; if(!this->check(tname, "InnerT", *it, "InnerCohPortBase", false)) return false; it++;
+  PROGRESS_STR(CacheT = *it); EARLY_TERM();
+  PROGRESS_STR(OuterT = *it); EARLY_TERM();
+  PROGRESS_STR(InnerT = *it);
   return true;
 }
   
@@ -462,25 +156,35 @@ void TypeCoherentCacheNorm::emit(std::ofstream &file) {
 }
 
 bool TypeCoherentL1CacheNorm::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  CacheT = *it; if(!this->check(tname, "CacheT", *it, "CacheBase", false)) return false; it++;
-  OuterT = *it; if(!this->check(tname, "OuterT", *it, "OuterCohPortBase", false)) return false; it++;
-  CoreT = *it;  if(!this->check(tname, "CoreT", *it, "CoreInterfaceBase", false)) return false; it++;
+  PROGRESS_STR(CacheT = *it); EARLY_TERM();
+  PROGRESS_STR(OuterT = *it); EARLY_TERM();
+  PROGRESS_STR(CoreT = *it);
   return true;
 }
   
-bool TypeSimpleMemoryModel::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-    return false;
-  }
+void TypeCoherentL1CacheNorm::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << CoreT << "> " << this->name << ";" << std::endl;
+}
+
+bool TypeSliceDispatcher::set(std::list<std::string> &values) {
   auto it = values.begin();
-  DT  = *it; if(!this->check(tname, "DT", *it, "CMDataBase", true)) return false; it++;
-  DLY = *it; if(!this->check(tname, "DLY", *it, "DelayBase", true)) return false; it++;
+  PROGRESS_STR(HT = *it);
+  return true;
+}
+
+void TypeSliceDispatcher::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << HT << "> " << this->name << ";" << std::endl;
+}
+
+////////////////////////////// Memory ///////////////////////////////////////////////
+
+void TypeSimpleMemoryModel::emit_header() { codegendb.add_header("cache/memory.hpp"); }
+
+bool TypeSimpleMemoryModel::set(std::list<std::string> &values) {
+  auto it = values.begin();
+  PROGRESS_STR(DT  = *it);
+  PROGRESS_STR(DLY = *it);
   return true;
 }
 
@@ -488,38 +192,26 @@ void TypeSimpleMemoryModel::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << DT << "," << DLY << "> " << this->name << ";" << std::endl;
 }
 
-void TypeSimpleMemoryModel::emit_header() { codegendb.add_header("cache/memory.hpp"); }
+////////////////////////////// Index ///////////////////////////////////////////////
 
-void TypeCoherentL1CacheNorm::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << CacheT << "," << OuterT << "," << CoreT << "> " << this->name << ";" << std::endl;
-}
+void TypeIndex::emit_header() { codegendb.add_header("cache/index.hpp"); }
 
-void TypeIndexFuncBase::emit_header() { codegendb.add_header("cache/index.hpp"); }
-
-bool TypeIndexNorm::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-    return false;
-  }
+bool TypeIndex::set(std::list<std::string> &values) {
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, IOfst)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, IW));
+  PROGRESS_PAR(codegendb.parse_int(*it, IOfst));
   return true;
 }
   
-void TypeIndexNorm::emit(std::ofstream &file) {
+void TypeIndex::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << IW << "," << IOfst << "> " << this->name << ";" << std::endl;
 }  
 
 bool TypeIndexSkewed::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, IOfst)) return false; it++;
-  if(!codegendb.parse_int(*it, P)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, IW));
+  PROGRESS_PAR(codegendb.parse_int(*it, IOfst));
+  PROGRESS_PAR(codegendb.parse_int(*it, P));
   return true;
 }
   
@@ -527,93 +219,30 @@ void TypeIndexSkewed::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << IW << "," << IOfst << "," << P << "> " << this->name << ";" << std::endl;
 }  
 
-bool TypeIndexRandom::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-    return false;
-  }
+////////////////////////////// Replacer ///////////////////////////////////////////////
+
+void TypeReplace::emit_header() { codegendb.add_header("cache/replace.hpp"); }
+
+bool TypeReplace::set(std::list<std::string> &values) {
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, IOfst)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, IW));
+  PROGRESS_PAR(codegendb.parse_int(*it, NW));
   return true;
 }
   
-void TypeIndexRandom::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << IW << "," << IOfst << "> " << this->name << ";" << std::endl;
-}  
-
-void TypeReplaceFuncBase::emit_header() { codegendb.add_header("cache/replace.hpp"); }
-
-bool TypeReplaceFIFO::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, NW)) return false; it++;
-  return true;
-}
-  
-void TypeReplaceFIFO::emit(std::ofstream &file) {
+void TypeReplace::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
 }  
 
-bool TypeReplaceLRU::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, NW)) return false; it++;
-  return true;
-}
-  
-void TypeReplaceLRU::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
-}
 
-bool TypeReplaceRandom::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, NW)) return false; it++;
-  return true;
-}
-  
-void TypeReplaceRandom::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
-} 
+////////////////////////////// hasher ///////////////////////////////////////////////
 
-bool TypeReplaceCompleteRandom::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  if(!codegendb.parse_int(*it, IW)) return false; it++;
-  if(!codegendb.parse_int(*it, NW)) return false; it++;
-  return true;
-}
-  
-void TypeReplaceCompleteRandom::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
-} 
-
-void TypeSliceHashBase::emit_header() { codegendb.add_header("cache/slicehash.hpp"); }
+void TypeSliceHash::emit_header() { codegendb.add_header("cache/slicehash.hpp"); }
 
 bool TypeSliceHashNorm::set(std::list<std::string> &values) {
-  if(values.size() != 2) {
-    std::cerr << "[Mismatch] " << tname << " needs 2 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, NLLC)) return false; it++;
-  if(!codegendb.parse_int(*it, BlkOfst)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, NLLC));
+  PROGRESS_PAR(codegendb.parse_int(*it, BlkOfst));
   return true;
 }
 
@@ -622,12 +251,8 @@ void TypeSliceHashNorm::emit(std::ofstream &file) {
 }
 
 bool TypeSliceHashIntelCAS::set(std::list<std::string> &values) {
-  if(values.size() != 1) {
-    std::cerr << "[Mismatch] " << tname << " needs 1 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, NLLC)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, NLLC));
   return true;
 }
 
@@ -635,33 +260,15 @@ void TypeSliceHashIntelCAS::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << NLLC << "> " << this->name << ";" << std::endl;
 }
 
-bool TypeSliceDispatcher::set(std::list<std::string> &values) {
-  if(values.size() != 1) {
-    std::cerr << "[Mismatch] " << tname << " needs 1 parameters!" << std::endl;
-    return false;
-  }
-  auto it = values.begin();
-  HT = *it;  if(!this->check(tname, "HT", *it, "SliceHashBase", false)) return false; it++;
-  return true;
-}
+////////////////////////////// Delay ///////////////////////////////////////////////
 
-void TypeSliceDispatcher::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << HT << "> " << this->name << ";" << std::endl;
-}
-
-void TypeSliceDispatcher::emit_header() { codegendb.add_header("cache/coherence.hpp"); }
-
-void TypeDelayBase::emit_header() { codegendb.add_header("util/delay.hpp"); }
+void TypeDelay::emit_header() { codegendb.add_header("util/delay.hpp"); }
 
 bool TypeDelayL1::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, dhit)) return false; it++;
-  if(!codegendb.parse_int(*it, dreplay)) return false; it++;
-  if(!codegendb.parse_int(*it, dtran)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, dhit));
+  PROGRESS_PAR(codegendb.parse_int(*it, dreplay));
+  PROGRESS_PAR(codegendb.parse_int(*it, dtran));
   return true;
 }
 
@@ -670,14 +277,10 @@ void TypeDelayL1::emit(std::ofstream &file) {
 }
 
 bool TypeDelayCoherentCache::set(std::list<std::string> &values) {
-  if(values.size() != 3) {
-    std::cerr << "[Mismatch] " << tname << " needs 3 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, dhit)) return false; it++;
-  if(!codegendb.parse_int(*it, dtranUp)) return false; it++;
-  if(!codegendb.parse_int(*it, dtranDown)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, dhit));
+  PROGRESS_PAR(codegendb.parse_int(*it, dtranUp));
+  PROGRESS_PAR(codegendb.parse_int(*it, dtranDown));
   return true;
 }
 
@@ -686,15 +289,41 @@ void TypeDelayCoherentCache::emit(std::ofstream &file) {
 }
 
 bool TypeDelayMemory::set(std::list<std::string> &values) {
-  if(values.size() != 1) {
-    std::cerr << "[Mismatch] " << tname << " needs 1 parameters!" << std::endl;
-    return false;
-  }
   auto it = values.begin();
-  if(!codegendb.parse_int(*it, dtran)) return false; it++;
+  PROGRESS_PAR(codegendb.parse_int(*it, dtran));
   return true;
 }
 
 void TypeDelayMemory::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << dtran << "> " << this->name << ";" << std::endl;
+}
+
+////////////////////////////// MIRAGE Types ///////////////////////////////////////////////
+
+void TypeMirage::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
+
+void TypeMirageMetadataMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
+
+bool TypeCacheMirage::set(std::list<std::string> &values) {
+  auto it = values.begin();
+  PROGRESS_PAR(codegendb.parse_int(*it, IW));
+  PROGRESS_PAR(codegendb.parse_int(*it, NW));
+  PROGRESS_PAR(codegendb.parse_int(*it, EW));
+  PROGRESS_PAR(codegendb.parse_int(*it, P));
+  PROGRESS_PAR(codegendb.parse_int(*it, RW));
+  PROGRESS_STR(MT   = *it);
+  PROGRESS_STR(DT   = *it);
+  PROGRESS_STR(MTDT = *it);
+  PROGRESS_STR(MIDX = *it);
+  PROGRESS_STR(DIDX = *it);
+  PROGRESS_STR(MRPC = *it);
+  PROGRESS_STR(DRPC = *it);
+  PROGRESS_STR(DLY  = *it);
+  PROGRESS_PAR(codegendb.parse_bool(*it, EnMon));
+  PROGRESS_PAR(codegendb.parse_bool(*it, EnableRelocation));
+  return true;
+}
+
+void TypeCacheMirage::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << IW << "," << NW << "," << EW << "," << P << "," << RW <<  "," << MT << "," << DT << "," << MTDT << "," << MIDX << "," << DIDX << "," << MRPC << "," << DRPC << "," << DLY << "," << EnMon << "," << EnableRelocation << "> " << this->name << ";" << std::endl;
 }

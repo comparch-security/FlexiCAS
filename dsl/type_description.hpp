@@ -8,10 +8,11 @@
 #include <list>
 #include <string>
 #include <cstdlib>
+#include <cassert>
 
 ////////////////////////////// A gloabl database ///////////////////////////////////////////////
 
-class Description;
+struct Description;
 
 struct DescriptionDB
 {
@@ -34,338 +35,169 @@ struct DescriptionDB
 extern DescriptionDB typedb;
 
 // base classes for all description
-class Description
+struct Description
 {
-public:
   const std::string name; // name of the description
-  std::set<std::string> types; // list the types matching this description
+  const std::string tname;
 
-  bool check(const std::string& tname, const std::string& param, const std::string& value, const std::string& constraint, bool allow_void) {
-    if(allow_void) {
-      if (value == "void") return true;
-      if (typedb.types.count(value) && typedb.types[value]->comply("void")) return true;
-    }
-    if(!typedb.types.count(value)) {
-      std::cerr << "[Undefined Type] " << tname << "'" << param << ": `" << value << "' is not defined!" << std::endl;
-      return false;
-    }
-    if(!typedb.types[value]->comply(constraint)) {
-      std::cerr << "[Constraint] " << tname << "'" << param << ": `" << value << "' must be a derived type of " << constraint << "!" << std::endl;
-      return false;
-    }
-    return true;
-  }
+  Description(const std::string &name, const std::string &tname): name(name), tname(tname){}
 
-  Description(const std::string &name): name(name) {}
-
-  virtual bool set(std::list<std::string> &values) = 0;
-  // check type compliant
-  bool comply(const std::string& c) { return types.count(c); }
-  virtual void emit(std::ofstream &file) = 0;
-  virtual void emit_header(); // add the header files required fro this type
+  virtual bool set(std::list<std::string> &values) { return true; }
+  virtual void emit(std::ofstream &file) { file << "typedef " << tname << " " << this->name << ";" << std::endl; }
+  virtual void emit_header();
+  virtual void emit_declaration(std::ofstream &file, bool hpp,
+                                const std::string &ename, const std::list<std::string> &params,  unsigned int size) {}
+  virtual void emit_initialization(std::ofstream &file,
+                                   const std::string &ename, const std::list<std::string> &params,  unsigned int size) {}
   virtual std::string get_outer() { return std::string(); }
   virtual std::string get_inner() { return std::string(); }
 
 };
 
-////////////////////////////// Data Types ///////////////////////////////////////////////
-
-class TypeVoid : public Description {
-  const std::string tname;
-public: TypeVoid(const std::string &name) : Description(name), tname("void") { types.insert("void"); }
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
+struct TypeVoid : public Description {
+  TypeVoid(const std::string &name) : Description(name, "void") {}
 };
 
 
-////////////////////////////// Data Types ///////////////////////////////////////////////
+////////////////////////////// Cache Basic ///////////////////////////////////////////////
 
-class TypeCMMetadataBase : public Description {
-public: TypeCMMetadataBase(const std::string &name) : Description(name) { types.insert("CMMetadataBase"); }
+struct TypeData64B : public Description {
+  TypeData64B(const std::string &name = "", const std::string &tname ="Data64B") : Description(name, tname) {}
 };
 
-class TypeMetadataMSIBase : public TypeCMMetadataBase {
-public: TypeMetadataMSIBase(const std::string &name) : TypeCMMetadataBase(name) { types.insert("MetadataMSIBase"); }
-};
-
-class TypeMetadataMSI : public TypeMetadataMSIBase {
-  int AW, IW, TOfst;
-  const std::string tname;
-public:
-  TypeMetadataMSI(const std::string &name) : TypeMetadataMSIBase(name), tname("MetadataMSI") {}
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-class TypeMirageMetadataMSIBase : public TypeCMMetadataBase {
-public: TypeMirageMetadataMSIBase(const std::string &name) : TypeCMMetadataBase(name) { types.insert("MirageMetadataMSIBase"); }
-};
-
-class TypeMirageMetadataMSI : public TypeMirageMetadataMSIBase {
-  int AW, IW, TOfst;
-  const std::string tname;
-public:
-  TypeMirageMetadataMSI(const std::string &name) : TypeMirageMetadataMSIBase(name), tname("MirageMetadataMSI") {}
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-class TypeMirageDataMeta : public TypeCMMetadataBase{
-  const std::string tname;
-public: TypeMirageDataMeta(const std::string &name) : TypeCMMetadataBase(name), tname("MirageDataMeta") {}
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();  
-};
-
-class TypeCMDataBase : public Description {
-public: TypeCMDataBase(const std::string &name) : Description(name) { types.insert("CMDataBase"); }
-};
-
-class TypeData64B : public TypeCMDataBase
-{
-  const std::string tname;
-public:
-  TypeData64B(const std::string &name) : TypeCMDataBase(name), tname("Data64B") { types.insert("Data64B"); }
-  TypeData64B() : TypeCMDataBase(""), tname("Data64B") { types.insert("Data64B"); }
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-};
-
-////////////////////////////// Cache Array ///////////////////////////////////////////////
-
-class TypeCacheArrayBase : public Description {
-public: TypeCacheArrayBase(const std::string &name) : Description(name) { types.insert("CacheArrayBase"); }
-};
-
-class TypeCacheArrayNorm : public TypeCacheArrayBase
-{
+struct TypeCacheArrayNorm : public Description {
   int IW, NW; std::string MT, DT;
-  const std::string tname;
-public:
-  TypeCacheArrayNorm(const std::string &name) : TypeCacheArrayBase(name), tname("CacheArrayNorm") {}
+  TypeCacheArrayNorm(const std::string &name, const std::string &tname ="CacheArrayNorm") : Description(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
 
-////////////////////////////// Cache ///////////////////////////////////////////////
-
-class TypeCacheBase : public Description {
-public: TypeCacheBase(const std::string &name) : Description(name) { types.insert("CacheBase"); }
-};
-
-class TypeCacheSkewed : public TypeCacheBase
-{
+struct TypeCacheSkewed : public Description {
   int IW, NW, P; std::string MT, DT, IDX, RPC, DLY; bool EnMon;
-  const std::string tname;
-public:
-  TypeCacheSkewed(const std::string &name) : TypeCacheBase(name), tname("CacheSkewed") {}
-  virtual bool set(std::list<std::string> &values); 
+  TypeCacheSkewed(const std::string &name, const std::string &tname ="CacheSkewed") : Description(name, tname) {}
+  virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
 
-class TypeCacheNorm : public TypeCacheBase
-{
+struct TypeCacheNorm : public Description {
   int IW, NW; std::string MT, DT, IDX, RPC, DLY; bool EnMon;
-  const std::string tname;
-public:
-  TypeCacheNorm(const std::string &name) : TypeCacheBase(name), tname("CacheNorm") {}
-  virtual bool set(std::list<std::string> &values); 
-  virtual void emit(std::ofstream &file);
-};
-
-class TypeCacheMirage : public TypeCacheBase
-{
-  int IW, NW, EW, P, RW; std::string MT, DT, MTDT, MIDX, DIDX, MRPC, DRPC, DLY; bool EnMon, EnableRelocation;
-  const std::string tname;
-public:
-  TypeCacheMirage(const std::string &name) : TypeCacheBase(name), tname("CacheMirage") {}
-  virtual bool set(std::list<std::string> &values); 
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-////////////////////////////// Policy ///////////////////////////////////////////////
-
-class TypeMSIPolicy : public Description {
-  const std::string tname;
-public: TypeMSIPolicy(const std::string &name) : Description(name), tname("MSIPolicy") { types.insert("MSIPolicy"); }
+  TypeCacheNorm(const std::string &name, const std::string &tname ="CacheNorm") : Description(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
+};
+
+////////////////////////////// Coherent///////////////////////////////////////////////
+
+struct TypeMSI : public Description {
+  TypeMSI(const std::string &name, const std::string &tname) : Description(name, tname) {}
   virtual void emit_header();
 };
 
-class TypeMirageMSIPolicy : public Description {
-  const std::string tname;
-public: TypeMirageMSIPolicy(const std::string &name) : Description(name), tname("MirageMSIPolicy") { types.insert("MirageMSIPolicy"); }
+struct TypeMSIPolicy : public TypeMSI {
+  std::string MT; bool isL1, isLLC;
+  TypeMSIPolicy(const std::string &name, const std::string &tname ="MSIPolicy") : TypeMSI(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
-  virtual void emit_header();
+  virtual void emit_initialization(std::ofstream &file,
+                                   const std::string &ename, const std::list<std::string> &params, unsigned int size) {
+    assert(size == 1 && "policy should not be initialized into multiple.");
+    file << "  " << name << " *" << ename << " = new " << name << "(";
+    auto it = params.begin();
+    while(it != params.end()) {
+      file << *it;
+      ++it;
+      if(it != params.end()) file << ", ";
+    }
+    file <<");" << std::endl;
+  }
 };
 
-////////////////////////////// Coherent Cache ///////////////////////////////////////////////
-
-class TypeOuterCohPortBase : public Description {
-public: TypeOuterCohPortBase(const std::string &name) : Description(name) { types.insert("OuterCohPortBase"); types.insert("CohClientBase"); }
-};
-
-class TypeOuterPortMSIUncached : public TypeOuterCohPortBase {
-  std::string MT, DT, Policy;
-  const std::string tname;
-public:
-  TypeOuterPortMSIUncached(const std::string &name) : TypeOuterCohPortBase(name), tname("OuterPortMSIUncached") {}
+struct TypeMetadataMSI : public TypeMSI {
+  int AW, IW, TOfst;
+  std::string ST;
+  TypeMetadataMSI(const std::string &name, const std::string &tname ="MetadataMSI")
+    : TypeMSI(name, tname),
+      ST("MetadataMSIBrodcast") // default to broadcast
+  {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
+};
+
+struct TypeCoherent : public Description {
+  TypeCoherent(const std::string &name, const std::string &tname) : Description(name, tname) {}
   virtual void emit_header();
+  virtual std::string get_outer() { return "->outer"; }
+  virtual std::string get_inner() { return "->inner"; }
 };
 
-class TypeOuterPortMSI : public TypeOuterCohPortBase {
-  std::string MT, DT, Policy;
-  const std::string tname;
-public:
-  TypeOuterPortMSI(const std::string &name) : TypeOuterCohPortBase(name), tname("OuterPortMSI") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
+struct TypeOuterCohPortUncached : public TypeCoherent {
+  TypeOuterCohPortUncached(const std::string &name, const std::string &tname ="OuterCohPortUncached") : TypeCoherent(name, tname) {}
 };
 
-
-class TypeInnerCohPortBase : public Description {
-public: TypeInnerCohPortBase(const std::string &name) : Description(name) { types.insert("InnerCohPortBase"); types.insert("CohMasterBase"); }
+struct TypeOuterCohPort : public TypeCoherent {
+  TypeOuterCohPort(const std::string &name, const std::string &tname ="OuterCohPort") : TypeCoherent(name, tname) {}
 };
 
-class TypeInnerPortMSIUncached : public TypeInnerCohPortBase
-{
-  std::string MT, DT, Policy; bool isLLC; 
-  const std::string tname;
-public:
-  TypeInnerPortMSIUncached(const std::string &name) : TypeInnerCohPortBase(name), tname("InnerPortMSIUncached") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
+struct TypeInnerCohPortUncached : public TypeCoherent {
+  TypeInnerCohPortUncached(const std::string &name, const std::string &tname ="InnerCohPortUncached") : TypeCoherent(name, tname) {}
 };
 
-class TypeInnerPortMSIBroadcast : public TypeInnerCohPortBase
-{
-  std::string MT, DT, Policy; bool isLLC;
-  const std::string tname;
-public:
-  TypeInnerPortMSIBroadcast(const std::string &name) : TypeInnerCohPortBase(name), tname("InnerPortMSIBroadcast") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
+struct TypeInnerCohPort : public TypeCoherent {
+  TypeInnerCohPort(const std::string &name, const std::string &tname ="InnerCohPort") : TypeCoherent(name, tname) {}
 };
 
-class TypeCoreInterfaceBase : public TypeInnerCohPortBase {
-public: TypeCoreInterfaceBase(const std::string &name) : TypeInnerCohPortBase(name) { types.insert("CoreInterfaceBase"); }
+struct TypeCoherentCache : public TypeCoherent {
+  TypeCoherentCache(const std::string &name, const std::string &tname) : TypeCoherent(name, tname) {}
+  virtual void emit_declaration(std::ofstream &file, bool hpp,
+                                const std::string &ename, const std::list<std::string> &params,  unsigned int size) {
+    if(hpp) file << "extern ";
+    file << "std::vector<" << name << " *> " << ename;
+    if(hpp)  file << ";" << std::endl;
+    else     file << "(" << size << ");" << std::endl;
+  }
+  virtual void emit_initialization(std::ofstream &file,
+                                   const std::string &ename, const std::list<std::string> &params,  unsigned int size) {
+    file << "  for(int i=0; i<" << size << "; i++) ";
+    file << ename << "[i] = new " << name << "(";
+    for(auto p: params) file << p << ", ";
+    file << "std::string(\"" << ename << "\") + \"_\" + std::to_string(i)";
+    file <<");" << std::endl;
+  }
 };
 
-class TypeCoreInterfaceMSI : public TypeCoreInterfaceBase
-{
-  std::string MT, DT, Policy; bool enableDelay, isLLC;
-  const std::string tname;
-public:
-  TypeCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("CoreInterfaceMSI") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-class TypeMirageOuterPortMSIUncached : public TypeOuterCohPortBase
-{
-  std::string MT, DT, Policy;
-  const std::string tname;
-public:
-  TypeMirageOuterPortMSIUncached(const std::string &name) : TypeOuterCohPortBase(name), tname("MirageOuterPortMSIUncached") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-class TypeMirageOuterPortMSI : public TypeOuterCohPortBase {
-  std::string MT, DT, Policy;
-  const std::string tname;
-public:
-  TypeMirageOuterPortMSI(const std::string &name) : TypeOuterCohPortBase(name), tname("MirageOuterPortMSI") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-class TypeMirageInnerPortMSIUncached : public TypeInnerCohPortBase
-{
-  std::string MT, DT, Policy; bool isLLC;
-  const std::string tname;
-public:
-  TypeMirageInnerPortMSIUncached(const std::string &name) : TypeInnerCohPortBase(name), tname("MirageInnerPortMSIUncached") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-class TypeMirageInnerPortMSIBroadcast : public TypeInnerCohPortBase
-{
-  std::string MT, DT, Policy; bool isLLC;
-  const std::string tname;
-public:
-  TypeMirageInnerPortMSIBroadcast(const std::string &name) : TypeInnerCohPortBase(name), tname("MirageInnerPortMSIBroadcast") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-class TypeMirageCoreInterfaceMSI : public TypeCoreInterfaceBase
-{
-  std::string MT, DT, Policy; bool enableDelay, isLLC;
-  const std::string tname;
-public:
-  TypeMirageCoreInterfaceMSI(const std::string &name) : TypeCoreInterfaceBase(name), tname("MirageCoreInterfaceMSI") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
-};
-
-class TypeCoherentCacheBase : public Description {
-public:
-  TypeCoherentCacheBase(const std::string &name) : Description(name) { types.insert("CoherentCacheBase"); }
-
-  virtual void emit_header();
-};
-
-class TypeCoherentCacheNorm : public TypeCoherentCacheBase
-{
+struct TypeCoherentCacheNorm : public TypeCoherentCache {
   std::string CacheT, OuterT, InnerT;
-  const std::string tname;
-public:
-  TypeCoherentCacheNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentCacheNorm") {}
+  TypeCoherentCacheNorm(const std::string &name, const std::string &tname ="CoherentCacheNorm")
+    : TypeCoherentCache(name, tname),
+      OuterT("OuterCohPort"), InnerT("InnerCohPort") // default to full functional ports
+  {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
-  virtual std::string get_outer() { return "->outer"; }
-  virtual std::string get_inner() { return "->inner"; }
+  
 };
 
-class TypeCoherentL1CacheNorm : public TypeCoherentCacheBase
-{
-  std::string CacheT, OuterT, CoreT; bool isLLC;
-  const std::string tname;
-public:
-  TypeCoherentL1CacheNorm(const std::string &name) : TypeCoherentCacheBase(name), tname("CoherentL1CacheNorm") {}
+struct TypeCoherentL1CacheNorm : public TypeCoherentCache {
+  std::string CacheT, OuterT, CoreT;
+  TypeCoherentL1CacheNorm(const std::string &name, const std::string &tname ="CoherentL1CacheNorm")
+    : TypeCoherentCache(name, tname),
+      OuterT("OuterCohPort"), CoreT("CoreInterface") // default to full functional output port and core interface
+  {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
-  virtual std::string get_outer() { return "->outer"; }
-  virtual std::string get_inner() { return "->inner"; }
+};
+
+struct TypeSliceDispatcher : public TypeCoherentCache {
+  std::string HT;
+  TypeSliceDispatcher(const std::string &name, const std::string &tname ="SliceDispatcher") : TypeCoherentCache(name, tname) {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
 };
 
 ////////////////////////////// Memory ///////////////////////////////////////////////
 
-class TypeSimpleMemoryModel : public TypeInnerCohPortBase
-{
+struct TypeSimpleMemoryModel : public TypeCoherentCache {
   std::string DT, DLY;
-  const std::string tname;
-public:
-  TypeSimpleMemoryModel(const std::string &name) : TypeInnerCohPortBase(name), tname("SimpleMemoryModel") {}
+  TypeSimpleMemoryModel(const std::string &name, const std::string &tname ="SimpleMemoryModel") : TypeCoherentCache(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
   virtual void emit_header();
@@ -373,164 +205,130 @@ public:
 
 ////////////////////////////// Index ///////////////////////////////////////////////
 
-class TypeIndexFuncBase : public Description {
-public:
-  TypeIndexFuncBase(const std::string &name) : Description(name) { types.insert("IndexFuncBase"); }
+struct TypeIndex : public Description {
+  int IW, IOfst;
+  TypeIndex(const std::string &name, const std::string &tname) : Description(name, tname) {}
+  virtual bool set(std::list<std::string> &values);  
+  virtual void emit(std::ofstream &file);
   virtual void emit_header();
 };
 
-class TypeIndexNorm : public TypeIndexFuncBase
-{
-  int IW, IOfst;
-  const std::string tname;
-public:
-  TypeIndexNorm(const std::string &name) : TypeIndexFuncBase(name), tname("IndexNorm") {}
-  virtual bool set(std::list<std::string> &values);  
-  virtual void emit(std::ofstream &file);
+struct TypeIndexNorm : public TypeIndex {
+  TypeIndexNorm(const std::string &name, const std::string &tname ="IndexNorm") : TypeIndex(name, tname) {}
 };
 
-class TypeIndexSkewed : public TypeIndexFuncBase
-{
-  int IW, IOfst, P;
-  const std::string tname;
-public:
-  TypeIndexSkewed(const std::string &name) : TypeIndexFuncBase(name), tname("IndexSkewed") {}
+struct TypeIndexRandom : public TypeIndex {
+  TypeIndexRandom(const std::string &name, const std::string &tname ="IndexRandom") : TypeIndex(name, tname) {}
+};
+
+struct TypeIndexSkewed : public TypeIndex {
+  int P;
+  TypeIndexSkewed(const std::string &name, const std::string &tname ="IndexSkewed") : TypeIndex(name, tname) {}
   virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-};
-
-class TypeIndexRandom : public TypeIndexFuncBase
-{
-  int IW, IOfst;
-  const std::string tname;
-public:
-  TypeIndexRandom(const std::string &name) : TypeIndexFuncBase(name), tname("IndexRandom") {}
-  virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
 };
 
 ////////////////////////////// Replacer ///////////////////////////////////////////////
 
-class TypeReplaceFuncBase : public Description {
-public:
-  TypeReplaceFuncBase(const std::string &name) : Description(name) { types.insert("ReplaceFuncBase"); }
-
-  virtual void emit_header();
-};
-
-class TypeReplaceFIFO : public TypeReplaceFuncBase
-{
+struct TypeReplace : public Description {
   int IW, NW;
-  const std::string tname;
-public:
-  TypeReplaceFIFO(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceFIFO") {}
+  TypeReplace(const std::string &name, const std::string &tname) : Description(name, tname) {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
-};
-
-class TypeReplaceLRU : public TypeReplaceFuncBase
-{
-  int IW, NW;
-  const std::string tname;
-public:
-  TypeReplaceLRU(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceLRU") {}
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-};
-
-class TypeReplaceRandom : public TypeReplaceFuncBase
-{
-  int IW, NW;
-  const std::string tname;
-public:
-  TypeReplaceRandom(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceRandom") {}
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-};
-
-class TypeReplaceCompleteRandom : public TypeReplaceFuncBase
-{
-  int IW, NW;
-  const std::string tname;
-public:
-  TypeReplaceCompleteRandom(const std::string &name) : TypeReplaceFuncBase(name), tname("ReplaceCompleteRandom") {}
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-};
-
-////////////////////////////// hasher and dispatcher ///////////////////////////////////////////////
-
-class TypeSliceHashBase : public Description {
-public:
-  TypeSliceHashBase(const std::string &name) : Description(name) { types.insert("SliceHashBase"); }
   virtual void emit_header();
 };
 
-class TypeSliceHashNorm : public TypeSliceHashBase {
+struct TypeReplaceFIFO : public TypeReplace {
+  TypeReplaceFIFO(const std::string &name, const std::string &tname ="ReplaceFIFO") : TypeReplace(name, tname) {}
+};
+
+struct TypeReplaceLRU : public TypeReplace {
+  TypeReplaceLRU(const std::string &name, const std::string &tname ="ReplaceLRU") : TypeReplace(name, tname) {}
+};
+
+struct TypeReplaceRandom : public TypeReplace {
+  TypeReplaceRandom(const std::string &name, const std::string &tname ="ReplaceRandom") : TypeReplace(name, tname) {}
+};
+
+struct TypeReplaceCompleteRandom : public TypeReplace {
+  TypeReplaceCompleteRandom(const std::string &name, const std::string &tname ="ReplaceCompleteRandom") : TypeReplace(name, tname) {}
+};
+
+////////////////////////////// hasher ///////////////////////////////////////////////
+
+struct TypeSliceHash : public Description {
+  TypeSliceHash(const std::string &name, const std::string &tname) : Description(name, tname) {}
+  virtual void emit_header();
+};
+
+struct TypeSliceHashNorm : public TypeSliceHash {
   int NLLC, BlkOfst;
-  const std::string tname;
-public:
-  TypeSliceHashNorm(const std::string &name) : TypeSliceHashBase(name), tname("SliceHashNorm") {}
+  TypeSliceHashNorm(const std::string &name, const std::string &tname ="SliceHashNorm") : TypeSliceHash(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
 
-class TypeSliceHashIntelCAS : public TypeSliceHashBase {
+struct TypeSliceHashIntelCAS : public TypeSliceHash {
   int NLLC;
-  const std::string tname;
-public:
-  TypeSliceHashIntelCAS(const std::string &name) : TypeSliceHashBase(name), tname("SliceHashIntelCAS") {}
+  TypeSliceHashIntelCAS(const std::string &name, const std::string &tname ="SliceHashIntelCAS") : TypeSliceHash(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
-};
-
-class TypeSliceDispatcher : public TypeInnerCohPortBase
-{
-  std::string HT;
-  const std::string tname;
-public:
-  TypeSliceDispatcher(const std::string &name) : TypeInnerCohPortBase(name), tname("SliceDispatcher") {}
-  virtual bool set(std::list<std::string> &values);
-  virtual void emit(std::ofstream &file);
-  virtual void emit_header();
 };
 
 ////////////////////////////// Delay ///////////////////////////////////////////////
 
-class TypeDelayBase : public Description {
-public:
-  TypeDelayBase(const std::string &name) : Description(name) { types.insert("DelayBase"); }
+struct TypeDelay : public Description {
+  TypeDelay(const std::string &name, const std::string &tname) : Description(name, tname) {}
   virtual void emit_header();
 };
 
-class TypeDelayL1 : public TypeDelayBase
-{
+struct TypeDelayL1 : public TypeDelay {
   int dhit, dreplay, dtran;
-  const std::string tname;
-public:
-  TypeDelayL1(const std::string &name) : TypeDelayBase(name), tname("DelayL1") {}
+  TypeDelayL1(const std::string &name, const std::string &tname ="DelayL1") : TypeDelay(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
 
-class TypeDelayCoherentCache : public TypeDelayBase
-{
+struct TypeDelayCoherentCache : public TypeDelay {
   int dhit, dtranUp, dtranDown;
-  const std::string tname;
-public:
-  TypeDelayCoherentCache(const std::string &name) : TypeDelayBase(name), tname("DelayCoherentCache") {}
+  TypeDelayCoherentCache(const std::string &name, const std::string &tname ="DelayCoherentCache") : TypeDelay(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
 
-class TypeDelayMemory : public TypeDelayBase
-{
+struct TypeDelayMemory : public TypeDelay {
   int dtran;
-  const std::string tname;
-public:
-  TypeDelayMemory(const std::string &name) : TypeDelayBase(name), tname("DelayMemory") {}
+  TypeDelayMemory(const std::string &name, const std::string &tname ="DelayMemory") : TypeDelay(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
+};
+
+////////////////////////////// MIRAGE Types ///////////////////////////////////////////////
+
+struct TypeMirage : public Description {
+  TypeMirage(const std::string &name, const std::string &tname) : Description(name, tname) {}
+  virtual void emit_header();
+};
+
+struct TypeMirageMetadataMSI : public TypeMetadataMSI {
+  TypeMirageMetadataMSI(const std::string &name, const std::string &tname ="MirageMetadataMSI") : TypeMetadataMSI(name, tname) {}
+  virtual void emit_header();
+};
+
+struct TypeMirageDataMeta : public TypeMirage {
+  TypeMirageDataMeta(const std::string &name, const std::string &tname ="MirageDataMeta") : TypeMirage(name, tname) {}
+};
+
+
+struct TypeCacheMirage : public  TypeMirage {
+  int IW, NW, EW, P, RW; std::string MT, DT, MTDT, MIDX, DIDX, MRPC, DRPC, DLY; bool EnMon, EnableRelocation;
+  TypeCacheMirage(const std::string &name, const std::string &tname ="CacheMirage") : TypeMirage(name, tname) {}
+  virtual bool set(std::list<std::string> &values);
+  virtual void emit(std::ofstream &file);
+};
+
+struct TypeMirageMSIPolicy : public TypeMirage {
+  TypeMirageMSIPolicy(const std::string &name, const std::string &tname ="MirageMSIPolicy") : TypeMirage(name, tname) {}
 };
 
 #endif
