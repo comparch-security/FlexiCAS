@@ -29,11 +29,10 @@ type l1_indexer_type  = IndexNorm(L1IW, BlockOffset);
 type l1_replacer_type = ReplaceLRU(L1IW, L1WN);
 type l1_delay_type    = DelayL1(1, 3, 8); // 1 cycle hit, 3 cycles for replay, and 8 cycles for block transfer
 type l1_type          = CacheNorm(L1IW, L1WN, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, l1_delay_type, false);
-type l1_policy        = MSIPolicy();
-type l1_inner_type    = CoreInterfaceMSI(l1_metadata_type, data_type, l1_policy, EnableDelay, false,);
-type l1_outer_type    = OuterPortMSI(l1_metadata_type, data_type, l1_policy);     // support reverse probe
-type l1_cache_type    = CoherentL1CacheNorm(l1_type, l1_outer_type, l1_inner_type);
-create l1 = l1_cache_type[8]; // 8 L1 caches
+type l1_policy_type   = MSIPolicy(l1_metadata_type, true, false);
+type l1_cache_type    = CoherentL1CacheNorm(l1_type);
+create l1_policy = l1_policy_type();
+create l1 = l1_cache_type(l1_policy)[8]; // 8 L1 caches
 
 // initiate the L2 cache
 type l2_metadata_type = MetadataMSI(AddrWidth, L2IW, L2TagOffset);
@@ -41,11 +40,10 @@ type l2_indexer_type  = IndexNorm(L2IW, BlockOffset);
 type l2_replacer_type = ReplaceLRU(L2IW, L2WN);
 type l2_delay_type    = DelayCoherentCache(4, 8, 20); // 4 cycles for hit, 8 cycles for grant to inner, and 20 cycles for writeback to outer
 type l2_type          = CacheNorm(L2IW, L2WN, l2_metadata_type, data_type, l2_indexer_type, l2_replacer_type, l2_delay_type, false);
-type l2_policy        = MSIPolicy();
-type l2_inner_type    = InnerPortMSIBroadcast(l2_metadata_type, data_type, l2_policy, false);
-type l2_outer_type    = OuterPortMSI(l2_metadata_type, data_type, l2_policy);     // support reverse probe
-type l2_cache_type    = CoherentCacheNorm(l2_type, l2_outer_type, l2_inner_type);
-create l2 = l2_cache_type[4]; // 4 L2 caches
+type l2_policy_type   = MSIPolicy(l2_metadata_type, false, false);
+type l2_cache_type    = CoherentCacheNorm(l2_type);
+create l2_policy = l2_policy_type();
+create l2 = l2_cache_type(l2_policy)[4]; // 4 L2 caches
 
 // initiate the llc
 type llc_metadata_type = MetadataMSI(AddrWidth, 0, LLCTagOffset);
@@ -53,11 +51,11 @@ type llc_indexer_type  = IndexSkewed(LLCIW, BlockOffset, LLCPartitionN);
 type llc_replacer_type = ReplaceLRU(LLCIW, LLCWN);
 type llc_delay_type    = DelayCoherentCache(8, 20, 40); // 8 cycles for hit, 20 cycles for grant to inner, and 40 cycles for writeback to outer
 type llc_type          = CacheSkewed(LLCIW, LLCWN, LLCPartitionN, llc_metadata_type, data_type, llc_indexer_type, llc_replacer_type, llc_delay_type, EnableMonitor);
-type llc_policy        = MSIPolicy();
-type llc_inner_type    = InnerPortMSIBroadcast(llc_metadata_type, data_type, llc_policy, true);
-type llc_outer_type    = OuterPortMSIUncached(llc_metadata_type, data_type, llc_policy);
-type llc_cache_type    = CoherentCacheNorm(llc_type, llc_outer_type, llc_inner_type);
-create llc = llc_cache_type[4]; // 4 shared llc slices
+type llc_policy_type   = MSIPolicy(llc_metadata_type, false, true);
+type llc_outer_type    = OuterCohPortUncached;
+type llc_cache_type    = CoherentCacheNorm(llc_type, llc_outer_type);
+create llc_policy = llc_policy_type();
+create llc = llc_cache_type(llc_policy)[4]; // 4 shared llc slices
 
 // LLC dispatcher
 type llc_hash_func       = SliceHashIntelCAS(4); // Intel complex address scheme, 4 LLC slices
