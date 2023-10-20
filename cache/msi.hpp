@@ -272,13 +272,4 @@ public:
   }
 };
 
-
-typedef OuterCohPortUncached OuterPortMSIUncached;
-typedef OuterCohPort OuterPortMSI;
-typedef ExclusiveOuterCohPort ExclusiveOuterPortMSI;
-typedef InnerCohPortUncached InnerPortMSIUncached;
-typedef InnerCohPort InnerPortMSI;
-typedef ExclusiveInnerCohPort ExclusiveInnerPortMSI;
-typedef CoreInterface CoreInterfaceMSI;
-
 #endif
