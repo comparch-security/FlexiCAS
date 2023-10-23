@@ -85,7 +85,7 @@ public:
 };
 
 // common behavior for cached outer ports
-template<class OPUC, typename = typename std::enable_if<std::is_base_of<OuterCohPortUncached, OPUC>::value>::type>
+template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
 class OuterCohPortT : public OPUC
 {
 public:
@@ -207,7 +207,7 @@ protected:
 
 };
 
-template<class IPUC, typename = typename std::enable_if<std::is_base_of<InnerCohPortUncached, IPUC>::value>::type> 
+template<class IPUC> requires C_DERIVE(IPUC, InnerCohPortUncached)
 class InnerCohPortT : public IPUC
 {
 public:
@@ -309,10 +309,8 @@ public:
 
 
 // Normal coherent cache
-template<typename CacheT, typename OuterT, typename InnerT,
-         typename = typename std::enable_if<std::is_base_of<CacheBase, CacheT>::value>::type,  // CacheT <- CacheBase
-         typename = typename std::enable_if<std::is_base_of<OuterCohPortBase, OuterT>::value>::type, // OuterCohPortBase <- OuterT
-         typename = typename std::enable_if<std::is_base_of<InnerCohPortBase, InnerT>::value>::type> // InnerCohPortBase <- InnerT
+template<typename CacheT, typename OuterT, typename InnerT>
+  requires C_DERIVE(CacheT, CacheBase) && C_DERIVE(OuterT, OuterCohPortBase) && C_DERIVE(InnerT, InnerCohPortBase)
 class CoherentCacheNorm : public CoherentCacheBase
 {
 public:
@@ -321,8 +319,7 @@ public:
 };
 
 // Normal L1 coherent cache
-template<typename CacheT, typename OuterT, typename CoreT,
-         typename = typename std::enable_if<std::is_base_of<CoreInterface, CoreT>::value>::type> // CoreInterfaceBase <= CoreT
+template<typename CacheT, typename OuterT, typename CoreT> requires C_DERIVE(CoreT, CoreInterface)
 using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 /////////////////////////////////
@@ -330,8 +327,7 @@ using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 // generic dispatcher
 // HT: hasher type
-template<typename HT,
-         typename = typename std::enable_if<std::is_base_of<SliceHashBase, HT>::value>::type > // HT <- SliceHashBase
+template<typename HT> requires C_DERIVE(HT, SliceHashBase)
 class SliceDispatcher : public CohMasterBase
 {
 protected:

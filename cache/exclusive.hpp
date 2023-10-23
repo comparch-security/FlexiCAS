@@ -239,7 +239,7 @@ protected:
 };
 
 
-template<class IPUC, typename = typename std::enable_if<std::is_base_of<ExclusiveInnerPortUncached, IPUC>::value>::type> 
+template<class IPUC> requires C_DERIVE(IPUC, ExclusiveInnerPortUncached)
 class ExclusiveInnerCohPortT : public IPUC
 {
 public:
@@ -258,7 +258,7 @@ public:
   }
 };
 
-template<class OPUC, typename = typename std::enable_if<std::is_base_of<OuterCohPortUncached, OPUC>::value>::type>
+template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
 class ExclusiveOuterCohPortT : public OPUC
 {
 public:

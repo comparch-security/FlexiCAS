@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <cstdint>
 #include <cassert>
-#include <type_traits>
+#include <concepts>
 
 /////////////////////////////////
 // base class
@@ -26,8 +26,7 @@ public:
 
 /////////////////////////////////
 // Inel complex address scheme (CAS)
-template<int NLLC,
-         typename = typename std::enable_if<NLLC <= 8 && NLLC == ((~NLLC + 1) & NLLC)>::type > // NLLC <= 8 and is power of 2
+template<int NLLC> requires NLLC <= 8 && NLLC == ((~NLLC + 1) & NLLC) // NLLC <= 8 and is power of 2
 class SliceHashIntelCAS : public SliceHashBase
 {
   uint32_t addr_xor(uint64_t mask, uint64_t addr) {

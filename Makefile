@@ -7,7 +7,7 @@ CXX = g++
 
 # c++17 + concept by default, c++20 would work as well
 CXXSTD = --std=c++17 -fconcepts
-
+#CXXSTD = --std=c++20
 
 ifeq ($(MODE), release)
     CXXFLAGS = $(CXXSTD) -O2 -DNDEBUG -I. -fPIC

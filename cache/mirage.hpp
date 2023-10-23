@@ -72,11 +72,8 @@ public:
 };
 
 // MirageMSI protocol
-template<typename MT, typename CT,
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,       // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<MetadataMSISupport, MT>::value>::type,    // MT <- MetadataMSISupport
-         typename = typename std::enable_if<std::is_base_of<MirageMetadataSupport, MT>::value>::type, // MT <- MirageMetadataSupport
-         typename = typename std::enable_if<std::is_base_of<CacheBase, CT>::value>::type>             // CT <- CacheBase
+template<typename MT, typename CT>
+  requires C_DERIVE3(MT, MetadataMSIBase, MetadataMSISupport, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
 class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
 {
 public:
@@ -113,16 +110,10 @@ private:
 // EnMon: whether to enable monitoring
 // EnableRelocation : whether to enable relocation
 template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
-         typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation, 
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<MirageMetadataSupport, MT>::value>::type,  // MT <- MirageMetadataSupport
-         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
-         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, DTMT>::value>::type,  // DTMT <- MirageDataMeta
-         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, MIDX>::value>::type,  // MIDX <- IndexFuncBase
-         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, DIDX>::value>::type,  // DIDX <- IndexFuncBase
-         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, MRPC>::value>::type,  // MRPC <- ReplaceFuncBase
-         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, DRPC>::value>::type,  // DRPC <- ReplaceFuncBase
-         typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
+         typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation>
+  requires C_DERIVE2(MT, MetadataMSIBase, MirageMetadataSupport) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
+           C_DERIVE(DTMT, CMMetadataBase)  && C_DERIVE(MIDX, IndexFuncBase)   && C_DERIVE(DIDX, IndexFuncBase) &&
+           C_DERIVE(MRPC, ReplaceFuncBase) && C_DERIVE(DRPC, ReplaceFuncBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
 class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
@@ -229,10 +220,8 @@ typedef OuterCohPortUncached MirageOuterPort; // MirageCache is always the LLC, 
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename CT,
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<MirageMetadataSupport, MT>::value>::type,  // MT <- MirageMetadataSupport
-         typename = typename std::enable_if<std::is_base_of<CacheBase, CT>::value>::type>             // CT <- CacheBase
+template<typename MT, typename CT>
+  requires C_DERIVE2(MT, MetadataMSIBase, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
 class MirageInnerPortUncached : public InnerCohPortUncached
 {
 public:
@@ -280,10 +269,8 @@ protected:
   }
 };
 
-template<typename MT, typename CT,
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<MirageMetadataSupport, MT>::value>::type,  // MT <- MirageMetadataSupport
-         typename = typename std::enable_if<std::is_base_of<CacheBase, CT>::value>::type>             // CT <- CacheBase
+template<typename MT, typename CT>
+  requires C_DERIVE2(MT, MetadataMSIBase, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
 using MirageInnerPort = InnerCohPortT<MirageInnerPortUncached<MT, CT> >;
 
 #endif

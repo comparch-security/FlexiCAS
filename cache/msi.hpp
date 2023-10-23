@@ -149,9 +149,7 @@ public:
 };
 
 
-template<typename MT, bool isL1, bool isLLC,
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,  // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<MetadataMSISupport, MT>::value>::type>  // MT <- MetadataMSISupport
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE2(MT, MetadataMSIBase, MetadataMSISupport)
 class MSIPolicy : public CohPolicyBase
 {
 public:
@@ -238,9 +236,7 @@ public:
 
 };
 
-template<typename MT, bool isLLC,
-         typename = typename std::enable_if<std::is_base_of<MetadataMSIBase, MT>::value>::type,     // MT <- MetadataMSIBase
-         typename = typename std::enable_if<std::is_base_of<MetadataMSISupport, MT>::value>::type>  // MT <- MetadataMSISupport
+template<typename MT, bool isLLC> requires C_DERIVE2(MT, MetadataMSIBase, MetadataMSISupport)
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>, public ExclusivePolicySupportBase    // always not L1
 {
 public:

@@ -6,9 +6,8 @@
 #include <unordered_map>
 #include <type_traits>
 
-template<typename DT, typename DLY,
-         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
-         typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
+template<typename DT, typename DLY>
+  requires C_DERIVE_OR_VOID(DT, CMDataBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
 class SimpleMemoryModel : public InnerCohPortUncached
 {
 protected:

@@ -4,13 +4,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <type_traits>
 #include <set>
 #include <map>
 #include <vector>
 
 #include "util/random.hpp"
 #include "util/monitor.hpp"
+#include "util/concept_macro.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
 
@@ -114,9 +114,8 @@ public:
 
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
-template<int IW, int NW, typename MT, typename DT,
-         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type, // MT <- CMMetadataBase
-         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type> // DT <- CMDataBase or void
+template<int IW, int NW, typename MT, typename DT>
+  requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE_OR_VOID(MT, CMMetadataBase)
 class CacheArrayNorm : public CacheArrayBase
 {
 protected:
@@ -225,12 +224,9 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon,
-         typename = typename std::enable_if<std::is_base_of<CMMetadataBase, MT>::value>::type,  // MT <- CMMetadataBase
-         typename = typename std::enable_if<std::is_base_of<CMDataBase, DT>::value || std::is_void<DT>::value>::type, // DT <- CMDataBase or void
-         typename = typename std::enable_if<std::is_base_of<IndexFuncBase, IDX>::value>::type,  // IDX <- IndexFuncBase
-         typename = typename std::enable_if<std::is_base_of<ReplaceFuncBase, RPC>::value>::type,  // RPC <- ReplaceFuncBase
-         typename = typename std::enable_if<std::is_base_of<DelayBase, DLY>::value || std::is_void<DLY>::value>::type>  // DLY <- DelayBase or void
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
+  requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
+           C_DERIVE(IDX, IndexFuncBase) && C_DERIVE(RPC, ReplaceFuncBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
 class CacheSkewed : public CacheBase
 {
 protected:
