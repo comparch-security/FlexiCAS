@@ -126,8 +126,6 @@ struct TypeMetadataMSI : public TypeMSI {
 struct TypeCoherent : public Description {
   TypeCoherent(const std::string &name, const std::string &tname) : Description(name, tname) {}
   virtual void emit_header();
-  virtual std::string get_outer() { return "->outer"; }
-  virtual std::string get_inner() { return "->inner"; }
 };
 
 struct TypeOuterCohPortUncached : public TypeCoherent {
@@ -163,6 +161,8 @@ struct TypeCoherentCache : public TypeCoherent {
     file << "std::string(\"" << ename << "\") + \"_\" + std::to_string(i)";
     file <<");" << std::endl;
   }
+  virtual std::string get_outer() { return "->outer"; }
+  virtual std::string get_inner() { return "->inner"; }
 };
 
 struct TypeCoherentCacheNorm : public TypeCoherentCache {
@@ -173,7 +173,6 @@ struct TypeCoherentCacheNorm : public TypeCoherentCache {
   {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
-  
 };
 
 struct TypeCoherentL1CacheNorm : public TypeCoherentCache {
@@ -201,6 +200,8 @@ struct TypeSimpleMemoryModel : public TypeCoherentCache {
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
   virtual void emit_header();
+  virtual std::string get_outer() { return std::string(); }
+  virtual std::string get_inner() { return std::string(); }
 };
 
 ////////////////////////////// Index ///////////////////////////////////////////////
