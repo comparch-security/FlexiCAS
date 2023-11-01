@@ -11,6 +11,7 @@
 #include "util/random.hpp"
 #include "util/monitor.hpp"
 #include "util/concept_macro.hpp"
+#include "util/query.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
 
@@ -213,10 +214,15 @@ public:
     return arrays[ai]->get_data(s, w);
   }
 
+  uint32_t get_id() { return id; }
+
+  std::string get_name() { return name;} 
+
   // access both meta and data in one function call
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
+  virtual LocInfo query_loc(uint64_t addr) = 0;
 };
 
 // Skewed Cache
@@ -289,6 +295,14 @@ public:
       if(indexer.index(addrA, i) == indexer.index(addrB, i)) 
         return true;
     return false;
+  }
+
+  virtual LocInfo query_loc(uint64_t addr) {
+    LocInfo rv(id, this);
+    for(int i=0; i<P; i++){
+      rv.insert(LocIdx(i, indexer.index(addr, i)), LocRange(0, NW-1));
+    }
+    return rv;
   }
 };
 
