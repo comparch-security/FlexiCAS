@@ -39,6 +39,7 @@ public:
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual bool probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
 
+  virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) = 0;
   friend CoherentCacheBase; // deferred assignment for cache
 };
 
@@ -62,6 +63,8 @@ public:
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
   virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
 
+  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
+  
   friend CoherentCacheBase; // deferred assignment for cache
 };
 
@@ -81,6 +84,10 @@ public:
     outer_cmd.id = this->coh_id;
     coh->writeback_resp(addr, data, outer_cmd, delay, meta ? meta->is_dirty() : false);
     policy->meta_after_writeback(outer_cmd, meta);
+  }
+
+  virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs){
+    coh->query_loc_resp(addr, locs);
   }
 };
 
@@ -138,6 +145,11 @@ public:
       flush_line(addr, cmd, delay);
     else
       write_line(addr, data_inner, cmd, delay, dirty);
+  }
+
+  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
+    outer->query_loc_req(addr, locs);
+    locs->push_front(cache->query_loc(addr));
   }
 
 protected:
@@ -265,6 +277,12 @@ public:
     assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
   }
 
+  virtual void query_loc(uint64_t addr, std::list<LocInfo> *locs){
+    addr = normalize(addr);
+    outer->query_loc_req(addr, locs);
+    locs->push_front(cache->query_loc(addr));
+  }
+
 private:
   // hide and prohibit calling these functions
   virtual uint32_t connect(CohClientBase *c) { return 0;}
@@ -314,7 +332,7 @@ template<typename CacheT, typename OuterT, typename InnerT>
 class CoherentCacheNorm : public CoherentCacheBase
 {
 public:
-  CoherentCacheNorm(CohPolicyBase *policy, std::string name = "") : CoherentCacheBase(new CacheT(), new OuterT(policy), new InnerT(policy), policy, name) {}
+  CoherentCacheNorm(CohPolicyBase *policy, std::string name = "") : CoherentCacheBase(new CacheT(name), new OuterT(policy), new InnerT(policy), policy, name) {}
   virtual ~CoherentCacheNorm() {}
 };
 
@@ -343,6 +361,9 @@ public:
   }
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true){
     this->cohm[hasher(addr)]->writeback_resp(addr, data, cmd, delay, dirty);
+  }
+  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
+    this->cohm[hasher(addr)]->query_loc_resp(addr, locs);
   }
 };
 

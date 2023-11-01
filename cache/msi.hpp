@@ -28,8 +28,9 @@ public:
 
   virtual void copy(const CMMetadataBase *m_meta) {
     auto meta = static_cast<const MetadataMSIBase *>(m_meta);
-    state = meta->state;
-    dirty = meta->dirty;
+    state  = meta->state;
+    dirty  = meta->dirty;
+    extend = meta->extend;
   }
 
 private:

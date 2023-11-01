@@ -52,6 +52,7 @@ public:
   }
 
 private:
+  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) {}
   virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) { return false; } // hidden
 };
 
