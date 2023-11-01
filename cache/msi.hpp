@@ -43,7 +43,6 @@ class MetadataMSISupport // handle extra functions needed by MSI
 public:
   virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; }
   virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; } 
-  virtual void copy(const CMMetadataBase* m_meta) {}
 };
 
 typedef MetadataMSISupport MetadataMSIBrodcast;
@@ -69,10 +68,6 @@ public:
   }
   virtual void set_sharer(uint64_t c_sharer){
     sharer = c_sharer;
-  }
-  virtual void copy(const CMMetadataBase* m_meta){
-    auto meta = dynamic_cast<const MetadataMSIDirectorySupport*>(m_meta);
-    sharer = meta->sharer;
   }
   virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);}
   virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);} 
@@ -109,7 +104,6 @@ public:
 
   virtual void copy(const CMMetadataBase *m_meta) {
     MetadataMSIBase::copy(m_meta);
-    ST::copy(m_meta);
     auto meta = static_cast<const MetadataMSI *>(m_meta);
     tag = meta->tag;
   }

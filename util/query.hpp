@@ -8,46 +8,6 @@
 #include <string>
 #include <boost/format.hpp>
 
-template<typename MT> requires C_DERIVE(MT, CMMetadataBase)
-class CBInfo
-{
-  MT meta;
-public:
-  CBInfo() {}
-  CBInfo(MT m) { meta.copy(m);}
-  // TODO: add address function
-  bool invalid()  const { return meta.is_valid();}
-  bool shared()   const { return meta.is_shared();   }
-  bool modified() const { return meta.is_modified(); }
-  bool dirty()    const { return meta.is_dirty();    }
-  std::string to_string() const{
-    std::string state;
-    if(invalid()) state = "I";
-    if(shared()) state = "S";
-    if(modified()) state = "M";
-    if(dirty()) state += "(D)";
-    auto fmt = boost::format("%s ") % state;
-    return fmt.str();
-  }
-};
-
-template<typename MT> requires C_DERIVE(MT, CMMetadataBase)
-class SetInfo{
-public:
-  std::vector<CBInfo<MT> > ways;
-  std::string to_string() const{
-    std::string rv;
-    auto it = ways.begin();
-    while(true) {
-      rv += it->to_string();
-      it++;
-      if(it != ways.end()) rv += " ";
-      else                 break;
-    }
-    return rv;
-  }
-};
-
 class LocIdx{
 public:
   uint32_t ai;
