@@ -214,9 +214,8 @@ public:
     return arrays[ai]->get_data(s, w);
   }
 
-  uint32_t get_id() { return id; }
-
-  std::string get_name() { return name;} 
+  uint32_t get_id() const { return id; }
+  const std::string& get_name() const { return name;} 
 
   // access both meta and data in one function call
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
