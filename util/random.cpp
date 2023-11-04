@@ -21,7 +21,7 @@ namespace {
 
 unsigned int cm_get_true_random() { return rd(); }
 void cm_set_random_seed(uint64_t seed) { gen32.seed(seed); gen64.seed(seed); }
-uint64_t cm_get_random_uint64() { return uniform64(gen32); }
-uint32_t cm_get_random_uint32() { return uniform32(gen64); }
+uint64_t cm_get_random_uint64() { return uniform64(gen64); }
+uint32_t cm_get_random_uint32() { return uniform32(gen32); }
 
 std::unordered_set<uint32_t> UniqueID::ids;
