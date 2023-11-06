@@ -2,8 +2,8 @@
 #define CM_REPLACE_HPP_
 
 #include <list>
+#include <vector>
 #include <unordered_set>
-#include <unordered_map>
 #include <cassert>
 #include "util/random.hpp"
 
@@ -29,17 +29,15 @@ template<int IW, int NW, bool EF = true>
 class ReplaceFIFO : public ReplaceFuncBase
 {
 protected:
-  std::unordered_map<uint32_t, std::list<uint32_t> > used_map;
-  std::unordered_map<uint32_t, std::unordered_set<uint32_t> > free_map;
+  std::vector<std::list<uint32_t> > used_map;
+  std::vector<std::unordered_set<uint32_t> > free_map;
 
 public:
-  ReplaceFIFO() : ReplaceFuncBase(1ul<<IW) {}
+  ReplaceFIFO() : ReplaceFuncBase(1ul<<IW), used_map(1ul<<IW), free_map(1ul << IW) {
+    for (auto &s: free_map) for(uint32_t i=0; i<NW; i++) s.insert(i);
+  }
   virtual ~ReplaceFIFO() {}
   virtual uint32_t replace(uint32_t s, uint32_t *w){
-    // initialize free map
-    if(!free_map.count(s))
-      for(uint32_t i=0; i<NW; i++) free_map[s].insert(i);
-
     if constexpr (EF)
       *w = free_map[s].empty() ? used_map[s].front() : *(free_map[s].begin());
     else
@@ -99,6 +97,7 @@ public:
   }
 };
 
+
 /////////////////////////////////
 // Random replacement
 // IW: index width, NW: number of ways, EF: empty first
@@ -106,16 +105,14 @@ template<int IW, int NW, bool EF = true>
 class ReplaceRandom : public ReplaceFuncBase
 {
 protected:
-  std::unordered_map<uint32_t, std::unordered_set<uint32_t> > free_map;
+  std::vector<std::unordered_set<uint32_t> > free_map;
 public:
-  ReplaceRandom() : ReplaceFuncBase(1ul<<IW) {}
+  ReplaceRandom() : ReplaceFuncBase(1ul<<IW), free_map(1ul<<IW) {
+    for (auto &s: free_map) for(uint32_t i=0; i<NW; i++) s.insert(i);
+  }
   virtual ~ReplaceRandom() {}
 
   virtual uint32_t replace(uint32_t s, uint32_t *w){
-    // initialize free map
-    if(!free_map.count(s))
-      for(uint32_t i=0; i<NW; i++) free_map[s].insert(i);
-
     if constexpr (EF)
       *w = free_map[s].empty() ? (cm_get_random_uint32() % NW) : *(free_map[s].begin());
     else
