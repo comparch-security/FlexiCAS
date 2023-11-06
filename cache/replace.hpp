@@ -24,8 +24,8 @@ public:
 
 /////////////////////////////////
 // FIFO replacement
-// IW: index width, NW: number of ways
-template<int IW, int NW>
+// IW: index width, NW: number of ways, EF: empty first
+template<int IW, int NW, bool EF = true>
 class ReplaceFIFO : public ReplaceFuncBase
 {
 protected:
@@ -36,46 +36,63 @@ public:
   ReplaceFIFO() : ReplaceFuncBase(1ul<<IW) {}
   virtual ~ReplaceFIFO() {}
   virtual uint32_t replace(uint32_t s, uint32_t *w){
+    // initialize free map
     if(!free_map.count(s))
       for(uint32_t i=0; i<NW; i++) free_map[s].insert(i);
-    if(free_map[s].size() > 0)
-      *w = *(free_map[s].begin());
+
+    if constexpr (EF)
+      *w = free_map[s].empty() ? used_map[s].front() : *(free_map[s].begin());
     else
       *w = used_map[s].front();
 
     return free_map[s].size();
   }
+
   virtual void access(uint32_t s, uint32_t w) {
-    if(free_map[s].count(w)) {
-      free_map[s].erase(w);
-      used_map[s].push_back(w);
+    if constexpr (EF) {
+      if(free_map[s].count(w)) {
+        free_map[s].erase(w);
+        used_map[s].push_back(w);
+      }
+    } else {
+      if(free_map[s].count(w)) free_map[s].erase(w);
+      if(w == used_map[s].front()) {
+        used_map[s].pop_front();
+        used_map[s].push_back(w);
+      }
     }
   }
   virtual void invalid(uint32_t s, uint32_t w){
-    used_map[s].remove(w);
+    if constexpr (EF) used_map[s].remove(w);
     free_map[s].insert(w);
   }
 };
 
 /////////////////////////////////
 // LRU replacement
-// IW: index width, NW: number of ways
-template<int IW, int NW>
-class ReplaceLRU : public ReplaceFIFO<IW, NW>
+// IW: index width, NW: number of ways, EF: empty first
+template<int IW, int NW, bool EF = true>
+class ReplaceLRU : public ReplaceFIFO<IW, NW, EF>
 {
+protected:
+  using ReplaceFIFO<IW,NW,EF>::free_map;
+  using ReplaceFIFO<IW,NW,EF>::used_map;
+
 public:
-  using ReplaceFIFO<IW,NW>::free_map;
-  using ReplaceFIFO<IW,NW>::used_map;
-  
-  ReplaceLRU() : ReplaceFIFO<IW,NW>() {}
+  ReplaceLRU() : ReplaceFIFO<IW,NW,EF>() {}
   ~ReplaceLRU() {}
 
   virtual void access(uint32_t s, uint32_t w) {
-    if(free_map[s].count(w)) {
-      free_map[s].erase(w);
-      used_map[s].push_back(w);
-    }
-    else{
+    if constexpr (EF) {
+      if(free_map[s].count(w)) {
+        free_map[s].erase(w);
+        used_map[s].push_back(w);
+      } else{
+        used_map[s].remove(w);
+        used_map[s].push_back(w);
+      }
+    } else {
+      if(free_map[s].count(w)) free_map[s].erase(w);
       used_map[s].remove(w);
       used_map[s].push_back(w);
     }
@@ -84,8 +101,8 @@ public:
 
 /////////////////////////////////
 // Random replacement
-// IW: index width, NW: number of ways
-template<int IW, int NW>
+// IW: index width, NW: number of ways, EF: empty first
+template<int IW, int NW, bool EF = true>
 class ReplaceRandom : public ReplaceFuncBase
 {
 protected:
@@ -95,12 +112,15 @@ public:
   virtual ~ReplaceRandom() {}
 
   virtual uint32_t replace(uint32_t s, uint32_t *w){
+    // initialize free map
     if(!free_map.count(s))
       for(uint32_t i=0; i<NW; i++) free_map[s].insert(i);
-    if(free_map[s].size() > 0)
-      *w = *(free_map[s].begin());
+
+    if constexpr (EF)
+      *w = free_map[s].empty() ? (cm_get_random_uint32() % NW) : *(free_map[s].begin());
     else
       *w = cm_get_random_uint32() % NW;
+
     return free_map[s].size();
   }
 
@@ -114,23 +134,4 @@ public:
   }
 };
 
-/////////////////////////////////
-// Mirage Random replacement
-// IW: index width, NW: number of ways
-template<int IW, int NW>
-class ReplaceCompleteRandom : public ReplaceFuncBase
-{
-  std::vector<uint8_t> free_blocks;
-public:
-  ReplaceCompleteRandom() : ReplaceFuncBase(1ul<<IW), free_blocks(this->nset,NW) {}
-  virtual ~ReplaceCompleteRandom() {}
-
-  virtual uint32_t replace(uint32_t s, uint32_t *w){
-    *w = cm_get_random_uint32() % NW;
-    return 0;
-  }
-
-  virtual void access(uint32_t s, uint32_t w) { free_blocks[s]--; assert(free_blocks[s]>=0); }
-  virtual void invalid(uint32_t s, uint32_t w) { free_blocks[s]++; assert(free_blocks[s]<=NW); }
-};
 #endif

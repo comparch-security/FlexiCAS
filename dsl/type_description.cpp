@@ -37,7 +37,6 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "ReplaceFIFO")                 descriptor = new TypeReplaceFIFO(type_name);
   if(base_name == "ReplaceLRU")                  descriptor = new TypeReplaceLRU(type_name);
   if(base_name == "ReplaceRandom")               descriptor = new TypeReplaceRandom(type_name);
-  if(base_name == "ReplaceCompleteRandom")       descriptor = new TypeReplaceCompleteRandom(type_name);
   if(base_name == "SliceHashNorm")               descriptor = new TypeSliceHashNorm(type_name);
   if(base_name == "SliceHashIntelCAS")           descriptor = new TypeSliceHashIntelCAS(type_name);
   if(base_name == "SliceDispatcher")             descriptor = new TypeSliceDispatcher(type_name);
@@ -58,7 +57,7 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
 
 void Description::emit_header() { codegendb.add_header("cache/cache.hpp"); }
 
-#define PROGRESS_PAR(statement) if((statement)) ++it; else return false
+#define PROGRESS_PAR(statement) if(it != values.end() && (statement)) ++it; else return false
 #define PROGRESS_STR(statement) if(it != values.end()) { statement; ++it; } else return false
 #define EARLY_TERM() if(it == values.end()) return true;
 
@@ -226,12 +225,13 @@ void TypeReplace::emit_header() { codegendb.add_header("cache/replace.hpp"); }
 bool TypeReplace::set(std::list<std::string> &values) {
   auto it = values.begin();
   PROGRESS_PAR(codegendb.parse_int(*it, IW));
-  PROGRESS_PAR(codegendb.parse_int(*it, NW));
+  PROGRESS_PAR(codegendb.parse_int(*it, NW)); EARLY_TERM();
+  PROGRESS_PAR(codegendb.parse_bool(*it, EF));
   return true;
 }
   
 void TypeReplace::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << IW << "," << NW << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << IW << "," << NW << "," << EF << "> " << this->name << ";" << std::endl;
 }  
 
 

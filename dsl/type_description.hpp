@@ -232,8 +232,11 @@ struct TypeIndexSkewed : public TypeIndex {
 ////////////////////////////// Replacer ///////////////////////////////////////////////
 
 struct TypeReplace : public Description {
-  int IW, NW;
-  TypeReplace(const std::string &name, const std::string &tname) : Description(name, tname) {}
+  int IW, NW; bool EF;
+  TypeReplace(const std::string &name, const std::string &tname)
+    : Description(name, tname),
+      EF(true) // default support empty first
+  {}
   virtual bool set(std::list<std::string> &values);  
   virtual void emit(std::ofstream &file);
   virtual void emit_header();
@@ -249,10 +252,6 @@ struct TypeReplaceLRU : public TypeReplace {
 
 struct TypeReplaceRandom : public TypeReplace {
   TypeReplaceRandom(const std::string &name, const std::string &tname ="ReplaceRandom") : TypeReplace(name, tname) {}
-};
-
-struct TypeReplaceCompleteRandom : public TypeReplace {
-  TypeReplaceCompleteRandom(const std::string &name, const std::string &tname ="ReplaceCompleteRandom") : TypeReplace(name, tname) {}
 };
 
 ////////////////////////////// hasher ///////////////////////////////////////////////
