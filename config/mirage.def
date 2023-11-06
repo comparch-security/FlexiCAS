@@ -28,11 +28,10 @@ type l1_indexer_type    = IndexNorm(L1IW, BlockOffset);
 type l1_replacer_type   = ReplaceLRU(L1IW, L1WN);
 type l1_delay_type      = void;
 type l1_type            = CacheNorm(L1IW, L1WN, l1_metadata_type, data_type, l1_indexer_type, l1_replacer_type, l1_delay_type, false);
-type l1_policy          = MSIPolicy();
-type l1_inner_type      = CoreInterfaceMSI(l1_metadata_type, data_type, l1_policy, EnableDelay, false);
-type l1_outer_type      = OuterPortMSI(l1_metadata_type, data_type, l1_policy);     // support reverse probe
-type l1_cache_type      = CoherentL1CacheNorm(l1_type, l1_outer_type, l1_inner_type);
-create l1 = l1_cache_type[1]; // 1 L1 caches
+type l1_policy_type     = MSIPolicy(l1_metadata_type, true, false);
+type l1_cache_type    = CoherentL1CacheNorm(l1_type);
+create l1_policy = l1_policy_type();
+create l1 = l1_cache_type(l1_policy)[1]; // 1 L1 caches
 
 // initiate the llc
 type llc_metadata_type   = MirageMetadataMSI(AddrWidth, 0, LLCTagOffset);
@@ -40,14 +39,14 @@ type llc_datameta_type   = MirageDataMeta();
 type llc_m_indexer_type  = IndexSkewed(LLCIW, BlockOffset, LLCPartitionN);
 type llc_d_indexer_type  = IndexRandom(LLCIW, BlockOffset);
 type llc_m_replacer_type = ReplaceLRU(LLCWS, LLCWN);
-type llc_d_replacer_type = ReplaceCompleteRandom(LLCIW, LLCWD);
+type llc_d_replacer_type = ReplaceRandom(LLCIW, LLCWD, false);
 type llc_delay_type      = void;
-type llc_type            = CacheMirage(LLCIW, LLCWN, LLCWE, LLCPartitionN, LLCRW, llc_metadata_type, data_type, llc_datameta_type, llc_m_indexer_type, llc_d_indexer_type, llc_m_replacer_type, llc_d_replacer_type, llc_delay_type, EnableMonitor, EnableRelocation);
-type llc_policy          = MirageMSIPolicy();
-type llc_inner_type      = MirageInnerPortMSIBroadcast(llc_metadata_type, data_type, llc_policy, true);
-type llc_outer_type      = MirageOuterPortMSIUncached(llc_metadata_type, data_type, llc_policy);
-type llc_cache_type      = CoherentCacheNorm(llc_type, llc_outer_type, llc_inner_type);
-create llc = llc_cache_type[1]; // 1 shared llc slices
+type llc_type            = MirageCache(LLCIW, LLCWN, LLCWE, LLCPartitionN, LLCRW, llc_metadata_type, data_type, llc_datameta_type, llc_m_indexer_type, llc_d_indexer_type, llc_m_replacer_type, llc_d_replacer_type, llc_delay_type, EnableMonitor, EnableRelocation);
+type llc_policy_type     = MSIPolicy(llc_metadata_type, false, true);
+type llc_outer_type    = OuterCohPortUncached;
+type llc_cache_type      = CoherentCacheNorm(llc_type, llc_outer_type);
+create llc_policy = llc_policy_type();
+create llc = llc_cache_type(llc_policy)[1]; // 1 shared llc slices
 
 // initiate memory
 type memory_delay_type = DelayMemory(100); // 100 cycles for grant to inner

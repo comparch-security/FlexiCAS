@@ -21,7 +21,7 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "CacheArrayNorm")              descriptor = new TypeCacheArrayNorm(type_name);
   if(base_name == "CacheSkewed")                 descriptor = new TypeCacheSkewed(type_name);
   if(base_name == "CacheNorm")                   descriptor = new TypeCacheNorm(type_name);
-  if(base_name == "CacheMirage")                 descriptor = new TypeCacheMirage(type_name);
+  if(base_name == "MirageCache")                 descriptor = new TypeMirageCache(type_name);
   if(base_name == "MSIPolicy")                   descriptor = new TypeMSIPolicy(type_name);
   if(base_name == "MirageMSIPolicy")             descriptor = new TypeMirageMSIPolicy(type_name);
   if(base_name == "OuterCohPortUncached")        descriptor = new TypeOuterCohPortUncached(type_name);
@@ -304,7 +304,7 @@ void TypeMirage::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
 
 void TypeMirageMetadataMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
 
-bool TypeCacheMirage::set(std::list<std::string> &values) {
+bool TypeMirageCache::set(std::list<std::string> &values) {
   auto it = values.begin();
   PROGRESS_PAR(codegendb.parse_int(*it, IW));
   PROGRESS_PAR(codegendb.parse_int(*it, NW));
@@ -324,6 +324,6 @@ bool TypeCacheMirage::set(std::list<std::string> &values) {
   return true;
 }
 
-void TypeCacheMirage::emit(std::ofstream &file) {
+void TypeMirageCache::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << IW << "," << NW << "," << EW << "," << P << "," << RW <<  "," << MT << "," << DT << "," << MTDT << "," << MIDX << "," << DIDX << "," << MRPC << "," << DRPC << "," << DLY << "," << EnMon << "," << EnableRelocation << "> " << this->name << ";" << std::endl;
 }

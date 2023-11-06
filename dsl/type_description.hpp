@@ -320,9 +320,9 @@ struct TypeMirageDataMeta : public TypeMirage {
 };
 
 
-struct TypeCacheMirage : public  TypeMirage {
+struct TypeMirageCache : public  TypeMirage {
   int IW, NW, EW, P, RW; std::string MT, DT, MTDT, MIDX, DIDX, MRPC, DRPC, DLY; bool EnMon, EnableRelocation;
-  TypeCacheMirage(const std::string &name, const std::string &tname ="CacheMirage") : TypeMirage(name, tname) {}
+  TypeMirageCache(const std::string &name, const std::string &tname ="MirageCache") : TypeMirage(name, tname) {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
 };
