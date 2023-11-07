@@ -18,8 +18,8 @@ protected:
   const uint32_t nset;
 public:
   ReplaceFuncBase(uint32_t nset) : nset(nset) {};
-  virtual uint32_t replace(uint32_t s, uint32_t *w) = 0; // return the number of free places
-  virtual void access(uint32_t s, uint32_t w) = 0;
+  virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0) = 0; // return the number of free places
+  virtual void access(uint32_t s, uint32_t w, uint32_t op = 0) = 0;
   virtual void invalid(uint32_t s, uint32_t w) = 0;
   virtual ~ReplaceFuncBase() {}
 };
@@ -39,7 +39,7 @@ public:
     for (auto &s: free_map) for(uint32_t i=0; i<NW; i++) s.insert(i);
   }
   virtual ~ReplaceFIFO() {}
-  virtual uint32_t replace(uint32_t s, uint32_t *w){
+  virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op){
     if constexpr (EF)
       *w = free_map[s].empty() ? used_map[s].front() : *(free_map[s].begin());
     else
@@ -48,7 +48,7 @@ public:
     return free_map[s].size();
   }
 
-  virtual void access(uint32_t s, uint32_t w) {
+  virtual void access(uint32_t s, uint32_t w, uint32_t op) {
     if constexpr (EF) {
       if(free_map[s].count(w)) {
         free_map[s].erase(w);
@@ -82,7 +82,7 @@ public:
   ReplaceLRU() : ReplaceFIFO<IW,NW,EF>() {}
   ~ReplaceLRU() {}
 
-  virtual void access(uint32_t s, uint32_t w) {
+  virtual void access(uint32_t s, uint32_t w, uint32_t op) {
     if constexpr (EF) {
       if(free_map[s].count(w)) {
         free_map[s].erase(w);
@@ -124,7 +124,7 @@ public:
   }
   virtual ~ReplaceSRRIP() {}
 
-  virtual uint32_t replace(uint32_t s, uint32_t *w) {
+  virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op) {
     if constexpr (EF)
       *w = free_map[s].empty() ? select(used_map[s]) : *(free_map[s].begin());
     else
@@ -132,7 +132,7 @@ public:
     return free_map[s].size();
   }
 
-  virtual void access(uint32_t s, uint32_t w){
+  virtual void access(uint32_t s, uint32_t w, uint32_t op){
     if(free_map[s].count(w)) {
       free_map[s].erase(w);
       used_map[s][w] = 2;
@@ -160,7 +160,7 @@ public:
   }
   virtual ~ReplaceRandom() {}
 
-  virtual uint32_t replace(uint32_t s, uint32_t *w){
+  virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op){
     if constexpr (EF)
       *w = free_map[s].empty() ? (cm_get_random_uint32() % NW) : *(free_map[s].begin());
     else
@@ -169,7 +169,7 @@ public:
     return free_map[s].size();
   }
 
-  virtual void access(uint32_t s, uint32_t w){
+  virtual void access(uint32_t s, uint32_t w, uint32_t op){
     if(free_map[s].count(w))
       free_map[s].erase(w);
   }
