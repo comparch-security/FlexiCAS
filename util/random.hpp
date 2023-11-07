@@ -54,4 +54,37 @@ public:
   }
 };
 
+// the XOR hash used by Intel comples address scheme
+class AddrXORHash
+{
+  std::vector<uint64_t> keys;
+
+  uint32_t hash(uint64_t mask, uint64_t addr) {
+    auto rv = mask & addr;
+    rv = (rv >> 32) ^ (rv & 0x0ffffffffull);
+    rv = (rv >> 16) ^ (rv & 0x0ffffull);
+    rv = (rv >>  8) ^ (rv & 0x0ffull);
+    rv = (rv >>  4) ^ (rv & 0x0full);
+    rv = (rv >>  2) ^ (rv & 0x03ull);
+    rv = (rv >>  1) ^ (rv & 0x01ull);
+    return rv;
+  }
+
+public:
+  AddrXORHash() {}
+  AddrXORHash(const std::vector<uint64_t>& keys) : keys(keys) {}
+  // virtual ~AddrXORHash() {}
+
+  void key(const std::vector<uint64_t>& k) {
+    keys = k;
+  }
+
+  uint32_t operator() (uint64_t addr) {
+    uint64_t rv = 0;
+    for(auto g: keys) rv = (rv << 1) | hash(g, addr);
+    return rv;
+  }
+};
+
+
 #endif
