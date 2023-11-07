@@ -37,6 +37,8 @@ protected:
 public:
   ReplaceFIFO() : ReplaceFuncBase(1ul<<IW), used_map(1ul<<IW), free_map(1ul << IW) {
     for (auto &s: free_map) for(uint32_t i=0; i<NW; i++) s.insert(i);
+    if constexpr (!EF)
+      for (auto &s: used_map) for(uint32_t i=0; i<NW; i++) s.push_back(i);
   }
   virtual ~ReplaceFIFO() {}
   virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0){
