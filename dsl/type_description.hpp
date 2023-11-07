@@ -250,6 +250,10 @@ struct TypeReplaceLRU : public TypeReplace {
   TypeReplaceLRU(const std::string &name, const std::string &tname ="ReplaceLRU") : TypeReplace(name, tname) {}
 };
 
+struct TypeReplaceSRRIP : public TypeReplace {
+  TypeReplaceSRRIP(const std::string &name, const std::string &tname ="ReplaceSRRIP") : TypeReplace(name, tname) {}
+};
+
 struct TypeReplaceRandom : public TypeReplace {
   TypeReplaceRandom(const std::string &name, const std::string &tname ="ReplaceRandom") : TypeReplace(name, tname) {}
 };

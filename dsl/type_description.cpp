@@ -36,6 +36,7 @@ bool DescriptionDB::create(const std::string &type_name, const std::string &base
   if(base_name == "IndexRandom")                 descriptor = new TypeIndexRandom(type_name);
   if(base_name == "ReplaceFIFO")                 descriptor = new TypeReplaceFIFO(type_name);
   if(base_name == "ReplaceLRU")                  descriptor = new TypeReplaceLRU(type_name);
+  if(base_name == "ReplaceSRRIP")                descriptor = new TypeReplaceSRRIP(type_name);
   if(base_name == "ReplaceRandom")               descriptor = new TypeReplaceRandom(type_name);
   if(base_name == "SliceHashNorm")               descriptor = new TypeSliceHashNorm(type_name);
   if(base_name == "SliceHashIntelCAS")           descriptor = new TypeSliceHashIntelCAS(type_name);
