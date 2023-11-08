@@ -75,6 +75,10 @@ public:
   AddrXORHash(const std::vector<uint64_t>& keys) : keys(keys) {}
   // virtual ~AddrXORHash() {}
 
+  void key() {
+    for(auto &k : keys) k = cm_get_random_uint64();
+  }
+
   void key(const std::vector<uint64_t>& k) {
     keys = k;
   }
