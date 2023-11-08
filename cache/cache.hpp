@@ -132,7 +132,7 @@ public:
     constexpr size_t data_num = nset * NW;
     meta.resize(meta_num);
     for(auto &m:meta) m = new MT();
-    if constexpr (!std::is_void<DT>::value) {
+    if constexpr (!C_VOID(DT)) {
       data.resize(data_num);
       for(auto &d:data) d = new DT();
     }
@@ -140,7 +140,7 @@ public:
 
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
-    if constexpr (!std::is_void<DT>::value) for(auto d:data) delete d;
+    if constexpr (!C_VOID(DT)) for(auto d:data) delete d;
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
@@ -155,7 +155,7 @@ public:
 
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*(NW+extra_way) + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
-    if constexpr (std::is_void<DT>::value) {
+    if constexpr (C_VOID(DT)) {
       return nullptr;
     } else
       return data[s*NW + w];
@@ -260,7 +260,7 @@ public:
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
     auto meta = arrays[ai]->get_meta(s, w);
-    if constexpr (!std::is_void<DT>::value)
+    if constexpr (!C_VOID(DT))
       return std::make_pair(meta, arrays[ai]->get_data(s, w));
     else
       return std::make_pair(meta, nullptr);
@@ -276,17 +276,17 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     replacer[ai].access(s, w);
-    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_read(addr, ai, s, w, hit, delay);
+    if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     replacer[ai].access(s, w);
-    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_write(addr, ai, s, w, hit, delay);
+    if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
     if(hit && evict) replacer[ai].invalid(s, w);
-    if constexpr (EnMon || !std::is_void<DLY>::value) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
+    if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){

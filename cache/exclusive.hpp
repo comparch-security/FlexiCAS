@@ -67,7 +67,7 @@ public:
       else       this->d_replacer[ai].access(s, w-NW);
     else
       this->replacer[ai].access(s, w);
-    if constexpr (EnMon || !std::is_void<DLY>::value)
+    if constexpr (EnMon || !C_VOID(DLY))
       if(w < NW) this->monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
@@ -77,18 +77,18 @@ public:
       else       this->d_replacer[ai].access(s, w-NW);
     else
       this->replacer[ai].access(s, w);
-    if constexpr (EnMon || !std::is_void<DLY>::value)
+    if constexpr (EnMon || !C_VOID(DLY))
       if(w < NW) this->monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
-    if(hit && evict) 
+    if(hit && evict)
       if constexpr (EnDir)
         if(w < NW) this->replacer[ai].invalid(s, w);
         else       this->d_replacer[ai].invalid(s, w-NW);
       else
         this->replacer[ai].invalid(s, w);
-    if constexpr (EnMon || !std::is_void<DLY>::value) 
+    if constexpr (EnMon || !C_VOID(DLY))
       if(w < NW) this->monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 

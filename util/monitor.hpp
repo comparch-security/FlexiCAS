@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <set>
 #include "util/delay.hpp"
+#include "util/concept_macro.hpp"
 
 // monitor base class
 class MonitorBase
@@ -58,11 +59,11 @@ protected:
 
 public:
   CacheMonitorSupport(uint32_t id) : MonitorContainerBase(id) {
-    if constexpr (!std::is_void<DLY>::value) timer = new DLY();
+    if constexpr (!C_VOID(DLY)) timer = new DLY();
   }
 
   virtual ~CacheMonitorSupport() {
-    if constexpr (!std::is_void<DLY>::value) delete timer;
+    if constexpr (!C_VOID(DLY)) delete timer;
   }
 
   virtual void attach_monitor(MonitorBase *m) {
@@ -73,19 +74,19 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     if constexpr (EnMon) for(auto m:monitors) m->read(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->read(addr, ai, s, w, hit, delay);
+    if constexpr (!C_VOID(DLY)) timer->read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     if constexpr (EnMon) for(auto m:monitors) m->write(addr, ai, s, w, hit);
-    if constexpr (!std::is_void<DLY>::value) timer->write(addr, ai, s, w, hit, delay);
+    if constexpr (!C_VOID(DLY)) timer->write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
     if(hit && evict) {
       if constexpr (EnMon) for(auto m:monitors) m->invalid(addr, ai, s, w);
     }
-    if constexpr (!std::is_void<DLY>::value) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
+    if constexpr (!C_VOID(DLY)) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
 };
