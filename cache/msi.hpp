@@ -38,41 +38,9 @@ private:
   virtual void to_exclusive(int32_t coh_id) {}
 };
 
-// Metadata with match function
-// AW    : address width
-// IW    : index width
-// TOfst : tag offset
-// ST    : coherence support
 template <int AW, int IW, int TOfst, typename ST>
-class MetadataMSI : public MetadataMSIBase, public ST
-{
-protected:
-  uint64_t     tag   : AW-TOfst;
-  constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
+using MetadataMSI = MetadataMixer<AW, IW, TOfst, MetadataMSIBase, ST>;
 
-public:
-  MetadataMSI() : tag(0) {}
-  virtual ~MetadataMSI() {}
-
-  virtual bool match(uint64_t addr) const { return is_valid() && ((addr >> TOfst) & mask) == tag; }
-  virtual void reset() { tag = 0; state = 0; dirty = 0; }
-  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0; }
-  virtual uint64_t addr(uint32_t s) const {
-    uint64_t addr = tag << TOfst;
-    if constexpr (IW > 0) {
-      constexpr uint32_t index_mask = (1 << IW) - 1;
-      addr |= (s & index_mask) << (TOfst - IW);
-    }
-    return addr;
-  }
-  virtual void sync(int32_t coh_id) {}
-
-  virtual void copy(const CMMetadataBase *m_meta) {
-    MetadataMSIBase::copy(m_meta);
-    auto meta = static_cast<const MetadataMSI *>(m_meta);
-    tag = meta->tag;
-  }
-};
 
 // Directory Metadata with match function
 // AW    : address width

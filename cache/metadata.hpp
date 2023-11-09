@@ -1,6 +1,8 @@
 #ifndef CM_CACHE_METADATA_HPP
 #define CM_CACHE_METADATA_HPP
 
+#include "util/concept_macro.hpp"
+
 class CMMetadataBase
 {
 public:
@@ -117,6 +119,44 @@ public:
   }
   virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);}
   virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);} 
+};
+
+// Metadata Mixer
+// AW    : address width
+// IW    : index width
+// TOfst : tag offset
+// MT    : metadata type
+// ST    : coherence support
+template <int AW, int IW, int TOfst, typename MT, typename ST>
+  requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE(ST, MetadataCoherenceSupport)
+class MetadataMixer : public MT, public ST
+{
+protected:
+  uint64_t     tag   : AW-TOfst;
+  constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
+
+public:
+  MetadataMixer() : tag(0) {}
+  virtual ~MetadataMixer() {}
+
+  virtual bool match(uint64_t addr) const { return MT::is_valid() && ((addr >> TOfst) & mask) == tag; }
+  virtual void reset() { tag = 0; MT::state = 0; MT::dirty = 0; }
+  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; MT::state = 0; MT::dirty = 0; }
+  virtual uint64_t addr(uint32_t s) const {
+    uint64_t addr = tag << TOfst;
+    if constexpr (IW > 0) {
+      constexpr uint32_t index_mask = (1 << IW) - 1;
+      addr |= (s & index_mask) << (TOfst - IW);
+    }
+    return addr;
+  }
+  virtual void sync(int32_t coh_id) {}
+
+  virtual void copy(const CMMetadataBase *m_meta) {
+    MT::copy(m_meta);
+    auto meta = static_cast<const MetadataMixer *>(m_meta);
+    tag = meta->tag;
+  }
 };
 
 
