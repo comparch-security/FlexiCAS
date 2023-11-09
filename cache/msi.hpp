@@ -38,46 +38,11 @@ private:
   virtual void to_exclusive(int32_t coh_id) {}
 };
 
-class MetadataMSISupport // handle extra functions needed by MSI
-{
-public:
-  virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; }
-  virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; } 
-};
-
-typedef MetadataMSISupport MetadataMSIBrodcast;
-
-class MetadataMSIDirectorySupport : public MetadataMSISupport, public MetadataDirectorySupportBase
-{
-protected:
-  virtual void add_sharer(int32_t coh_id) {
-    sharer |= (1ull << coh_id);
-  }
-  virtual void clean_sharer(){
-    sharer = 0;
-  }
-  virtual void delete_sharer(int32_t coh_id){
-    sharer &= ~(1ull << coh_id);
-  }
-  virtual bool is_sharer(int32_t coh_id) const {
-    return ((1ull << coh_id) & (sharer))!= 0;
-  }
-public:
-  virtual uint64_t get_sharer(){
-    return sharer;
-  }
-  virtual void set_sharer(uint64_t c_sharer){
-    sharer = c_sharer;
-  }
-  virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);}
-  virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return is_sharer(target_id) && (target_id != request_id);} 
-};
-
 // Metadata with match function
 // AW    : address width
 // IW    : index width
 // TOfst : tag offset
-// ST    : MSI support
+// ST    : coherence support
 template <int AW, int IW, int TOfst, typename ST>
 class MetadataMSI : public MetadataMSIBase, public ST
 {
@@ -113,7 +78,7 @@ public:
 // AW    : address width
 // IW    : index width
 // TOfst : tag offset
-// ST    : MSI support
+// ST    : Coherence support
 template <int AW, int IW, int TOfst, typename ST>
 class MetadataMSIDirectory : public MetadataMSI<AW, IW, TOfst, ST>
 {
@@ -150,7 +115,7 @@ public:
 };
 
 
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE2(MT, MetadataMSIBase, MetadataMSISupport)
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE2(MT, MetadataMSIBase, MetadataCoherenceSupport)
 class MSIPolicy : public CohPolicyBase
 {
 public:
@@ -237,7 +202,7 @@ public:
 
 };
 
-template<typename MT, bool isLLC> requires C_DERIVE2(MT, MetadataMSIBase, MetadataMSISupport)
+template<typename MT, bool isLLC> requires C_DERIVE2(MT, MetadataMSIBase, MetadataCoherenceSupport)
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>, public ExclusivePolicySupportBase    // always not L1
 {
 public:

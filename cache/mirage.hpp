@@ -73,7 +73,7 @@ public:
 
 // MirageMSI protocol
 template<typename MT, typename CT>
-  requires C_DERIVE3(MT, MetadataMSIBase, MetadataMSISupport, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
+  requires C_DERIVE3(MT, MetadataMSIBase, MetadataCoherenceSupport, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
 class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
 {
 public:

@@ -117,7 +117,7 @@ struct TypeMetadataMSI : public TypeMSI {
   std::string ST;
   TypeMetadataMSI(const std::string &name, const std::string &tname ="MetadataMSI")
     : TypeMSI(name, tname),
-      ST("MetadataMSIBrodcast") // default to broadcast
+      ST("MetadataBrodcast") // default to broadcast
   {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
