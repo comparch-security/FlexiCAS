@@ -57,16 +57,16 @@ public:
 // AW    : address width
 // IW    : index width
 // TOfst : tag offset
-template <int AW, int IW, int TOfst, typename ST>
-class MirageMetadataMSI : public MetadataMSI<AW, IW, TOfst, ST>, public MirageMetadataSupport
+template <int AW, int IW, int TOfst>
+class MirageMetadataMSI : public MetadataMSI<AW, IW, TOfst>, public MirageMetadataSupport
 {
 public:
-  MirageMetadataMSI() : MetadataMSI<AW, IW, TOfst, ST>(), MirageMetadataSupport() {}
+  MirageMetadataMSI() : MetadataMSI<AW, IW, TOfst>(), MirageMetadataSupport() {}
   virtual ~MirageMetadataMSI() {}
 
   virtual void copy(const CMMetadataBase *m_meta) {
-    MetadataMSI<AW, IW, TOfst, ST>::copy(m_meta);
-    auto meta = static_cast<const MirageMetadataMSI<AW, IW, TOfst, ST> *>(m_meta);
+    MetadataMSI<AW, IW, TOfst>::copy(m_meta);
+    auto meta = static_cast<const MirageMetadataMSI<AW, IW, TOfst> *>(m_meta);
     std::tie(ds, dw) = std::make_tuple(meta->ds, meta->dw);
   }
 };

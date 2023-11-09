@@ -38,17 +38,16 @@ private:
   virtual void to_exclusive(int32_t coh_id) {}
 };
 
-template <int AW, int IW, int TOfst, typename ST>
-using MetadataMSI = MetadataMixer<AW, IW, TOfst, MetadataMSIBase, ST>;
+template <int AW, int IW, int TOfst>
+using MetadataMSI = MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataBrodcast>;
 
 
 // Directory Metadata with match function
 // AW    : address width
 // IW    : index width
 // TOfst : tag offset
-// ST    : Coherence support
-template <int AW, int IW, int TOfst, typename ST>
-class MetadataMSIDirectory : public MetadataMSI<AW, IW, TOfst, ST>
+template <int AW, int IW, int TOfst>
+class MetadataMSIDirectory : public MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataDirectorySupport>
 {
 public:
 

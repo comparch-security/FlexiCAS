@@ -114,10 +114,8 @@ struct TypeMSIPolicy : public TypeMSI {
 
 struct TypeMetadataMSI : public TypeMSI {
   int AW, IW, TOfst;
-  std::string ST;
   TypeMetadataMSI(const std::string &name, const std::string &tname ="MetadataMSI")
-    : TypeMSI(name, tname),
-      ST("MetadataBrodcast") // default to broadcast
+    : TypeMSI(name, tname)
   {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
