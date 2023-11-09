@@ -15,9 +15,9 @@ public:
 
   // standard functions to supprt a type of monitoring
   virtual bool attach(uint64_t cache_id) = 0; // decide whether to attach the mointor to this cache
-  virtual void read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
-  virtual void write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
-  virtual void invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual void read(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
+  virtual void write(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) = 0;
+  virtual void invalid(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   // control
   virtual void start() = 0;    // start the monitor, assuming the monitor is just initialized
@@ -73,44 +73,44 @@ public:
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
-    if constexpr (EnMon) for(auto m:monitors) m->read(addr, ai, s, w, hit);
+    if constexpr (EnMon) for(auto m:monitors) m->read(id, addr, ai, s, w, hit);
     if constexpr (!C_VOID(DLY)) timer->read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
-    if constexpr (EnMon) for(auto m:monitors) m->write(addr, ai, s, w, hit);
+    if constexpr (EnMon) for(auto m:monitors) m->write(id, addr, ai, s, w, hit);
     if constexpr (!C_VOID(DLY)) timer->write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
     if(hit && evict) {
-      if constexpr (EnMon) for(auto m:monitors) m->invalid(addr, ai, s, w);
+      if constexpr (EnMon) for(auto m:monitors) m->invalid(id, addr, ai, s, w);
     }
     if constexpr (!C_VOID(DLY)) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
 };
 
-// performance counter
-class PFCMonitor : public MonitorBase
+// Simple Access Monitor
+class SimpleAccMonitor : public MonitorBase
 {
 protected:
   uint64_t cnt_access, cnt_miss, cnt_write, cnt_write_miss, cnt_invalid;
   bool active;
 
 public:
-  PFCMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
-  virtual ~PFCMonitor() {}
+  SimpleAccMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
+  virtual ~SimpleAccMonitor() {}
 
   virtual bool attach(uint64_t cache_id) { return true; }
 
-  virtual void read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit)  {
+  virtual void read(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit)  {
     if(!active) return;
     cnt_access++;
     if(!hit) cnt_miss++;
   }
 
-  virtual void write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) {
+  virtual void write(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit) {
     if(!active) return;
     cnt_access++;
     cnt_write++;
@@ -120,7 +120,7 @@ public:
     }
   }
 
-  virtual void invalid(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
+  virtual void invalid(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w) {
     if(!active) return;
     cnt_invalid++;
   }
