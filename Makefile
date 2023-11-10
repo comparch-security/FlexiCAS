@@ -41,6 +41,7 @@ UTIL_OBJS     = util/random.o util/query.o
 DSL_OBJS      = dsl/dsl.o dsl/entity.o dsl/statement.o dsl/type_description.o
 
 all: lib$(CONFIG).a
+.PHONY: all
 
 lib$(CONFIG).a : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $(CONFIG).o
@@ -48,6 +49,12 @@ lib$(CONFIG).a : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
 
 $(CONFIG).cpp : $(CONFIG_FILE) dsl-decoder
 	./dsl-decoder $(CONFIG_FILE) $(CONFIG)
+
+clean-$(CONFIG):
+	-rm $(CONFIG).cpp $(CONFIG).hpp $(CONFIG).o
+	-rm lib$(CONFIG).a
+
+.PHONY: clean-$(CONFIG)
 
 dsl-decoder : $(DSL_OBJS)
 	$(CXX) $(DSLCXXFLAGS) $^ -o $@
@@ -58,10 +65,18 @@ $(DSL_OBJS) : %o:%cpp $(DSL_HEADERS)
 $(UTIL_OBJS) : %o:%cpp $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+regression:
+	CONFIG=example $(MAKE) -j
+	CONFIG=example $(MAKE) clean-example
+	CONFIG=mirage  $(MAKE) -j
+	CONFIG=mirage $(MAKE) clean-mirage
+
+.PHONY: regression
+
 clean:
+	$(MAKE) clean-$(CONFIG)
 	-rm $(UTIL_OBJS)
 	-rm $(DSL_OBJS)
 	-rm dsl-decoder
-	-rm $(CONFIG).cpp $(CONFIG).hpp
-	-rm lib$(CONFIG).a
 
+.PHONY: clean
