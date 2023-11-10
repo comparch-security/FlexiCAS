@@ -19,7 +19,7 @@ public:
   virtual void to_modified(int32_t coh_id) { state = 2; }
   virtual void to_dirty() { dirty = 1; }
   virtual void to_clean() { dirty = 0; }
-  virtual void to_extend() {}
+  virtual void to_extend() { extend = 1; }
   virtual bool is_valid() const { return state; }
   virtual bool is_shared() const { return state == 1; }
   virtual bool is_modified() const {return state == 2; }
@@ -49,31 +49,30 @@ using MetadataMSI = MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataBrodca
 template <int AW, int IW, int TOfst>
 class MetadataMSIDirectory : public MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataDirectorySupport>
 {
-public:
 
-  virtual void to_extend(){
-    this->extend = 1;
+  void add_sharer_help(int32_t coh_id) {
+    if(coh_id != -1){
+      this->add_sharer(coh_id);
+      MetadataMSIBase::to_extend();
+    }
   }
 
+public:
+
   virtual void to_invalid() {
-    this->state = 0;
-    this->extend = 0;
+    MetadataMSIBase::to_invalid();
     this->clean_sharer(); 
   }
   virtual void to_shared(int32_t coh_id)  {
-    this->state = 1; 
-    if(coh_id != -1){
-      this->add_sharer(coh_id); 
-      to_extend();
-    }
+    MetadataMSIBase::to_shared(coh_id);
+    add_sharer_help(coh_id);
   }
+
   virtual void to_modified(int32_t coh_id) {
-    this->state = 2;
-    if(coh_id != -1){
-      this->add_sharer(coh_id); 
-      to_extend();
-    } 
+    MetadataMSIBase::to_modified(coh_id);
+    add_sharer_help(coh_id);
   }
+
   virtual void sync(int32_t coh_id){
     if(coh_id != -1){
       this->delete_sharer(coh_id);
