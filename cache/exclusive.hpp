@@ -110,7 +110,7 @@ public:
   ExclusiveInnerPortUncached(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
   virtual ~ExclusiveInnerPortUncached() {}
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
     auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, cmd, delay);
 
     if (data_inner) data_inner->copy(data);
@@ -120,6 +120,7 @@ public:
       assert(meta->is_extend());
       this->cache->hook_read(addr, ai, s, w, hit, delay, 1);
     }
+    return meta;
   }
 
 protected:

@@ -29,7 +29,7 @@ public:
     if constexpr (!C_VOID(DLY)) delete timer;
   }
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
     if constexpr (!C_VOID(DT)) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
@@ -38,6 +38,7 @@ public:
       data_inner->write(mem_addr);
     }
     if constexpr (!C_VOID(DLY)) timer->read(addr, 0, 0, 0, 0, delay);
+    return nullptr;
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
