@@ -76,7 +76,7 @@ public:
   virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; } 
 };
 
-typedef MetadataCoherenceSupport MetadataBrodcast;
+typedef MetadataCoherenceSupport MetadataBroadcast;
 
 // TODO : support owner
 class  MetadataDirectorySupportBase
@@ -127,8 +127,8 @@ public:
 // TOfst : tag offset
 // MT    : metadata type
 // ST    : coherence support
-template <int AW, int IW, int TOfst, typename MT, typename ST>
-  requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE(ST, MetadataCoherenceSupport)
+template <int AW, int IW, int TOfst, typename MT, typename ST, typename OutMT>
+  requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE(ST, MetadataCoherenceSupport) && C_DERIVE(OutMT, CMMetadataBase)
 class MetadataMixer : public MT, public ST
 {
 protected:
@@ -136,6 +136,7 @@ protected:
   constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
 
 public:
+  OutMT meta_outer; // maintain a copy of metadata for hierarchical coherence support
   MetadataMixer() : tag(0) {}
   virtual ~MetadataMixer() {}
 

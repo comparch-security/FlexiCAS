@@ -14,8 +14,8 @@ DescriptionDB::~DescriptionDB() {
 bool DescriptionDB::create(const std::string &type_name, const std::string &base_name, std::list<std::string> &params) {
   Description *descriptor = nullptr;
   if(base_name == "void")                        descriptor = new TypeVoid(type_name);
-  if(base_name == "MetadataMSI")                 descriptor = new TypeMetadataMSI(type_name);
-  if(base_name == "MirageMetadataMSI")           descriptor = new TypeMirageMetadataMSI(type_name);
+  if(base_name == "MetadataMSIBroadcast")        descriptor = new TypeMetadataMSIBroadcast(type_name);
+  if(base_name == "MirageMetadataMSIBroadcast")  descriptor = new TypeMirageMetadataMSIBroadcast(type_name);
   if(base_name == "MirageDataMeta")              descriptor = new TypeMirageDataMeta(type_name);
   if(base_name == "Data64B")                     descriptor = new TypeData64B(type_name);
   if(base_name == "CacheArrayNorm")              descriptor = new TypeCacheArrayNorm(type_name);
@@ -128,16 +128,17 @@ void TypeMSIPolicy::emit(std::ofstream &file) {
   file << "typedef " << tname << "<" << MT << "," << isL1 << "," << isLLC << "> " << this->name << ";" << std::endl;
 }
 
-bool TypeMetadataMSI::set(std::list<std::string> &values) {
+bool TypeMetadataMSIBroadcast::set(std::list<std::string> &values) {
   auto it = values.begin();
   PROGRESS_PAR(codegendb.parse_int(*it, AW));
   PROGRESS_PAR(codegendb.parse_int(*it, IW));
-  PROGRESS_PAR(codegendb.parse_int(*it, TOfst));
+  PROGRESS_PAR(codegendb.parse_int(*it, TOfst)); EARLY_TERM();
+  PROGRESS_STR(OutMT = *it);
   return true;
 }
 
-void TypeMetadataMSI::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "> " << this->name << ";" << std::endl;
+void TypeMetadataMSIBroadcast::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "," << OutMT << "> " << this->name << ";" << std::endl;
 }
 
 void TypeCoherent::emit_header() { codegendb.add_header("cache/coherence.hpp"); }
@@ -302,7 +303,11 @@ void TypeDelayMemory::emit(std::ofstream &file) {
 
 void TypeMirage::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
 
-void TypeMirageMetadataMSI::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
+void TypeMirageMetadataMSIBroadcast::emit_header() { codegendb.add_header("cache/mirage.hpp"); }
+
+void TypeMirageMetadataMSIBroadcast::emit(std::ofstream &file) {
+  file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "> " << this->name << ";" << std::endl;
+}
 
 bool TypeMirageCache::set(std::list<std::string> &values) {
   auto it = values.begin();

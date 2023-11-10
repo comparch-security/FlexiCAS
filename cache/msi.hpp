@@ -33,21 +33,28 @@ public:
     extend = meta->extend;
   }
 
+  // we need to give an useless implementation for these method
+  // becasue MetadataMSIBase is the minimal class need to be implemented
+  // as the outer metadata in the MetadataMixer.
+  virtual void init(uint64_t addr) {}
+  virtual uint64_t addr(uint32_t s) const { return 0; }
+  virtual void sync(int32_t coh_id) {}
+
 private:
   virtual void to_owned(int32_t coh_id) {}
   virtual void to_exclusive(int32_t coh_id) {}
 };
 
-template <int AW, int IW, int TOfst>
-using MetadataMSI = MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataBrodcast>;
+template <int AW, int IW, int TOfst, typename OutMT = MetadataMSIBase>
+using MetadataMSIBroadcast = MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataBroadcast, OutMT>;
 
 
 // Directory Metadata with match function
 // AW    : address width
 // IW    : index width
 // TOfst : tag offset
-template <int AW, int IW, int TOfst>
-class MetadataMSIDirectory : public MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataDirectorySupport>
+template <int AW, int IW, int TOfst, typename OutMT = MetadataMSIBase>
+class MetadataMSIDirectory : public MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataDirectorySupport, OutMT>
 {
 
   void add_sharer_help(int32_t coh_id) {

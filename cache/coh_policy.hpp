@@ -65,7 +65,9 @@ public:
   // acquire
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
-  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const { // after fetch from outer
+
+  // update meta after fetching from outer cache
+  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr, CMMetadataBase *outer_meta) const {
     assert(outer->is_acquire(outer_cmd));
     if(meta){ // exclusive snooping cache use nullptr as meta when acquire outer
       meta->init(addr);

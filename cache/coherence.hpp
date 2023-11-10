@@ -77,8 +77,8 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = this->coh_id;
-    coh->acquire_resp(addr, data, outer_cmd, delay);
-    policy->meta_after_fetch(outer_cmd, meta, addr);
+    auto outer_meta = coh->acquire_resp(addr, data, outer_cmd, delay);
+    policy->meta_after_fetch(outer_cmd, meta, addr, outer_meta);
   }
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = this->coh_id;

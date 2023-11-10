@@ -23,7 +23,7 @@ const EnableRelocation = true;  // disable cuckoo relocation
 type data_type         = Data64B();
 
 // initiate the L1 cache
-type l1_metadata_type   = MetadataMSI(AddrWidth, L1IW, L1TagOffset);
+type l1_metadata_type   = MetadataMSIBroadcast(AddrWidth, L1IW, L1TagOffset);
 type l1_indexer_type    = IndexNorm(L1IW, BlockOffset);
 type l1_replacer_type   = ReplaceLRU(L1IW, L1WN);
 type l1_delay_type      = void;
@@ -34,7 +34,7 @@ create l1_policy = l1_policy_type();
 create l1 = l1_cache_type(l1_policy)[1]; // 1 L1 caches
 
 // initiate the llc
-type llc_metadata_type   = MirageMetadataMSI(AddrWidth, 0, LLCTagOffset);
+type llc_metadata_type   = MirageMetadataMSIBroadcast(AddrWidth, 0, LLCTagOffset);
 type llc_datameta_type   = MirageDataMeta();
 type llc_m_indexer_type  = IndexSkewed(LLCIW, BlockOffset, LLCPartitionN);
 type llc_d_indexer_type  = IndexRandom(LLCIW, BlockOffset);

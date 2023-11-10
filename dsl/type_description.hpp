@@ -112,10 +112,11 @@ struct TypeMSIPolicy : public TypeMSI {
   }
 };
 
-struct TypeMetadataMSI : public TypeMSI {
+struct TypeMetadataMSIBroadcast : public TypeMSI {
   int AW, IW, TOfst;
-  TypeMetadataMSI(const std::string &name, const std::string &tname ="MetadataMSI")
-    : TypeMSI(name, tname)
+  std::string OutMT;
+  TypeMetadataMSIBroadcast(const std::string &name, const std::string &tname ="MetadataMSIBroadcast")
+    : TypeMSI(name, tname), OutMT("MetadataMSIBase")
   {}
   virtual bool set(std::list<std::string> &values);
   virtual void emit(std::ofstream &file);
@@ -312,9 +313,10 @@ struct TypeMirage : public Description {
   virtual void emit_header();
 };
 
-struct TypeMirageMetadataMSI : public TypeMetadataMSI {
-  TypeMirageMetadataMSI(const std::string &name, const std::string &tname ="MirageMetadataMSI") : TypeMetadataMSI(name, tname) {}
+struct TypeMirageMetadataMSIBroadcast : public TypeMetadataMSIBroadcast {
+  TypeMirageMetadataMSIBroadcast(const std::string &name, const std::string &tname ="MirageMetadataMSIBroadcast") : TypeMetadataMSIBroadcast(name, tname) {}
   virtual void emit_header();
+  virtual void emit(std::ofstream &file);
 };
 
 struct TypeMirageDataMeta : public TypeMirage {
