@@ -59,8 +59,8 @@ public:
 
   std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c) { coh.push_back(c); return std::make_pair(coh.size()-1, policy);}
 
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
+  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
   virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
@@ -77,12 +77,14 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = this->coh_id;
-    coh->acquire_resp(addr, data, outer_cmd, delay);
+    CMMetadataBase *outer_meta = meta ? meta->get_outer_meta() : nullptr;
+    coh->acquire_resp(addr, data, outer_meta, outer_cmd, delay);
     policy->meta_after_fetch(outer_cmd, meta, addr);
   }
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = this->coh_id;
-    coh->writeback_resp(addr, data, outer_cmd, delay, meta ? meta->is_dirty() : false);
+    CMMetadataBase *outer_meta = meta ? meta->get_outer_meta() : nullptr;
+    coh->writeback_resp(addr, data, outer_meta, outer_cmd, delay, meta ? meta->is_dirty() : false);
     policy->meta_after_writeback(outer_cmd, meta);
   }
 
@@ -132,20 +134,20 @@ public:
   InnerCohPortUncached(CohPolicyBase *policy) : InnerCohPortBase(policy) {}
   virtual ~InnerCohPortUncached() {}
 
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
     auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, outer_cmd, delay);
 
     if (data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
-    policy->meta_after_grant(outer_cmd, meta);
+    policy->meta_after_grant(outer_cmd, meta, meta_inner);
     this->cache->hook_read(addr, ai, s, w, hit, delay);
     return meta;
   }
 
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
     if(policy->is_flush(cmd))
       flush_line(addr, cmd, delay);
     else
-      write_line(addr, data_inner, cmd, delay, dirty);
+      write_line(addr, data_inner, meta_inner, cmd, delay, dirty);
   }
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
@@ -188,14 +190,14 @@ protected:
     return std::make_tuple(meta, data, ai, s, w, hit);
   }
 
-  virtual void write_line(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
+  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     bool hit = this->cache->hit(addr, &ai, &s, &w); assert(hit); // must hit
     std::tie(meta, data) = this->cache->access_line(ai, s, w);
     if(data_inner) data->copy(data_inner);
-    policy->meta_after_release(meta);
+    policy->meta_after_release(cmd, meta, meta_inner);
     this->cache->hook_write(addr, ai, s, w, hit, delay);
   }
 
@@ -287,7 +289,7 @@ public:
 private:
   // hide and prohibit calling these functions
   virtual uint32_t connect(CohClientBase *c) { return 0;}
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return nullptr; }
+  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) { return nullptr; }
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {}
 };
 
@@ -357,11 +359,11 @@ public:
   SliceDispatcher(const std::string &n) : CohMasterBase(nullptr), name(n) {}
   virtual ~SliceDispatcher() {}
   void connect(CohMasterBase *c) { cohm.push_back(c); }
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay){
-    return this->cohm[hasher(addr)]->acquire_resp(addr, data, cmd, delay);
+  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
+    return this->cohm[hasher(addr)]->acquire_resp(addr, data_inner, meta_inner, cmd, delay);
   }
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true){
-    this->cohm[hasher(addr)]->writeback_resp(addr, data, cmd, delay, dirty);
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true){
+    this->cohm[hasher(addr)]->writeback_resp(addr, data, meta_inner, cmd, delay, dirty);
   }
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
     this->cohm[hasher(addr)]->query_loc_resp(addr, locs);

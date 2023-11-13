@@ -139,6 +139,7 @@ protected:
   virtual void clean_sharer(){ sharer = 0; }
   virtual void delete_sharer(int32_t coh_id){ sharer &= ~(1ull << coh_id); }
   virtual bool is_sharer(int32_t coh_id) const { return ((1ull << coh_id) & (sharer))!= 0; }
+  virtual bool is_exclusive_sharer(int32_t coh_id) const {return (1ull << coh_id) == sharer; }
 
 public:
   virtual void to_invalid()                 { MetadataBroadcastBase::to_invalid();         clean_sharer(); }
@@ -170,7 +171,7 @@ public:
 // MT    : metadata type
 // OutMT : the metadata type to store outer cache state
 template <int AW, int IW, int TOfst, typename MT, typename OutMT>
-  requires C_DERIVE(MT, MetadataBroadcastBase) && C_DERIVE(OutMT, MetadataBroadcastBase) && !C_DERIVE(OutMT, MetadataDirectoryBase)
+  requires C_DERIVE(MT, MetadataBroadcastBase) && C_DERIVE_OR_VOID(OutMT, MetadataBroadcastBase) && !C_DERIVE(OutMT, MetadataDirectoryBase)
 class MetadataMixer : public MT
 {
 protected:

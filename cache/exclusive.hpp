@@ -110,13 +110,13 @@ public:
   ExclusiveInnerPortUncached(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
   virtual ~ExclusiveInnerPortUncached() {}
 
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, cmd, delay);
 
     if (data_inner) data_inner->copy(data);
     if(meta){ 
       // using snooping protocol meta must be nullptr, only using directory protocol meta is valid
-      policy->meta_after_grant(cmd, meta);
+      policy->meta_after_grant(cmd, meta, meta_inner);
       assert(meta->is_extend());
       this->cache->hook_read(addr, ai, s, w, hit, delay, 1);
     }

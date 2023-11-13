@@ -80,17 +80,17 @@ public:
     }
   }
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta) const { // after grant to inner
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
     assert(is_acquire(cmd));
     int32_t id = cmd.id;
     if(meta){
-      if(is_fetch_read(cmd)) meta->to_shared(id);
-      else {
+      if(is_fetch_read(cmd)) {
+        meta->to_shared(id);
+        if(meta_inner) meta_inner->to_shared(-1);
+      } else {
         assert(is_fetch_write(cmd));
         meta->to_modified(id);
-        // ToDo: Do we need this nullptr check?
-        CMMetadataBase * outer_meta = meta->get_outer_meta();
-        if(outer_meta) outer_meta->to_modified(-1);
+        if(meta_inner) meta_inner->to_modified(-1);
       }
     }
   }
@@ -134,7 +134,14 @@ public:
   }
 
   // release from inner
-  virtual void meta_after_release(CMMetadataBase *meta) const { meta->to_dirty();}
+  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
+    meta->to_dirty();
+    if(meta_inner) {
+      assert(is_release(cmd));
+      if(is_evict(cmd)) meta_inner->to_invalid();
+      else              meta_inner->to_shared(-1);
+    }
+  }
 
   // flush
   virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
