@@ -132,13 +132,12 @@ bool TypeMetadataMSIBroadcast::set(std::list<std::string> &values) {
   auto it = values.begin();
   PROGRESS_PAR(codegendb.parse_int(*it, AW));
   PROGRESS_PAR(codegendb.parse_int(*it, IW));
-  PROGRESS_PAR(codegendb.parse_int(*it, TOfst)); EARLY_TERM();
-  PROGRESS_STR(OutMT = *it);
+  PROGRESS_PAR(codegendb.parse_int(*it, TOfst));
   return true;
 }
 
 void TypeMetadataMSIBroadcast::emit(std::ofstream &file) {
-  file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "," << OutMT << "> " << this->name << ";" << std::endl;
+  file << "typedef " << tname << "<" << AW << "," << IW << "," << TOfst << "> " << this->name << ";" << std::endl;
 }
 
 void TypeCoherent::emit_header() { codegendb.add_header("cache/coherence.hpp"); }

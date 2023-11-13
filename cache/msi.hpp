@@ -4,91 +4,26 @@
 #include "cache/exclusive.hpp"
 
 // metadata supporting MSI coherency
-class MetadataMSIBase : public CMMetadataBase
+template <typename BT>
+  requires C_SAME(BT, MetadataBroadcastBase) || C_SAME(BT, MetadataDirectoryBase)
+class MetadataMSIBase : public BT
 {
-protected:
-  unsigned int state     : 2; // 0: invalid, 1: shared, 2:modify
-  unsigned int dirty     : 1; // 0: clean, 1: dirty
-  unsigned int extend    : 1; // 0: cache meta, 1: extend directory meta
 public:
-  MetadataMSIBase() : state(0), dirty(0), extend(0) {}
+  MetadataMSIBase(): BT() {}
   virtual ~MetadataMSIBase() {}
-
-  virtual void to_invalid() { state = 0; }
-  virtual void to_shared(int32_t coh_id) { state = 1; }
-  virtual void to_modified(int32_t coh_id) { state = 2; }
-  virtual void to_dirty() { dirty = 1; }
-  virtual void to_clean() { dirty = 0; }
-  virtual void to_extend() { extend = 1; }
-  virtual bool is_valid() const { return state; }
-  virtual bool is_shared() const { return state == 1; }
-  virtual bool is_modified() const {return state == 2; }
-  virtual bool is_dirty() const { return dirty; }
-  virtual bool is_extend() const { return extend; }
-
-  virtual void copy(const CMMetadataBase *m_meta) {
-    auto meta = static_cast<const MetadataMSIBase *>(m_meta);
-    state  = meta->state;
-    dirty  = meta->dirty;
-    extend = meta->extend;
-  }
-
-  // we need to give an useless implementation for these method
-  // becasue MetadataMSIBase is the minimal class need to be implemented
-  // as the outer metadata in the MetadataMixer.
-  virtual void init(uint64_t addr) {}
-  virtual uint64_t addr(uint32_t s) const { return 0; }
-  virtual void sync(int32_t coh_id) {}
 
 private:
   virtual void to_owned(int32_t coh_id) {}
   virtual void to_exclusive(int32_t coh_id) {}
 };
 
-template <int AW, int IW, int TOfst, typename OutMT = MetadataMSIBase>
-using MetadataMSIBroadcast = MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataBroadcast, OutMT>;
+template <int AW, int IW, int TOfst>
+using MetadataMSIBroadcast = MetadataBroadcast<AW, IW, TOfst, MetadataMSIBase<MetadataBroadcastBase> >;
 
+template <int AW, int IW, int TOfst>
+using MetadataMSIDirectory = MetadataDirectory<AW, IW, TOfst, MetadataMSIBase<MetadataDirectoryBase> >;
 
-// Directory Metadata with match function
-// AW    : address width
-// IW    : index width
-// TOfst : tag offset
-template <int AW, int IW, int TOfst, typename OutMT = MetadataMSIBase>
-class MetadataMSIDirectory : public MetadataMixer<AW, IW, TOfst, MetadataMSIBase, MetadataDirectorySupport, OutMT>
-{
-
-  void add_sharer_help(int32_t coh_id) {
-    if(coh_id != -1){
-      this->add_sharer(coh_id);
-      MetadataMSIBase::to_extend();
-    }
-  }
-
-public:
-
-  virtual void to_invalid() {
-    MetadataMSIBase::to_invalid();
-    this->clean_sharer(); 
-  }
-  virtual void to_shared(int32_t coh_id)  {
-    MetadataMSIBase::to_shared(coh_id);
-    add_sharer_help(coh_id);
-  }
-
-  virtual void to_modified(int32_t coh_id) {
-    MetadataMSIBase::to_modified(coh_id);
-    add_sharer_help(coh_id);
-  }
-
-  virtual void sync(int32_t coh_id){
-    if(coh_id != -1){
-      this->delete_sharer(coh_id);
-    }
-  }
-};
-
-
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE2(MT, MetadataMSIBase, MetadataCoherenceSupport)
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
 class MSIPolicy : public CohPolicyBase
 {
 public:
@@ -116,9 +51,10 @@ public:
   }
 
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if constexpr (!isLLC) {
+    if constexpr (!isLLC) { // ToDo: do we really need this, let memory always set OutMT to M
       assert(is_acquire(cmd));
-      if(is_fetch_write(cmd) && !meta->is_modified())
+      auto outer_meta = meta->get_outer_meta();
+      if(is_fetch_write(cmd) && !(outer_meta ? outer_meta->allow_write() : meta->allow_write()))
         return std::make_pair(true, outer->cmd_for_write());
       else
         return std::make_pair(false, cmd_for_null());
@@ -138,7 +74,8 @@ public:
     if(meta){
       auto meta_msi = static_cast<const MT *>(meta);
       if((is_evict(cmd)     && meta_msi->evict_need_probe(target_inner_id, cmd.id))     ||
-        (is_writeback(cmd) && meta_msi->writeback_need_probe(target_inner_id, cmd.id)) ) {
+        (is_writeback(cmd)  && meta_msi->writeback_need_probe(target_inner_id, cmd.id)) )
+      {
         cmd.id = -1;
         return std::make_pair(true, cmd);
       } else
@@ -175,7 +112,7 @@ public:
 
 };
 
-template<typename MT, bool isLLC> requires C_DERIVE2(MT, MetadataMSIBase, MetadataCoherenceSupport)
+template<typename MT, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>, public ExclusivePolicySupportBase    // always not L1
 {
 public:

@@ -67,13 +67,14 @@ public:
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
 
   // update meta after fetching from outer cache
-  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr, CMMetadataBase *outer_meta) const {
+  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
     assert(outer->is_acquire(outer_cmd));
     if(meta){ // exclusive snooping cache use nullptr as meta when acquire outer
       meta->init(addr);
       if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
       else {
-        assert(outer->is_fetch_write(outer_cmd));
+        auto outer_meta = meta->get_outer_meta();
+        assert(outer->is_fetch_write(outer_cmd) && (!outer_meta || outer_meta->allow_write()) );
         meta->to_modified(-1);
       }
     }
@@ -87,6 +88,9 @@ public:
       else {
         assert(is_fetch_write(cmd));
         meta->to_modified(id);
+        // ToDo: Do we need this nullptr check?
+        CMMetadataBase * outer_meta = meta->get_outer_meta();
+        if(outer_meta) outer_meta->to_modified(-1);
       }
     }
   }
@@ -145,7 +149,7 @@ public:
 
 protected:
   std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
-    if(meta && meta->is_shared() && !meta->is_extend()) return std::make_pair(false, cmd_for_null());
+    if(meta && meta->is_shared() && !meta->is_extend()) return std::make_pair(false, cmd_for_null()); // need fix, move the extended support somewhere else
     // for all other potential states (M, O, E), the inner cache holds the latest copy
     // if meta is extend, the inner cache holds the copy
     else                  return std::make_pair(true, coh_cmd_t{coh_id, probe_msg, writeback_act});

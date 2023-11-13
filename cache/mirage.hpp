@@ -16,6 +16,7 @@ public:
   std::tuple<uint32_t, uint32_t, uint32_t> pointer() { return std::make_tuple(mai, ms, mw);} // return the pointer to data
   virtual void to_invalid() { state = false; }
   virtual bool is_valid() const { return state; }
+  virtual bool allow_write() const {return state; }
   
   virtual void copy(const CMMetadataBase *m_meta) {
     auto meta = static_cast<const MirageDataMeta *>(m_meta);
@@ -74,7 +75,7 @@ public:
 
 // MirageMSI protocol
 template<typename MT, typename CT>
-  requires C_DERIVE3(MT, MetadataMSIBase, MetadataCoherenceSupport, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
+  requires C_DERIVE2(MT, MetadataBroadcastBase, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
 class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
 {
 public:
@@ -112,7 +113,7 @@ private:
 // EnableRelocation : whether to enable relocation
 template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation>
-  requires C_DERIVE2(MT, MetadataMSIBase, MirageMetadataSupport) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
+  requires C_DERIVE2(MT, MetadataBroadcastBase, MirageMetadataSupport) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
            C_DERIVE(DTMT, CMMetadataBase)  && C_DERIVE(MIDX, IndexFuncBase)   && C_DERIVE(DIDX, IndexFuncBase) &&
            C_DERIVE(MRPC, ReplaceFuncBase) && C_DERIVE(DRPC, ReplaceFuncBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
 class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>
@@ -222,7 +223,7 @@ typedef OuterCohPortUncached MirageOuterPort; // MirageCache is always the LLC, 
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
 template<typename MT, typename CT>
-  requires C_DERIVE2(MT, MetadataMSIBase, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
+  requires C_DERIVE2(MT, MetadataBroadcastBase, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
 class MirageInnerPortUncached : public InnerCohPortUncached
 {
 public:
@@ -271,7 +272,7 @@ protected:
 };
 
 template<typename MT, typename CT>
-  requires C_DERIVE2(MT, MetadataMSIBase, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
+  requires C_DERIVE2(MT, MetadataBroadcastBase, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
 using MirageInnerPort = InnerCohPortT<MirageInnerPortUncached<MT, CT> >;
 
 #endif
