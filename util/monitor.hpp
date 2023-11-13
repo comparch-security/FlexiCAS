@@ -148,4 +148,25 @@ public:
   uint64_t get_invalid() { return cnt_invalid; }
 };
 
+// a tracer
+class SimpleTracer : public MonitorBase
+{
+  bool active;
+public:
+  SimpleTracer(): active(true) {}
+  virtual ~SimpleTracer() {}
+
+  virtual bool attach(uint64_t cache_id) { return true; }
+
+  virtual void read(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit);
+  virtual void write(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit);
+  virtual void invalid(uint64_t cache_id, uint64_t addr, uint32_t ai, uint32_t s, uint32_t w);
+
+  virtual void start() { active = true;  }
+  virtual void stop()  { active = false; }
+  virtual void pause() { active = false; }
+  virtual void resume() { active = true; }
+  virtual void reset() { active = false; }
+};
+
 #endif

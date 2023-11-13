@@ -37,7 +37,7 @@ UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
 DSL_HEADERS   = $(wildcard dsl/*.hpp)
 
-UTIL_OBJS     = util/random.o util/query.o
+UTIL_OBJS     = util/random.o util/query.o util/monitor.o
 DSL_OBJS      = dsl/dsl.o dsl/entity.o dsl/statement.o dsl/type_description.o
 
 all: lib$(CONFIG).a
