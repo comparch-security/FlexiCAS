@@ -3,7 +3,7 @@
 
 #include <list>
 #include <vector>
-#include <unordered_set>
+#include <set>
 #include <algorithm>
 #include <iterator>
 #include <cassert>
@@ -32,7 +32,7 @@ class ReplaceFIFO : public ReplaceFuncBase
 {
 protected:
   std::vector<std::list<uint32_t> > used_map;
-  std::vector<std::unordered_set<uint32_t> > free_map;
+  std::vector<std::set<uint32_t> > free_map;
 
 public:
   ReplaceFIFO() : ReplaceFuncBase(1ul<<IW), used_map(1ul<<IW), free_map(1ul << IW) {
@@ -43,7 +43,7 @@ public:
   virtual ~ReplaceFIFO() {}
   virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0){
     if constexpr (EF)
-      *w = free_map[s].empty() ? used_map[s].front() : *(free_map[s].begin());
+      *w = free_map[s].empty() ? used_map[s].front() : *(free_map[s].cbegin());
     else
       *w = used_map[s].front();
 
@@ -128,7 +128,7 @@ public:
 
   virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0) {
     if constexpr (EF)
-      *w = free_map[s].empty() ? select(used_map[s]) : *(free_map[s].begin());
+      *w = free_map[s].empty() ? select(used_map[s]) : *(free_map[s].cbegin());
     else
       *w = select(used_map[s]);
     return free_map[s].size();
@@ -164,7 +164,7 @@ public:
 
   virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0){
     if constexpr (EF)
-      *w = free_map[s].empty() ? (cm_get_random_uint32() % NW) : *(free_map[s].begin());
+      *w = free_map[s].empty() ? (cm_get_random_uint32() % NW) : *(free_map[s].cbegin());
     else
       *w = cm_get_random_uint32() % NW;
 
