@@ -99,7 +99,7 @@ protected:
 public:
   MonitorContainerBase *monitors; // monitor container
 
-  CacheBase(std::string name) : id(UniqueID::new_id()), name(name) {}
+  CacheBase(std::string name) : id(UniqueID::new_id(name)), name(name) {}
 
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
