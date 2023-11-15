@@ -330,7 +330,7 @@ public:
 
 
 // Normal coherent cache
-template<typename CacheT, typename OuterT, typename InnerT>
+template<typename CacheT, typename OuterT = OuterCohPort, typename InnerT = InnerCohPort>
   requires C_DERIVE(CacheT, CacheBase) && C_DERIVE(OuterT, OuterCohPortBase) && C_DERIVE(InnerT, InnerCohPortBase)
 class CoherentCacheNorm : public CoherentCacheBase
 {
@@ -340,7 +340,7 @@ public:
 };
 
 // Normal L1 coherent cache
-template<typename CacheT, typename OuterT, typename CoreT> requires C_DERIVE(CoreT, CoreInterface)
+template<typename CacheT, typename OuterT = OuterCohPort, typename CoreT = CoreInterface> requires C_DERIVE(CoreT, CoreInterface)
 using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 /////////////////////////////////
