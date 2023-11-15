@@ -198,7 +198,8 @@ protected:
     std::tie(meta, data) = this->cache->access_line(ai, s, w);
     if(data_inner) data->copy(data_inner);
     policy->meta_after_release(cmd, meta, meta_inner);
-    this->cache->hook_write(addr, ai, s, w, hit, delay);
+    assert(meta_inner); // assume meta_inner is valid for all writebacks
+    this->cache->hook_write(addr, ai, s, w, hit, true, delay);
   }
 
   virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
@@ -265,7 +266,7 @@ public:
     auto cmd = policy->cmd_for_write();
     auto [meta, m_data, ai, s, w, hit] = access_line(addr, nullptr, cmd, delay);
     meta->to_dirty();
-    this->cache->hook_write(addr, ai, s, w, hit, delay);
+    this->cache->hook_write(addr, ai, s, w, hit, false, delay);
     if(m_data) m_data->copy(data);
   }
 

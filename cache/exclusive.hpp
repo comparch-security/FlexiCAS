@@ -63,20 +63,20 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
     if constexpr (EnDir)
-      if(w < NW) this->replacer[ai].access(s, w);
-      else       this->d_replacer[ai].access(s, w-NW);
+      if(w < NW) this->replacer[ai].access(s, w, false);
+      else       this->d_replacer[ai].access(s, w-NW, false);
     else
-      this->replacer[ai].access(s, w);
+      this->replacer[ai].access(s, w, false);
     if constexpr (EnMon || !C_VOID(DLY))
       if(w < NW) this->monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay, unsigned int genre = 0) {
     if constexpr (EnDir)
-      if(w < NW) this->replacer[ai].access(s, w);
-      else       this->d_replacer[ai].access(s, w-NW);
+      if(w < NW) this->replacer[ai].access(s, w, is_release);
+      else       this->d_replacer[ai].access(s, w-NW, is_release);
     else
-      this->replacer[ai].access(s, w);
+      this->replacer[ai].access(s, w, is_release);
     if constexpr (EnMon || !C_VOID(DLY))
       if(w < NW) this->monitors->hook_write(addr, ai, s, w, hit, delay);
   }
@@ -204,7 +204,7 @@ protected:
       // invalid other inner cache who holds the addr
       auto sync = dynamic_cast<ExclusivePolicySupportBase *>(policy)->release_need_probe(cmd, mmeta);
       if(sync.first) probe_req(addr, mmeta, data, sync.second, delay);
-      this->cache->hook_write(addr, ai, s, w, hit, delay);      
+      this->cache->hook_write(addr, ai, s, w, hit, true, delay);
     }
   }
 
