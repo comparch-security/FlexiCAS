@@ -16,31 +16,8 @@ class CacheSkewedExclusive : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY
 protected:
   DRPC d_replacer[P];
 public:
-  CacheSkewedExclusive(std::string name = "") : CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>(name) {
-    for(int i = 0; i<P; i++){
-      delete this->arrays[i];
-      this->arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(DW);
-    }
-  }
+  CacheSkewedExclusive(std::string name = "") : CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>(name, 0, (EnDir ? DW : 0)) {}
 
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w){
-    for(*ai=0; *ai<P; (*ai)++) {
-      *s = this->indexer.index(addr, *ai);
-      for(*w=0; *w<NW; (*w)++){
-        if(this->access(*ai, *s, *w)->match(addr)) return true;
-      }
-    }
-    if constexpr (EnDir){
-      for(*ai=0; *ai<P; (*ai)++) {
-        *s = this->indexer.index(addr, *ai);
-        for(*w=NW; *w<(NW+DW); (*w)++){
-          if(this->access(*ai, *s, *w)->match(addr)) return true;
-        }
-      }
-    }
-    return false;
-  }
- 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0){
     if constexpr (P==1) *ai = 0;
     else                *ai = (cm_get_random_uint32() % P);
@@ -65,10 +42,13 @@ public:
     if constexpr (EnDir)
       if(w < NW) this->replacer[ai].access(s, w, false);
       else       this->d_replacer[ai].access(s, w-NW, false);
-    else
+    else if(genre == 0)
       this->replacer[ai].access(s, w, false);
     if constexpr (EnMon || !C_VOID(DLY))
       if(w < NW) this->monitors->hook_read(addr, ai, s, w, hit, delay);
+      else {
+        /* ToDo: We need to use hook_manage to record this, potentially outer fetch without local store, snoopying exclusive */
+      }
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay, unsigned int genre = 0) {
@@ -95,14 +75,22 @@ public:
   virtual ~CacheSkewedExclusive(){}
 };
 
-// Norm Exclusive Cache
-// IW: index width, NW: number of ways, DW: Directory Ways
+// Norm Exclusive Cache with Extened Directory
+// IW: index width, NW: number of ways, DW: Extended Directory Ways
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type, DRPC: directory replacer type(if use direcotry)
 // EnMon: whether to enable monitoring
+template<int IW, int NW, int DW, typename MT, typename DT, typename IDX, typename RPC, typename DRPC, typename DLY, bool EnMon>
+using CacheNormExclusiveWithExtendedDir = CacheSkewedExclusive<IW, NW, DW, 1, MT, DT, IDX, RPC, DRPC, DLY, EnMon, true>;
+
+// Norm Exclusive Cache
+// IW: index width, NW: number of ways
+// MT: metadata type, DT: data type (void if not in use)
+// IDX: indexer type, RPC: replacer type,
+// EnMon: whether to enable monitoring
 // EnDir: whether to enable use directory
-template<int IW, int NW, int DW, typename MT, typename DT, typename IDX, typename RPC, typename DRPC, typename DLY, bool EnMon, bool EnDir>
-using CacheNormExclusive = CacheSkewedExclusive<IW, NW, DW, 1, MT, DT, IDX, RPC, DRPC, DLY, EnMon, EnDir>;
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EnDir=false>
+using CacheNormExclusive = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, ReplaceRandom<1,1>, DLY, EnMon, EnDir>;
 
 class ExclusiveInnerPortUncached : public InnerCohPortUncached
 {
@@ -114,12 +102,10 @@ public:
     auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, cmd, delay);
 
     if (data_inner) data_inner->copy(data);
-    if(meta){ 
-      // using snooping protocol meta must be nullptr, only using directory protocol meta is valid
-      policy->meta_after_grant(cmd, meta, meta_inner);
-      assert(meta->is_extend());
-      this->cache->hook_read(addr, ai, s, w, hit, delay, 1);
-    }
+    // meta might be nullptr if snoopying
+    policy->meta_after_grant(cmd, meta, meta_inner);
+    assert(!meta || meta->is_extend());
+    this->cache->hook_read(addr, ai, s, w, hit, delay, meta ? 0 : 1);
     return meta;
   }
 
@@ -145,7 +131,7 @@ protected:
     bool hit = this->cache->hit(addr, &ai, &s, &w);
     if(hit) {
       meta = this->cache->access(ai, s, w);
-      if(!meta->is_extend()){ // hit on cache
+      if(!meta->is_extend()) { // hit on cache
         data = this->cache->get_data(ai, s, w);
         auto promote = policy->acquire_need_promote(cmd, meta);
         if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = 0; } // promote permission if needed
@@ -153,18 +139,18 @@ protected:
         evict(meta, data, ai, s, w, delay);
         meta = nullptr;
         return std::make_tuple(meta, data, ai, s, w, hit);
-      }else{ // hit on extend directory meta 
+      } else { // hit on extend directory meta
         auto sync = policy->acquire_need_sync(cmd, meta);
         data = data_inner;
         if(sync.first) probe_req(addr, meta, data, sync.second, delay);
       }
-    }else{
+    } else {
       // if use snooping coherence protocol, we also need probe other inner cache here
       bool probe_hit = false;
       data = data_inner;
       auto sync = policy->acquire_need_sync(cmd, meta);
       if(sync.first) probe_hit = probe_req(addr, meta, data, sync.second, delay);
-      if(!probe_hit){
+      if(!probe_hit) {
         bool replace = this->cache->replace(addr, &ai, &s, &w, 1);
         if(replace){
           // replace is true means use directory coherence protocol
@@ -179,15 +165,15 @@ protected:
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
   }
-  virtual void write_line(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
+  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
     uint32_t ai, s, w;
     uint32_t dai, ds, dw;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     CMMetadataBase* mmeta = nullptr;
-    if(policy->is_writeback(cmd)){
+    if(policy->is_writeback(cmd)) {
       outer->writeback_req(addr, nullptr, data_inner, cmd, delay);  // exclusive cache don't handle release_writeback
-    }else{
+    } else {
       bool writeback = false; bool hit = this->cache->hit(addr, &dai, &ds, &dw);
       if(hit){
         meta = this->cache->access(dai, ds, dw);

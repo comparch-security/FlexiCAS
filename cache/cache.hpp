@@ -40,13 +40,13 @@ class CacheArrayNorm : public CacheArrayBase
 protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
-  unsigned int extra_way = 0;
+  const unsigned int way_num;
 
 public:
   static constexpr uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), extra_way(extra_way){
-    size_t meta_num = nset * (NW + extra_way);
+  CacheArrayNorm(unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), way_num(NW+extra_way){
+    size_t meta_num = nset * way_num;
     constexpr size_t data_num = nset * NW;
     meta.resize(meta_num);
     for(auto &m:meta) m = new MT();
@@ -62,21 +62,18 @@ public:
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
-    for(int i=0; i<(NW+extra_way); i++)
-      if(meta[s*NW + i]->match(addr)) {
+    for(int i=0; i<way_num; i++)
+      if(meta[s*way_num + i]->match(addr)) {
         *w = i;
         return true;
       }
-
     return false;
   }
 
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*(NW+extra_way) + w]; }
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*way_num + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
-    if constexpr (C_VOID(DT)) {
-      return nullptr;
-    } else
-      return data[s*NW + w];
+    if constexpr (C_VOID(DT)) return nullptr;
+    else                      return data[s*NW + w];
   }
 };
 
@@ -157,11 +154,11 @@ protected:
   RPC replacer[P]; // replacer
 
 public:
-  CacheSkewed(std::string name = "", unsigned int extra_par = 0)
+  CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
     : CacheBase(name)
   {
     arrays.resize(P+extra_par);
-    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>();
+    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
     monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
   }
 
@@ -170,8 +167,8 @@ public:
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      for(*w=0; *w<NW; (*w)++)
-        if(access(*ai, *s, *w)->match(addr)) return true;
+      if(CacheBase::arrays[*ai]->hit(addr, *s, w))
+        return true;
     }
     return false;
   }

@@ -83,15 +83,13 @@ public:
   virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
     assert(is_acquire(cmd));
     int32_t id = cmd.id;
-    if(meta){
-      if(is_fetch_read(cmd)) {
-        meta->to_shared(id);
-        if(meta_inner) meta_inner->to_shared(-1);
-      } else {
-        assert(is_fetch_write(cmd));
-        meta->to_modified(id);
-        if(meta_inner) meta_inner->to_modified(-1);
-      }
+    if(is_fetch_read(cmd)) { // do it even when meta is nullptr, as happen for snoopying exclusive cache
+      if(meta) meta->to_shared(id);
+      if(meta_inner) meta_inner->to_shared(-1);
+    } else {
+      assert(is_fetch_write(cmd));
+      if(meta) meta->to_modified(id);
+      if(meta_inner) meta_inner->to_modified(-1);
     }
   }
 
