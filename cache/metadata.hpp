@@ -113,7 +113,6 @@ public:
     auto meta = static_cast<const MetadataBroadcastBase *>(m_meta);
     state  = meta->state;
     dirty  = meta->dirty;
-    extend = meta->extend;
   }
 
   // coherence related methods
@@ -127,10 +126,7 @@ public:
 class MetadataDirectoryBase : public MetadataBroadcastBase
 {
   void add_sharer_help(int32_t coh_id) {
-    if(coh_id != -1){
-      this->add_sharer(coh_id);
-      to_extend();
-    }
+    if(coh_id != -1) this->add_sharer(coh_id);
   }
 
 protected:

@@ -48,8 +48,14 @@ public:
   CacheArrayNorm(unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), way_num(NW+extra_way){
     size_t meta_num = nset * way_num;
     constexpr size_t data_num = nset * NW;
+
     meta.resize(meta_num);
     for(auto &m:meta) m = new MT();
+    if(extra_way)
+      for(auto s=0; s<nset; s++)
+        for(auto w=NW; w<way_num; w++)
+          meta[s*way_num+w]->to_extend();
+
     if constexpr (!C_VOID(DT)) {
       data.resize(data_num);
       for(auto &d:data) d = new DT();
