@@ -13,63 +13,49 @@
 template<int IW, int NW, int DW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DRPC, typename DLY, bool EnMon, bool EnDir>
 class CacheSkewedExclusive : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>
 {
+  typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheSkewedT;
 protected:
-  DRPC d_replacer[P];
+  DRPC ext_replacer[P];
 public:
-  CacheSkewedExclusive(std::string name = "") : CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>(name, 0, (EnDir ? DW : 0)) {}
+  CacheSkewedExclusive(std::string name = "") : CacheSkewedT(name, 0, (EnDir ? DW : 0)) {}
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0){
-    if constexpr (P==1) *ai = 0;
-    else                *ai = (cm_get_random_uint32() % P);
-    *s = this->indexer.index(addr, *ai);
-    if(genre == 0){
-      this->replacer[*ai].replace(*s, w);
+    if(0 == genre)
+      return CacheSkewedT::replace(addr, ai, s, w);
+
+    if constexpr (!EnDir) return false;
+    else {
+      if constexpr (P==1) *ai = 0;
+      else                *ai = (cm_get_random_uint32() % P);
+      *s = this->indexer.index(addr, *ai);
+      this->ext_replacer[*ai].replace(*s, w);
+      *w += NW;
       return true;
-    }else if(genre == 1){
-      if constexpr (EnDir){
-        this->d_replacer[*ai].replace(*s, w);
-        *w = *w + NW;
-        return true;
-      }
-      else{
-        return false;
-      }
     }
-    return true;
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
-    if constexpr (EnDir)
-      if(w < NW) this->replacer[ai].access(s, w, false);
-      else       this->d_replacer[ai].access(s, w-NW, false);
-    else if(genre == 0)
-      this->replacer[ai].access(s, w, false);
-    if constexpr (EnMon || !C_VOID(DLY))
-      if(w < NW) this->monitors->hook_read(addr, ai, s, w, hit, delay);
-      else {
-        /* ToDo: We need to use hook_manage to record this, potentially outer fetch without local store, snoopying exclusive */
-      }
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    if(w >= NW) {
+      ext_replacer[ai].access(s, w-NW, false);
+      /* ToDo: We need to use hook_manage to record this, potentially outer fetch without local store, snoopying exclusive */
+    } else
+      CacheSkewedT::hook_read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay, unsigned int genre = 0) {
-    if constexpr (EnDir)
-      if(w < NW) this->replacer[ai].access(s, w, is_release);
-      else       this->d_replacer[ai].access(s, w-NW, is_release);
-    else
-      this->replacer[ai].access(s, w, is_release);
-    if constexpr (EnMon || !C_VOID(DLY))
-      if(w < NW) this->monitors->hook_write(addr, ai, s, w, hit, delay);
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) {
+    if(w >= NW) {
+      ext_replacer[ai].access(s, w-NW, is_release);
+      /* ToDo: We need to use hook_manage to record this, potentially outer fetch without local store, snoopying exclusive */
+    } else
+      CacheSkewedT::hook_write(addr, ai, s, w, hit, is_release, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
-    if(hit && evict)
-      if constexpr (EnDir)
-        if(w < NW) this->replacer[ai].invalid(s, w);
-        else       this->d_replacer[ai].invalid(s, w-NW);
-      else
-        this->replacer[ai].invalid(s, w);
-    if constexpr (EnMon || !C_VOID(DLY))
-      if(w < NW) this->monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
+    if(w >= NW) {
+      if(hit && evict) ext_replacer[ai].invalid(s, w-NW);
+      /* ToDo: We need to use hook_manage to record this, potentially outer fetch without local store, snoopying exclusive */
+    } else
+      CacheSkewedT::hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
   virtual ~CacheSkewedExclusive(){}
@@ -105,7 +91,7 @@ public:
     // meta might be nullptr if snoopying
     policy->meta_after_grant(cmd, meta, meta_inner);
     assert(!meta || meta->is_extend());
-    this->cache->hook_read(addr, ai, s, w, hit, delay, meta ? 0 : 1);
+    this->cache->hook_read(addr, ai, s, w, hit, delay);
     return meta;
   }
 
@@ -120,7 +106,7 @@ protected:
     auto writeback = policy->writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay);
     policy->meta_after_evict(meta);
-    this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay, meta->is_extend());
+    this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay);
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
@@ -151,7 +137,7 @@ protected:
       auto sync = policy->acquire_need_sync(cmd, meta);
       if(sync.first) probe_hit = probe_req(addr, meta, data, sync.second, delay);
       if(!probe_hit) {
-        bool replace = this->cache->replace(addr, &ai, &s, &w, 1);
+        bool replace = this->cache->replace(addr, &ai, &s, &w, true);
         if(replace){
           // replace is true means use directory coherence protocol
           meta = this->cache->access(ai, s, w);
@@ -178,7 +164,7 @@ protected:
       if(hit){
         meta = this->cache->access(dai, ds, dw);
         assert(meta->is_extend()); // must use directory coherence protocol 
-        this->cache->hook_manage(addr, dai, ds, dw, true, true, false, delay, 1);
+        this->cache->hook_manage(addr, dai, ds, dw, true, true, false, delay);
       }
       this->cache->replace(addr, &ai, &s, &w);
       mmeta = this->cache->access(ai, s, w);
@@ -214,7 +200,7 @@ protected:
           // hit on extend meta  
           probe_req(addr, meta, data, flush.second, delay);
           // probe data don't writeback(if dirty) to exclusive cache, then we just need invalid the extend meta
-         this->cache->hook_manage(addr, ai, s, w, true, policy->is_evict(cmd), false, delay, 1);
+         this->cache->hook_manage(addr, ai, s, w, true, policy->is_evict(cmd), false, delay);
         }
       }else{
         probe_req(addr, meta, data, flush.second, delay);
