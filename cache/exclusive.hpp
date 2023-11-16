@@ -2,7 +2,49 @@
 #define CM_CACHE_EXCLUSIVE_HPP
 
 #include "cache/coherence.hpp"
+#include "cache/msi.hpp"
 
+class ExclusivePolicySupportBase
+{
+public:
+  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* directory_meta, uint64_t addr, bool dirty) = 0;
+  virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) = 0;
+};
+
+
+template<typename MT, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
+class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>, public ExclusivePolicySupportBase    // always not L1
+{
+public:
+  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *mmeta, CMMetadataBase* meta, uint64_t addr, bool dirty){
+    // meta transfer from directory (if use directory coherence protocol) to cache
+    mmeta->init(addr);
+    mmeta->to_shared(-1);
+    if(meta) { 
+      if constexpr (C_DERIVE(MT, MetadataDirectoryBase))
+        static_cast<MT*>(mmeta)->set_sharer(static_cast<MT*>(meta)->get_sharer());
+      assert(!meta->is_dirty());
+      meta->to_invalid();
+    }
+    if(dirty) mmeta->to_dirty();
+  }
+
+  virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) {
+    assert(this->is_release(cmd));
+    return std::make_pair(true, coh_cmd_t{cmd.id, this->probe_msg, this->evict_act});
+  }
+
+  virtual bool need_writeback(const CMMetadataBase* meta) { return true; }
+
+  virtual std::pair<bool, coh_cmd_t> inner_need_release(){
+    return std::make_pair(true, this->cmd_for_release());
+  }
+
+  virtual void meta_after_probe_ack(coh_cmd_t cmd, CMMetadataBase *meta, int32_t inner_id) const{
+    assert(this->is_probe(cmd));
+    if(this->is_evict(cmd)) meta->sync(inner_id);
+  }
+};
 
 // Skewed Exclusive Cache
 // IW: index width, NW: number of ways, DW: Directory Ways, P: number of partitions

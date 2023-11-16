@@ -161,12 +161,4 @@ protected:
   }
 };
 
-class ExclusivePolicySupportBase
-{
-public:  
-  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* directory_meta, uint64_t addr, bool dirty) = 0;
-
-  virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) = 0;
-
-};
 #endif
