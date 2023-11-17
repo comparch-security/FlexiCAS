@@ -82,7 +82,7 @@ $(REGRESSION_TESTS_LOG): %.log:%
 	$< > $@
 
 $(REGRESSION_TESTS_RST): %.out: %.log %.expect
-	diff $^ | tee $@
+	diff $^ 2>$@
 
 regression: $(REGRESSION_TESTS_RST)
 
