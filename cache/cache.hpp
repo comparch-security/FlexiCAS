@@ -135,6 +135,8 @@ public:
     return arrays[ai]->get_data(s, w);
   }
 
+  virtual CMDataBase *copy_buffer() = 0; // allocate a copy buffer, needed by exclusive cache with extended meta
+
   uint32_t get_id() const { return id; }
   const std::string& get_name() const { return name;} 
 
@@ -158,17 +160,22 @@ class CacheSkewed : public CacheBase
 protected:
   IDX indexer;     // index resolver
   RPC replacer[P]; // replacer
+  DT * buffer;     // the data copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
-    : CacheBase(name)
+    : CacheBase(name), buffer(nullptr)
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
     monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
+    if constexpr (!C_VOID(DT)) buffer = new DT();
+    else                       buffer = nullptr;
   }
 
-  virtual ~CacheSkewed() {}
+  virtual ~CacheSkewed() {
+    if constexpr (!C_VOID(DT)) delete buffer;
+  }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
@@ -208,6 +215,11 @@ public:
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
     if(hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
+  }
+
+  virtual CMDataBase *copy_buffer() {
+    if constexpr (C_VOID(DT)) return nullptr;
+    else                      return buffer;
   }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){

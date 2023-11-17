@@ -122,22 +122,15 @@ using CacheNormExclusive = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, 
 
 class ExclusiveInnerPortUncached : public InnerCohPortUncached
 {
+protected:
+  using InnerCohPortBase::cache;
 public:
   ExclusiveInnerPortUncached(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
   virtual ~ExclusiveInnerPortUncached() {}
 
 protected:
   virtual void evict(CMMetadataBase *meta, CMDataBase *data, int32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
-    // evict a block due to conflict
-    auto addr = meta->addr(s);
-    if(meta->is_extend()){ // evict extend directory meta
-      auto sync = policy->writeback_need_sync(meta);
-      if(sync.first) probe_req(addr, meta, data, sync.second, delay);
-    }
-    auto writeback = policy->writeback_need_writeback(meta);
-    if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay);
-    policy->meta_after_evict(meta);
-    this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay);
+    InnerCohPortUncached::evict(meta, meta->is_extend() ? cache->copy_buffer() : data, ai, s, w, delay);
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
@@ -145,11 +138,11 @@ protected:
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = this->cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w);
     if(hit) {
-      meta = this->cache->access(ai, s, w);
+      meta = cache->access(ai, s, w);
       if(!meta->is_extend()) { // hit on cache
-        data = this->cache->get_data(ai, s, w);
+        data = cache->get_data(ai, s, w);
         auto promote = policy->acquire_need_promote(cmd, meta);
         if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = 0; } // promote permission if needed
         // fetch to higher cache and invalid here
@@ -168,10 +161,10 @@ protected:
       auto sync = policy->acquire_need_sync(cmd, meta);
       if(sync.first) probe_hit = probe_req(addr, meta, data, sync.second, delay);
       if(!probe_hit) {
-        bool replace = this->cache->replace(addr, &ai, &s, &w, true);
+        bool replace = cache->replace(addr, &ai, &s, &w, true);
         if(replace){
           // replace is true means use directory coherence protocol
-          meta = this->cache->access(ai, s, w);
+          meta = cache->access(ai, s, w);
           if(meta->is_valid()) {
             assert(meta->is_extend());
             evict(meta, data, ai, s, w, delay);
