@@ -59,7 +59,7 @@ public:
 
   std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c) { coh.push_back(c); return std::make_pair(coh.size()-1, policy);}
 
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
   virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
 
@@ -139,13 +139,12 @@ public:
   InnerCohPortUncached(CohPolicyBase *policy) : InnerCohPortBase(policy) {}
   virtual ~InnerCohPortUncached() {}
 
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
     auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, outer_cmd, delay);
 
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(outer_cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, delay);
-    return meta;
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
@@ -297,7 +296,7 @@ public:
 private:
   // hide and prohibit calling these functions
   virtual uint32_t connect(CohClientBase *c) { return 0;}
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) { return nullptr; }
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {}
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {}
 };
 
@@ -367,8 +366,8 @@ public:
   SliceDispatcher(const std::string &n) : CohMasterBase(nullptr), name(n) {}
   virtual ~SliceDispatcher() {}
   void connect(CohMasterBase *c) { cohm.push_back(c); }
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
-    return cohm[hasher(addr)]->acquire_resp(addr, data_inner, meta_inner, cmd, delay);
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
+    cohm[hasher(addr)]->acquire_resp(addr, data_inner, meta_inner, cmd, delay);
   }
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true){
     cohm[hasher(addr)]->writeback_resp(addr, data, meta_inner, cmd, delay, dirty);
