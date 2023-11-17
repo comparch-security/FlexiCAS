@@ -182,7 +182,7 @@ public:
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
     auto meta = arrays[ai]->get_meta(s, w);
     if constexpr (!C_VOID(DT))
-      return std::make_pair(meta, arrays[ai]->get_data(s, w));
+      return std::make_pair(meta, w < NW ? arrays[ai]->get_data(s, w) : nullptr);
     else
       return std::make_pair(meta, nullptr);
   }
