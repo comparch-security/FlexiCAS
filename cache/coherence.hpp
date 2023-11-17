@@ -137,7 +137,7 @@ public:
   virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
     auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, outer_cmd, delay);
 
-    if (data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
+    if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(outer_cmd, meta, meta_inner);
     this->cache->hook_read(addr, ai, s, w, hit, delay);
     return meta;
