@@ -37,10 +37,15 @@ UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
 DSL_HEADERS   = $(wildcard dsl/*.hpp)
 
-UTIL_OBJS     = util/random.o util/query.o
+CRYPTO_LIB    = cryptopp/libcryptopp.a
+UTIL_OBJS     = util/random.o util/query.o util/monitor.o
 DSL_OBJS      = dsl/dsl.o dsl/entity.o dsl/statement.o dsl/type_description.o
 
 all: lib$(CONFIG).a
+.PHONY: all
+
+$(CRYPTO_LIB):
+	$(MAKE) -C cryptopp -j
 
 lib$(CONFIG).a : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $(CONFIG).o
@@ -48,6 +53,12 @@ lib$(CONFIG).a : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
 
 $(CONFIG).cpp : $(CONFIG_FILE) dsl-decoder
 	./dsl-decoder $(CONFIG_FILE) $(CONFIG)
+
+clean-$(CONFIG):
+	-rm $(CONFIG).cpp $(CONFIG).hpp $(CONFIG).o
+	-rm lib$(CONFIG).a
+
+.PHONY: clean-$(CONFIG)
 
 dsl-decoder : $(DSL_OBJS)
 	$(CXX) $(DSLCXXFLAGS) $^ -o $@
@@ -58,10 +69,33 @@ $(DSL_OBJS) : %o:%cpp $(DSL_HEADERS)
 $(UTIL_OBJS) : %o:%cpp $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+
+REGRESSION_TESTS = c1-l1d_s8w4 c1-l1d_s8w4-l2_s16w8
+REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(REGRESSION_TESTS))
+REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))
+REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(REGRESSION_TESTS))
+
+$(REGRESSION_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+
+$(REGRESSION_TESTS_LOG): %.log:%
+	$< > $@
+
+$(REGRESSION_TESTS_RST): %.out: %.log %.expect
+	diff $^ | tee $@
+
+regression: $(REGRESSION_TESTS_RST)
+
+clean-regression:
+	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
+
+.PHONY: regression
+
 clean:
+	$(MAKE) clean-$(CONFIG)
+	$(MAKE) clean-regression
 	-rm $(UTIL_OBJS)
 	-rm $(DSL_OBJS)
 	-rm dsl-decoder
-	-rm $(CONFIG).cpp $(CONFIG).hpp
-	-rm lib$(CONFIG).a
 
+.PHONY: clean

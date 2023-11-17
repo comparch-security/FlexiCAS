@@ -40,16 +40,22 @@ class CacheArrayNorm : public CacheArrayBase
 protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
-  unsigned int extra_way = 0;
+  const unsigned int way_num;
 
 public:
   static constexpr uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), extra_way(extra_way){
-    size_t meta_num = nset * (NW + extra_way);
+  CacheArrayNorm(unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), way_num(NW+extra_way){
+    size_t meta_num = nset * way_num;
     constexpr size_t data_num = nset * NW;
+
     meta.resize(meta_num);
     for(auto &m:meta) m = new MT();
+    if(extra_way)
+      for(auto s=0; s<nset; s++)
+        for(auto w=NW; w<way_num; w++)
+          meta[s*way_num+w]->to_extend();
+
     if constexpr (!C_VOID(DT)) {
       data.resize(data_num);
       for(auto &d:data) d = new DT();
@@ -62,21 +68,18 @@ public:
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
-    for(int i=0; i<(NW+extra_way); i++)
-      if(meta[s*NW + i]->match(addr)) {
+    for(int i=0; i<way_num; i++)
+      if(meta[s*way_num + i]->match(addr)) {
         *w = i;
         return true;
       }
-
     return false;
   }
 
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*(NW+extra_way) + w]; }
+  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*way_num + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
-    if constexpr (C_VOID(DT)) {
-      return nullptr;
-    } else
-      return data[s*NW + w];
+    if constexpr (C_VOID(DT)) return nullptr;
+    else                      return data[s*NW + w];
   }
 };
 
@@ -99,7 +102,7 @@ protected:
 public:
   MonitorContainerBase *monitors; // monitor container
 
-  CacheBase(std::string name) : id(UniqueID::new_id()), name(name) {}
+  CacheBase(std::string name) : id(UniqueID::new_id(name)), name(name) {}
 
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
@@ -119,10 +122,10 @@ public:
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
   // hook interface for replacer state update, Monitor and delay estimation
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) = 0;
   // probe, invalidate and writeback
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_meta(s, w);
@@ -157,11 +160,11 @@ protected:
   RPC replacer[P]; // replacer
 
 public:
-  CacheSkewed(std::string name = "", unsigned int extra_par = 0)
+  CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
     : CacheBase(name)
   {
     arrays.resize(P+extra_par);
-    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>();
+    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
     monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
   }
 
@@ -170,8 +173,8 @@ public:
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      for(*w=0; *w<NW; (*w)++)
-        if(access(*ai, *s, *w)->match(addr)) return true;
+      if(CacheBase::arrays[*ai]->hit(addr, *s, w))
+        return true;
     }
     return false;
   }
@@ -192,17 +195,17 @@ public:
     return true;
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
-    replacer[ai].access(s, w);
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    replacer[ai].access(s, w, false);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) {
-    replacer[ai].access(s, w);
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) {
+    replacer[ai].access(s, w, is_release);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
     if(hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }

@@ -65,27 +65,31 @@ public:
   // acquire
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
-  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const { // after fetch from outer
+
+  // update meta after fetching from outer cache
+  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
     assert(outer->is_acquire(outer_cmd));
     if(meta){ // exclusive snooping cache use nullptr as meta when acquire outer
       meta->init(addr);
       if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
       else {
-        assert(outer->is_fetch_write(outer_cmd));
+        auto outer_meta = meta->get_outer_meta();
+        assert(outer->is_fetch_write(outer_cmd) && (!outer_meta || outer_meta->allow_write()) );
         meta->to_modified(-1);
       }
     }
   }
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta) const { // after grant to inner
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
     assert(is_acquire(cmd));
     int32_t id = cmd.id;
-    if(meta){
-      if(is_fetch_read(cmd)) meta->to_shared(id);
-      else {
-        assert(is_fetch_write(cmd));
-        meta->to_modified(id);
-      }
+    if(is_fetch_read(cmd)) { // do it even when meta is nullptr, as happen for snoopying exclusive cache
+      if(meta) meta->to_shared(id);
+      if(meta_inner) meta_inner->to_shared(-1);
+    } else {
+      assert(is_fetch_write(cmd));
+      if(meta) meta->to_modified(id);
+      if(meta_inner) meta_inner->to_modified(-1);
     }
   }
 
@@ -128,7 +132,14 @@ public:
   }
 
   // release from inner
-  virtual void meta_after_release(CMMetadataBase *meta) const { meta->to_dirty();}
+  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
+    meta->to_dirty();
+    if(meta_inner) {
+      assert(is_release(cmd));
+      if(is_evict(cmd)) meta_inner->to_invalid();
+      else              meta_inner->to_shared(-1);
+    }
+  }
 
   // flush
   virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
@@ -143,19 +154,11 @@ public:
 
 protected:
   std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
-    if(meta && meta->is_shared() && !meta->is_extend()) return std::make_pair(false, cmd_for_null());
+    if(meta && meta->is_shared() && !meta->is_extend()) return std::make_pair(false, cmd_for_null()); // need fix, move the extended support somewhere else
     // for all other potential states (M, O, E), the inner cache holds the latest copy
     // if meta is extend, the inner cache holds the copy
     else                  return std::make_pair(true, coh_cmd_t{coh_id, probe_msg, writeback_act});
   }
 };
 
-class ExclusivePolicySupportBase
-{
-public:  
-  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* directory_meta, uint64_t addr, bool dirty) = 0;
-
-  virtual std::pair<bool, coh_cmd_t> release_need_probe(coh_cmd_t cmd, CMMetadataBase* meta) = 0;
-
-};
 #endif

@@ -29,18 +29,20 @@ public:
     if constexpr (!C_VOID(DLY)) delete timer;
   }
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     if constexpr (!C_VOID(DT)) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       if(!pages.count(ppn)) allocate(ppn);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
       data_inner->write(mem_addr);
+      if(meta_inner) meta_inner->to_modified(-1);
     }
     if constexpr (!C_VOID(DLY)) timer->read(addr, 0, 0, 0, 0, delay);
+    return nullptr;
   }
 
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
     if constexpr (!C_VOID(DT)) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
