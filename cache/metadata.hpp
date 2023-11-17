@@ -126,7 +126,7 @@ public:
 class MetadataDirectoryBase : public MetadataBroadcastBase
 {
   void add_sharer_help(int32_t coh_id) {
-    if(coh_id != -1) this->add_sharer(coh_id);
+    if(coh_id != -1) add_sharer(coh_id);
   }
 
 protected:
@@ -144,7 +144,7 @@ public:
   virtual void to_exclusive(int32_t coh_id) { MetadataBroadcastBase::to_exclusive(coh_id); add_sharer_help(coh_id); }
   virtual void to_owned(int32_t coh_id)     { MetadataBroadcastBase::to_owned(coh_id);     add_sharer_help(coh_id); }
 
-  virtual void sync(int32_t coh_id){ if(coh_id != -1) { this->delete_sharer(coh_id); } }
+  virtual void sync(int32_t coh_id){ if(coh_id != -1) { delete_sharer(coh_id); } }
 
   virtual uint64_t get_sharer() { return sharer; }
   virtual void set_sharer(uint64_t c_sharer){ sharer = c_sharer; }
