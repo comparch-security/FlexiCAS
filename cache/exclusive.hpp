@@ -126,17 +126,6 @@ public:
   ExclusiveInnerPortUncached(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
   virtual ~ExclusiveInnerPortUncached() {}
 
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, cmd, delay);
-
-    if (data_inner) data_inner->copy(data);
-    // meta might be nullptr if snoopying
-    policy->meta_after_grant(cmd, meta, meta_inner);
-    assert(!meta || meta->is_extend());
-    this->cache->hook_read(addr, ai, s, w, hit, delay);
-    return meta;
-  }
-
 protected:
   virtual void evict(CMMetadataBase *meta, CMDataBase *data, int32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
     // evict a block due to conflict
