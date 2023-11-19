@@ -2,6 +2,7 @@
 #define CM_CACHE_MIRAGE_MSI_HPP
 
 #include <stack>
+#include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
 class MirageDataMeta : public CMMetadataBase
