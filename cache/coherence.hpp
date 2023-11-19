@@ -118,10 +118,9 @@ public:
       if(sync.first) inner->probe_req(addr, meta, data, sync.second, delay);
 
       // writeback if dirty
-      auto writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta);
-      if(writeback.first) writeback_req(addr, meta, data, writeback.second, delay);
-
-      if(data_outer) data_outer->copy(data);
+      if(OPUC::policy->probe_need_writeback(outer_cmd, meta)) {
+        if(data_outer) data_outer->copy(data);
+      }
 
       // update meta
       OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id);
@@ -165,7 +164,9 @@ protected:
     auto addr = meta->addr(s);
     assert(cache->hit(addr));
     auto sync = policy->writeback_need_sync(meta);
-    if(sync.first) probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+    if(sync.first)
+      if(probe_req(addr, meta, data, sync.second, delay)) // sync if necessary
+        cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
     auto writeback = policy->writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     policy->meta_after_evict(meta);
@@ -181,7 +182,9 @@ protected:
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto sync = policy->acquire_need_sync(cmd, meta);
-      if(sync.first) probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      if(sync.first)
+        if(probe_req(addr, meta, data, sync.second, delay)) // sync if necessary
+          cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
       auto promote = policy->acquire_need_promote(cmd, meta);
       if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = false; } // promote permission if needed
     } else { // miss
@@ -216,7 +219,8 @@ protected:
     if(flush.first) {
       if(hit = cache->hit(addr, &ai, &s, &w)) {
         std::tie(meta, data) = cache->access_line(ai, s, w);
-        probe_req(addr, meta, data, flush.second, delay);
+        if(probe_req(addr, meta, data, flush.second, delay))
+          cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
         auto writeback = policy->writeback_need_writeback(meta);
         if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
         policy->meta_after_flush(cmd, meta);

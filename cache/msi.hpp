@@ -85,12 +85,10 @@ public:
     }
 
   }
-  virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
+
+  virtual bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
     assert(outer->is_probe(outer_cmd));
-    if(meta)
-      if(meta->is_dirty()) return std::make_pair(true , outer->cmd_for_release_writeback());
-      else                 return std::make_pair(false, outer->cmd_for_null());
-    else                   return std::make_pair(false, outer->cmd_for_null());
+    return meta->is_dirty();
   }
   
 

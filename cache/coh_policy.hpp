@@ -96,7 +96,7 @@ public:
   // probe
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const = 0;
-  virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) = 0;
+  virtual bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) = 0;
   virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id) const {
     assert(outer->is_probe(outer_cmd));
     // meta and meta_outer may be nullptr

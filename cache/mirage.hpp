@@ -245,7 +245,9 @@ protected:
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto sync = policy->acquire_need_sync(cmd, meta);
-      if(sync.first) probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      if(sync.first)
+        if(probe_req(addr, meta, data, sync.second, delay)) // sync if necessary
+          cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
       auto promote = policy->acquire_need_promote(cmd, meta);
       if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = false; } // promote permission if needed
     } else { // miss
