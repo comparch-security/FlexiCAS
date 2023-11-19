@@ -135,7 +135,8 @@ public:
     return arrays[ai]->get_data(s, w);
   }
 
-  virtual CMDataBase *copy_buffer() = 0; // allocate a copy buffer, needed by exclusive cache with extended meta
+  virtual CMDataBase *data_copy_buffer() = 0; // allocate a copy buffer, needed by exclusive cache with extended meta
+  virtual CMMetadataBase *meta_copy_buffer() = 0; // allocate a copy buffer, needed by exclusive cache with extended meta
 
   uint32_t get_id() const { return id; }
   const std::string& get_name() const { return name;} 
@@ -158,23 +159,25 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
 class CacheSkewed : public CacheBase
 {
 protected:
-  IDX indexer;     // index resolver
-  RPC replacer[P]; // replacer
-  DT * buffer;     // the data copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
+  IDX indexer;      // index resolver
+  RPC replacer[P];  // replacer
+  DT * data_buffer; // the data copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
+  MT * meta_buffer; // the metadata copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
-    : CacheBase(name), buffer(nullptr)
+    : CacheBase(name), data_buffer(nullptr), meta_buffer(new MT())
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
     monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
-    if constexpr (!C_VOID(DT)) buffer = new DT();
-    else                       buffer = nullptr;
+    if constexpr (!C_VOID(DT)) data_buffer = new DT();
+    else                       data_buffer = nullptr;
   }
 
   virtual ~CacheSkewed() {
-    if constexpr (!C_VOID(DT)) delete buffer;
+    if constexpr (!C_VOID(DT)) delete data_buffer;
+    delete meta_buffer;
   }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
@@ -217,9 +220,13 @@ public:
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
-  virtual CMDataBase *copy_buffer() {
+  virtual CMDataBase *data_copy_buffer() {
     if constexpr (C_VOID(DT)) return nullptr;
-    else                      return buffer;
+    else                      return data_buffer;
+  }
+
+  virtual CMMetadataBase *meta_copy_buffer() {
+    return meta_buffer;
   }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
