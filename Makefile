@@ -84,12 +84,20 @@ $(REGRESSION_TESTS_LOG): %.log:%
 $(REGRESSION_TESTS_RST): %.out: %.log %.expect
 	diff $^ 2>$@
 
-regression: $(REGRESSION_TESTS_RST)
+regression-cache: $(REGRESSION_TESTS_RST)
+
+regression-dsl:
+	CONFIG=example $(MAKE)
+	CONFIG=example $(MAKE) clean-example
+	CONFIG=mirage  $(MAKE)
+	CONFIG=mirage  $(MAKE) clean-mirage
+
+regression: regression-cache regression-dsl
 
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 
-.PHONY: regression
+.PHONY: regression-cache regression-dsl
 
 clean:
 	$(MAKE) clean-$(CONFIG)
