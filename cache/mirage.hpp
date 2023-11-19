@@ -16,6 +16,7 @@ public:
   void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
   std::tuple<uint32_t, uint32_t, uint32_t> pointer() { return std::make_tuple(mai, ms, mw);} // return the pointer to data
   virtual void to_invalid() { state = false; }
+  virtual void to_extend() {}
   virtual bool is_valid() const { return state; }
   virtual bool allow_write() const {return state; }
   
@@ -37,7 +38,6 @@ private:
   virtual void init(uint64_t addr) {}
   virtual void to_dirty() {}
   virtual void to_clean() {}
-  virtual void to_extend() {}
   virtual uint64_t addr(uint32_t s) const { return 0; }
 };
 
