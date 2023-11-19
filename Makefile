@@ -51,6 +51,9 @@ lib$(CONFIG).a : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $(CONFIG).o
 	ar rvs $@ $(CONFIG).o $(UTIL_OBJS)
 
+lib$(CONFIG).so : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) -shared -o $@
+
 $(CONFIG).cpp : $(CONFIG_FILE) dsl-decoder
 	./dsl-decoder $(CONFIG_FILE) $(CONFIG)
 
