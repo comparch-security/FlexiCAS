@@ -4,7 +4,6 @@
 #include "cache/coherence.hpp"
 #include <sys/mman.h>
 #include <unordered_map>
-#include <type_traits>
 
 template<typename DT, typename DLY>
   requires C_DERIVE_OR_VOID(DT, CMDataBase) && C_DERIVE_OR_VOID(DLY, DelayBase)

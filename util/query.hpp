@@ -1,12 +1,12 @@
 #ifndef UTIL_QUERY_HPP_
 #define UTIL_QUERY_HPP_
 
-#include "cache/definitions.hpp"
-#include "util/concept_macro.hpp"
 #include <unordered_set>
 #include <utility>
 #include <string>
 #include <boost/format.hpp>
+
+class CacheBase;
 
 class LocIdx{
 public:

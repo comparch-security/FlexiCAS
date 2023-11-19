@@ -51,6 +51,9 @@ lib$(CONFIG).a : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $(CONFIG).o
 	ar rvs $@ $(CONFIG).o $(UTIL_OBJS)
 
+lib$(CONFIG).so : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) -shared -o $@
+
 $(CONFIG).cpp : $(CONFIG_FILE) dsl-decoder
 	./dsl-decoder $(CONFIG_FILE) $(CONFIG)
 
@@ -84,12 +87,20 @@ $(REGRESSION_TESTS_LOG): %.log:%
 $(REGRESSION_TESTS_RST): %.out: %.log %.expect
 	diff $^ 2>$@
 
-regression: $(REGRESSION_TESTS_RST)
+regression-cache: $(REGRESSION_TESTS_RST)
+
+regression-dsl:
+	CONFIG=example $(MAKE)
+	CONFIG=example $(MAKE) clean-example
+	CONFIG=mirage  $(MAKE)
+	CONFIG=mirage  $(MAKE) clean-mirage
+
+regression: regression-cache regression-dsl
 
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 
-.PHONY: regression
+.PHONY: regression-cache regression-dsl
 
 clean:
 	$(MAKE) clean-$(CONFIG)
