@@ -49,14 +49,9 @@ public:
   }
 
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if constexpr (!isLLC) { // ToDo: do we really need this, let memory always set OutMT to M
-      assert(is_acquire(cmd));
-      auto outer_meta = meta->get_outer_meta();
-      if(is_fetch_write(cmd) && !(outer_meta ? outer_meta->allow_write() : meta->allow_write()))
-        return std::make_pair(true, outer->cmd_for_write());
-      else
-        return std::make_pair(false, cmd_for_null());
-    } else return std::make_pair(false, cmd_for_null());
+    if(is_fetch_write(cmd) && !meta->get_outer_meta()->allow_write())
+      return std::make_pair(true, outer->cmd_for_write());
+    else return std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
