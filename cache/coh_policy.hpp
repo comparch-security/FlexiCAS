@@ -51,13 +51,14 @@ public:
   bool is_writeback(coh_cmd_t cmd) const   { return cmd.act == writeback_act;  }
 
   // generate command
-  coh_cmd_t cmd_for_read()              const { return {-1, acquire_msg, fetch_read_act }; }
-  coh_cmd_t cmd_for_write()             const { return {-1, acquire_msg, fetch_write_act}; }
-  coh_cmd_t cmd_for_flush()             const { return {-1, flush_msg,   evict_act      }; }
-  coh_cmd_t cmd_for_writeback()         const { return {-1, flush_msg,   writeback_act  }; }
-  coh_cmd_t cmd_for_release()           const { return {-1, release_msg, evict_act      }; }
-  coh_cmd_t cmd_for_release_writeback() const { return {-1, release_msg, writeback_act  }; }
-  coh_cmd_t cmd_for_null()              const { return {-1, 0,           0              }; }
+  coh_cmd_t cmd_for_read()                           const { return {-1, acquire_msg, fetch_read_act }; }
+  coh_cmd_t cmd_for_write()                          const { return {-1, acquire_msg, fetch_write_act}; }
+  coh_cmd_t cmd_for_flush()                          const { return {-1, flush_msg,   evict_act      }; }
+  coh_cmd_t cmd_for_writeback()                      const { return {-1, flush_msg,   writeback_act  }; }
+  coh_cmd_t cmd_for_release()                        const { return {-1, release_msg, evict_act      }; }
+  coh_cmd_t cmd_for_null()                           const { return {-1, 0,           0              }; }
+  coh_cmd_t cmd_for_probe_writeback(int32_t id = -1) const { return {id, probe_msg,   writeback_act  }; }
+  coh_cmd_t cmd_for_probe_release(int32_t id = -1)   const { return {id, probe_msg,   evict_act      }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
   virtual coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const = 0;
@@ -155,7 +156,7 @@ public:
 protected:
   std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
     if(meta && meta->is_shared()) return std::make_pair(false, cmd_for_null());
-    else                          return std::make_pair(true, coh_cmd_t{coh_id, probe_msg, writeback_act});
+    else                          return std::make_pair(true, cmd_for_probe_writeback(coh_id));
   }
 };
 
