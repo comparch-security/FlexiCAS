@@ -133,12 +133,15 @@ public:
   }
 
   // release from inner
+  virtual std::pair<bool, coh_cmd_t> release_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, const CMMetadataBase* meta_inner) const {
+    return std::make_pair(false, cmd_for_null());
+  }
+  
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
     meta->to_dirty();
     if(meta_inner) {
-      assert(is_release(cmd));
-      if(is_evict(cmd)) meta_inner->to_invalid();
-      else              meta_inner->to_shared(-1);
+      assert(is_release(cmd) && is_evict(cmd));
+      meta_inner->to_invalid();
     }
   }
 

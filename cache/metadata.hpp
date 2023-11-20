@@ -145,9 +145,15 @@ public:
   virtual void to_exclusive(int32_t coh_id) { MetadataBroadcastBase::to_exclusive(coh_id); add_sharer_help(coh_id); }
   virtual void to_owned(int32_t coh_id)     { MetadataBroadcastBase::to_owned(coh_id);     add_sharer_help(coh_id); }
 
+  virtual void copy(const CMMetadataBase *m_meta) {
+    MetadataBroadcastBase::copy(m_meta);
+    auto meta = static_cast<const MetadataDirectoryBase *>(m_meta);
+    sharer = meta->get_sharer();
+  }
+
   virtual void sync(int32_t coh_id){ if(coh_id != -1) { delete_sharer(coh_id); } }
 
-  virtual uint64_t get_sharer() { return sharer; }
+  virtual uint64_t get_sharer() const { return sharer; }
   virtual void set_sharer(uint64_t c_sharer){ sharer = c_sharer; }
 
   virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const {
@@ -199,9 +205,9 @@ public:
   virtual void sync(int32_t coh_id) {}
 
   virtual void copy(const CMMetadataBase *m_meta) {
+    // ATTN! tag is not coped.
     MT::copy(m_meta);
-    auto meta = static_cast<const MetadataMixer *>(m_meta);
-    tag = meta->tag;
+    outer_meta.copy(m_meta->get_outer_meta());
   }
 };
 
