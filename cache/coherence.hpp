@@ -36,7 +36,7 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
-  virtual bool probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
+  virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); } // may not implement if not supported
 
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) = 0;
   friend CoherentCacheBase; // deferred assignment for cache
@@ -60,7 +60,7 @@ public:
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
-  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
+  virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); } // may not implement if not supported
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
   
@@ -105,7 +105,7 @@ public:
   OuterCohPortT(CohPolicyBase *policy) : OPUC(policy) {}
   virtual ~OuterCohPortT() {}
 
-  virtual bool probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     bool writeback = false;
     bool hit = cache->hit(addr, &ai, &s, &w);
@@ -114,10 +114,13 @@ public:
 
       // sync if necessary
       auto sync = OPUC::policy->probe_need_sync(outer_cmd, meta);
-      if(sync.first) inner->probe_req(addr, meta, data, sync.second, delay);
+      if(sync.first) {
+        auto [phit, pwb] = inner->probe_req(addr, meta, data, sync.second, delay);
+        if(pwb) cache->hook_write(addr, ai, s, w, true, true, delay);
+      }
 
       // writeback if dirty
-      if(OPUC::policy->probe_need_writeback(outer_cmd, meta)) {
+      if(writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta)) {
         if(data_outer) data_outer->copy(data);
       }
 
@@ -125,7 +128,7 @@ public:
       OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id);
     }
     cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, delay);
-    return hit;
+    return std::make_pair(hit, writeback);
   }
 };
 
@@ -163,9 +166,10 @@ protected:
     auto addr = meta->addr(s);
     assert(cache->hit(addr));
     auto sync = policy->writeback_need_sync(meta);
-    if(sync.first)
-      if(probe_req(addr, meta, data, sync.second, delay)) // sync if necessary
-        cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
+    if(sync.first) {
+      auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      if(pwb) cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
+    }
     auto writeback = policy->writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     policy->meta_after_evict(meta);
@@ -181,9 +185,10 @@ protected:
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto sync = policy->acquire_need_sync(cmd, meta);
-      if(sync.first)
-        if(probe_req(addr, meta, data, sync.second, delay)) // sync if necessary
-          cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
+      if(sync.first) {
+        auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+        if(pwb) cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
+      }
       auto promote = policy->acquire_need_promote(cmd, meta);
       if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = false; } // promote permission if needed
     } else { // miss
@@ -218,8 +223,8 @@ protected:
     if(flush.first) {
       if(hit = cache->hit(addr, &ai, &s, &w)) {
         std::tie(meta, data) = cache->access_line(ai, s, w);
-        if(probe_req(addr, meta, data, flush.second, delay))
-          cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
+        auto [phit, pwb] = probe_req(addr, meta, data, flush.second, delay);
+        if(pwb) cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
         auto writeback = policy->writeback_need_writeback(meta);
         if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
         policy->meta_after_flush(cmd, meta);
@@ -239,15 +244,17 @@ public:
   InnerCohPortT(CohPolicyBase *policy) : IPUC(policy) {}
   virtual ~InnerCohPortT() {}
 
-  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
-    bool hit = false;
+  virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
+    bool hit = false, writeback = false;
     for(uint32_t i=0; i<coh.size(); i++) {
       auto probe = IPUC::policy->probe_need_probe(cmd, meta, i);
-      if(probe.first) 
-        if(coh[i]->probe_resp(addr, meta, data, probe.second, delay))
-          hit = true;
+      if(probe.first) {
+        auto [phit, pwb] = coh[i]->probe_resp(addr, meta, data, probe.second, delay);
+        hit       |= phit;
+        writeback |= pwb;
+      }
     }
-    return hit;
+    return std::make_pair(hit, writeback);
   }
 };
 
