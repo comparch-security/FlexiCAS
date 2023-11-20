@@ -1,0 +1,24 @@
+name: regression test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - name: install boost
+        run: sudo apt-get update && sudo apt-get install -yq libboost-dev
+      - name: install cryptopp
+        run: mkdir -p cryptopp && cd cryptopp && wget https://github.com/comparch-security/FlexiCAS/releases/download/ci-prepare/libcryptopp.a
+      - name: build application
+        run: make regression

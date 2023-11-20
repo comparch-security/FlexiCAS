@@ -1,11 +1,10 @@
 #ifndef CM_CACHE_COHERENCE_HPP
 #define CM_CACHE_COHERENCE_HPP
 
-#include <type_traits>
-#include <tuple>
 #include "cache/cache.hpp"
-#include "cache/slicehash.hpp"
 #include "cache/coh_policy.hpp"
+#include "cache/slicehash.hpp"
+#include <tuple>
 
 class OuterCohPortBase;
 class InnerCohPortBase;

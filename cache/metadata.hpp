@@ -1,6 +1,7 @@
 #ifndef CM_CACHE_METADATA_HPP
 #define CM_CACHE_METADATA_HPP
 
+#include <cstdint>
 #include "util/concept_macro.hpp"
 
 class CMMetadataBase

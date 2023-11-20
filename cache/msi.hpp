@@ -1,6 +1,8 @@
 #ifndef CM_CACHE_MSI_HPP
 #define CM_CACHE_MSI_HPP
 
+#include "cache/coh_policy.hpp"
+
 // metadata supporting MSI coherency
 template <typename BT>
   requires C_SAME(BT, MetadataBroadcastBase) || C_SAME(BT, MetadataDirectoryBase)
