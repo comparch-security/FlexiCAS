@@ -135,8 +135,10 @@ public:
     return arrays[ai]->get_data(s, w);
   }
 
-  virtual CMDataBase *data_copy_buffer() = 0; // allocate a copy buffer, needed by exclusive cache with extended meta
-  virtual CMMetadataBase *meta_copy_buffer() = 0; // allocate a copy buffer, needed by exclusive cache with extended meta
+  virtual CMDataBase *data_copy_buffer() = 0;               // allocate a copy buffer, needed by exclusive cache with extended meta
+  virtual void data_return_buffer(CMDataBase *buf) = 0;     // return a copy buffer, used to detect conflicts in copy buffer
+  virtual CMMetadataBase *meta_copy_buffer() = 0;           // allocate a copy buffer, needed by exclusive cache with extended meta
+  virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
 
   uint32_t get_id() const { return id; }
   const std::string& get_name() const { return name;} 
@@ -163,10 +165,11 @@ protected:
   RPC replacer[P];  // replacer
   DT * data_buffer; // the data copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
   MT * meta_buffer; // the metadata copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
+  bool data_buffer_busy, meta_buffer_busy;
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
-    : CacheBase(name), data_buffer(nullptr), meta_buffer(new MT())
+    : CacheBase(name), data_buffer(nullptr), meta_buffer(new MT()), data_buffer_busy(false), meta_buffer_busy(false)
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
@@ -221,13 +224,21 @@ public:
   }
 
   virtual CMDataBase *data_copy_buffer() {
+    assert(!data_buffer_busy);
+    data_buffer_busy = true;
     if constexpr (C_VOID(DT)) return nullptr;
     else                      return data_buffer;
   }
 
+  virtual void data_return_buffer(CMDataBase *buf) { data_buffer_busy = false; }
+
   virtual CMMetadataBase *meta_copy_buffer() {
+    assert(!meta_buffer_busy);
+    meta_buffer_busy = true;
     return meta_buffer;
   }
+
+  virtual void meta_return_buffer(CMMetadataBase *buf) { meta_buffer_busy = false; }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
     for(int i=0; i<P; i++) 

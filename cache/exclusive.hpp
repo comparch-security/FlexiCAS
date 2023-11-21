@@ -110,6 +110,20 @@ public:
   ExclusiveInnerPortUncachedBroadcast(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
   virtual ~ExclusiveInnerPortUncachedBroadcast() {}
 
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
+    auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, outer_cmd, delay);
+
+    if (data_inner && data) data_inner->copy(data);
+    policy->meta_after_grant(outer_cmd, meta, meta_inner);
+    cache->hook_read(addr, ai, s, w, hit, delay);
+
+    if(!hit) {
+      cache->meta_return_buffer(meta);
+      cache->data_return_buffer(data);
+    }
+  }
+
+
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, CMDataBase* data_inner, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
@@ -180,6 +194,10 @@ protected:
       if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
       policy->meta_after_flush(cmd, meta);
       cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, delay);
+      if(!hit) {
+        cache->meta_return_buffer(meta);
+        cache->data_return_buffer(data);
+      }
     } else outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_outer_flush(cmd), delay);
   }
 
@@ -204,6 +222,17 @@ public:
   ExclusiveInnerPortUncachedDirectory(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
   virtual ~ExclusiveInnerPortUncachedDirectory() {}
 
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
+    auto [meta, data, ai, s, w, hit] = access_line(addr, data_inner, outer_cmd, delay);
+
+    if (data_inner && data) data_inner->copy(data);
+    policy->meta_after_grant(outer_cmd, meta, meta_inner);
+    cache->hook_read(addr, ai, s, w, hit, delay);
+
+    // different to know when data is borrowed from buffer, just return it.
+    cache->data_return_buffer(data);
+  }
+
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, CMDataBase* data_inner, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
@@ -224,7 +253,9 @@ protected:
         uint32_t mai, ms, mw;
         cache->replace(addr, &ai, &ms, &mw, true);
         auto mmeta = cache->access(mai, ms, mw);
-        if(mmeta->is_valid()) evict(mmeta, cache->data_copy_buffer(), mai, ms, mw, delay);
+        CMDataBase *mdata = cache->data_copy_buffer();
+        if(mmeta->is_valid()) evict(mmeta, mdata, mai, ms, mw, delay);
+        cache->data_return_buffer(mdata);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         return std::make_tuple(mmeta, data, mai, ms, mw, hit);
       } else { // hit on extend directory meta
@@ -249,7 +280,8 @@ protected:
     } else {
       // store it to an extended meta
       cache->replace(addr, &ai, &s, &w, true);
-      if(meta->is_valid()) evict(meta, cache->data_copy_buffer(), ai, s, w, delay);
+      data = cache->data_copy_buffer();
+      if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
       return std::make_tuple(meta, data, ai, s, w, hit);
     }
@@ -304,6 +336,9 @@ protected:
         if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
         policy->meta_after_flush(cmd, meta);
         cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, delay);
+        if(meta->is_extend()) {
+          cache->data_return_buffer(data);
+        }
       }
     } else outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_outer_flush(cmd), delay);
   }
@@ -350,6 +385,12 @@ public:
     }
 
     cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, delay);
+
+    if(!hit) {
+      cache->meta_return_buffer(meta);
+      cache->data_return_buffer(data);
+    }
+
     return std::make_pair(hit||probe_hit, writeback);
   }
 
@@ -395,6 +436,11 @@ public:
     }
 
     cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, delay);
+
+    if(hit && meta->is_extend()) {
+      cache->data_return_buffer(data);
+    }
+
     return std::make_pair(hit||probe_hit, writeback);
   }
 
