@@ -209,17 +209,17 @@ public:
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    replacer[ai].access(s, w, false);
+    if(ai < P) replacer[ai].access(s, w, false);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) {
-    replacer[ai].access(s, w, is_release);
+    if(ai < P) replacer[ai].access(s, w, is_release);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
-    if(hit && evict) replacer[ai].invalid(s, w);
+    if(ai < P && hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 

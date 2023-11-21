@@ -67,27 +67,27 @@ public:
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    if(w >= NW) {
-      ext_replacer[ai].access(s, w-NW, false);
-      /* ToDo: We need to use hook_manage to record this, potentially outer fetch without local store, snoopying exclusive */
-    } else
-      CacheSkewedT::hook_read(addr, ai, s, w, hit, delay);
+    if(ai < P) {
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, false);
+      else        CacheSkewedT::replacer[ai].access(s, w, false);
+    }
+    if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) {
-    if(w >= NW) {
-      ext_replacer[ai].access(s, w-NW, is_release);
-      /* ToDo: We need to use hook_manage to record this, potentially outer fetch without local store, snoopying exclusive */
-    } else
-      CacheSkewedT::hook_write(addr, ai, s, w, hit, is_release, delay);
+    if(ai < P) {
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, is_release);
+      else        CacheSkewedT::replacer[ai].access(s, w, is_release);
+    }
+    if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
-    if(w >= NW) {
-      if(hit && evict) ext_replacer[ai].invalid(s, w-NW);
-      /* ToDo: We need to use hook_manage to record this, potentially outer fetch without local store, snoopying exclusive */
-    } else
-      CacheSkewedT::hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
+    if(ai < P && hit && evict) {
+      if(w >= NW) ext_replacer[ai].invalid(s, w-NW);
+      else        CacheSkewedT::replacer[ai].invalid(s, w);
+    }
+    if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
   virtual ~CacheSkewedExclusive(){}
