@@ -63,7 +63,6 @@ public:
   // write delay is hidden
   virtual void write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, uint64_t *delay) {}
 
-private:
   // hidden
   virtual void manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {}
 };
