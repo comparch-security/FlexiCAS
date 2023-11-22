@@ -69,6 +69,7 @@ public:
 // EnMon: whether to enable monitoring
 // EnDir: whether to enable use directory
 template<int IW, int NW, int DW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DRPC, typename DLY, bool EnMon, bool EnDir>
+  requires !EnDir || DW > 0
 class CacheSkewedExclusive : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>
 {
   typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheSkewedT;
@@ -78,15 +79,16 @@ public:
   CacheSkewedExclusive(std::string name = "") : CacheSkewedT(name, 0, (EnDir ? DW : 0)) {}
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
-    // ToDo: need further optimization
-    if(0 == genre) {
-      CacheSkewedT::replace(addr, ai, s, w);
-    } else {
-      if constexpr (P==1) *ai = 0;
-      else                *ai = (cm_get_random_uint32() % P);
-      *s = CacheSkewedT::indexer.index(addr, *ai);
-      ext_replacer[*ai].replace(*s, w);
-      *w += NW;
+    if constexpr (EnDir) CacheSkewedT::replace(addr, ai, s, w, 0);
+    else {
+      if(0 == genre) CacheSkewedT::replace(addr, ai, s, w);
+      else {
+        if constexpr (P==1) *ai = 0;
+        else                *ai = (cm_get_random_uint32() % P);
+        *s = CacheSkewedT::indexer.index(addr, *ai);
+        ext_replacer[*ai].replace(*s, w);
+        *w += NW;
+      }
     }
   }
 

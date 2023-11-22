@@ -86,16 +86,7 @@ public:
   MirageMSIPolicy() : MSIPolicy<MT, false, true>() {}
   virtual ~MirageMSIPolicy() {}
 
-  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
-    assert(outer->is_probe(outer_cmd));
-    if(outer->is_evict(outer_cmd)) invalidate_cache_line(meta);
-    else {
-      assert(outer->is_writeback(outer_cmd));
-      meta->to_shared(-1);
-    }
-  }
-
-  virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const  {
+  virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const {
     assert(PolicyT::is_flush(cmd));
     if(PolicyT::is_evict(cmd)) invalidate_cache_line(meta);
   }

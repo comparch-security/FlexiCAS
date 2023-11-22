@@ -108,8 +108,10 @@ public:
     uint32_t ai, s, w;
     bool writeback = false;
     bool hit = cache->hit(addr, &ai, &s, &w);
+    CMMetadataBase *meta = nullptr;
+    CMDataBase *data = nullptr;
     if(hit) {
-      auto [meta, data] = cache->access_line(ai, s, w); // need c++17 for auto type infer
+      std::tie(meta, data) = cache->access_line(ai, s, w); // need c++17 for auto type infer
 
       // sync if necessary
       auto sync = OPUC::policy->probe_need_sync(outer_cmd, meta);
@@ -122,10 +124,8 @@ public:
       if(writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta)) {
         if(data_outer) data_outer->copy(data);
       }
-
-      // update meta
-      OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id);
     }
+    OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id); // alway update meta
     cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, delay);
     return std::make_pair(hit, writeback);
   }
