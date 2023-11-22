@@ -26,9 +26,10 @@ public:
         meta_inner->to_modified(-1);
       }
     } else {
-      // give all permission to inner as there is no copy in the exclusive cache
-      if(meta->get_outer_meta()->allow_write()) meta_inner->to_modified(-1);
-      else                                      meta_inner->to_shared(-1);
+      // delegate all permission to inner as there is no copy in the exclusive cache
+      if(meta->allow_write()) meta_inner->to_modified(-1);
+      else                    meta_inner->to_shared(-1);
+      meta->to_invalid();
     }
   }
 
@@ -37,6 +38,10 @@ public:
     if(meta_inner) {
       assert(PolicyT::is_release(cmd) && PolicyT::is_evict(cmd));
       meta_inner->to_invalid();
+    }
+    if constexpr (!EnDir) { // need to validate meta when using the snoopying protocol
+      if(meta->allow_write()) meta->to_modified(-1);
+      else                    meta->to_shared(-1);
     }
   }
 
