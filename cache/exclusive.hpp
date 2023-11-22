@@ -4,7 +4,7 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
-template<typename MT, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
 {
   typedef MSIPolicy<MT, false, isLLC> PolicyT;
@@ -13,6 +13,24 @@ protected:
   using PolicyT::evict_act;
   using PolicyT::writeback_act;
 public:
+
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
+    assert(PolicyT::is_acquire(cmd));
+    int32_t id = cmd.id;
+    if constexpr (EnDir) {
+      if(PolicyT::is_fetch_read(cmd)) {
+        meta->to_shared(id);
+        meta_inner->to_shared(-1);
+      } else {
+        meta->to_modified(id);
+        meta_inner->to_modified(-1);
+      }
+    } else {
+      // give all permission to inner as there is no copy in the exclusive cache
+      if(meta->get_outer_meta()->allow_write()) meta_inner->to_modified(-1);
+      else                                      meta_inner->to_shared(-1);
+    }
+  }
 
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
     meta->copy(meta_inner);

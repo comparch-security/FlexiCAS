@@ -12,7 +12,7 @@ CXXSTD = --std=c++17 -fconcepts
 ifeq ($(MODE), release)
     CXXFLAGS = $(CXXSTD) -O2 -DNDEBUG -I. -fPIC
 else ifeq ($(MODE), debug)
-    CXXFLAGS = $(CXXSTD) -O1 -g -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC
 else
     CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
