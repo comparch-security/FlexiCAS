@@ -482,4 +482,16 @@ public:
 
 typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortUncached> ExclusiveOuterCohPortDirectory;
 
+template<typename CT>
+using ExclusiveL2CacheBroadcast = CoherentCacheNorm<CT, ExclusiveOuterCohPortBroadcast, ExclusiveInnerPortBroadcast>;
+
+template<typename CT>
+using ExclusiveLLCBroadcast = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerPortBroadcast>;
+
+template<typename CT>
+using ExclusiveL2CacheDirectory = CoherentCacheNorm<CT, ExclusiveOuterCohPortDirectory, ExclusiveInnerPortDirectory>;
+
+template<typename CT>
+using ExclusiveLLCDirectory = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerPortDirectory>;
+
 #endif

@@ -27,7 +27,7 @@ typedef CacheNormExclusiveBroadcast<L2IW,L2WN,l2_metadata_type,data_type,l2_inde
 typedef ExclusiveMSIPolicy<l2_metadata_type,false,true> l2_policy_type;
 
 typedef OuterCohPortUncached memory_port_type;
-typedef CoherentCacheNorm<l2_type, memory_port_type, ExclusiveInnerPortBroadcast> l2_cache_type;
+typedef ExclusiveLLCBroadcast<l2_type> l2_cache_type;
 typedef SimpleMemoryModel<data_type,void,true> memory_type;
 
 static uint64_t gi = 703;
