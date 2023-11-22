@@ -1,8 +1,6 @@
-#include "cache/cache.hpp"
+#include "cache/exclusive.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
-#include "cache/coherence.hpp"
-#include "cache/msi.hpp"
 #include "cache/memory.hpp"
 #include "util/random.hpp"
 
@@ -25,11 +23,11 @@ typedef CoherentL1CacheNorm<l1_type> l1_cache_type;
 typedef MetadataMSIBroadcast<48, L2IW, L2Toff> l2_metadata_type;
 typedef IndexNorm<L2IW,6> l2_indexer_type;
 typedef ReplaceSRRIP<L2IW,L2WN,1> l2_replacer_type;
-typedef CacheNorm<L2IW,L2WN,l2_metadata_type,data_type,l2_indexer_type,l2_replacer_type,void,true> l2_type;
-typedef MSIPolicy<l2_metadata_type,false,true> l2_policy_type;
+typedef CacheNormExclusiveBroadcast<L2IW,L2WN,l2_metadata_type,data_type,l2_indexer_type,l2_replacer_type,void,true> l2_type;
+typedef ExclusiveMSIPolicy<l2_metadata_type,false,true> l2_policy_type;
 
 typedef OuterCohPortUncached memory_port_type;
-typedef CoherentCacheNorm<l2_type,memory_port_type> l2_cache_type;
+typedef CoherentCacheNorm<l2_type, memory_port_type, ExclusiveInnerPortBroadcast> l2_cache_type;
 typedef SimpleMemoryModel<data_type,void,true> memory_type;
 
 static uint64_t gi = 703;

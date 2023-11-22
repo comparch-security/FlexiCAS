@@ -20,7 +20,7 @@ typedef MSIPolicy<l1_metadata_type,1,1> l1_policy_type;
 
 typedef OuterCohPortUncached memory_port_type;
 typedef CoherentL1CacheNorm<l1_type,memory_port_type> l1_cache_type;
-typedef SimpleMemoryModel<data_type,void> memory_type;
+typedef SimpleMemoryModel<data_type,void,true> memory_type;
 
 static uint64_t gi = 703;
 const int AddrN = 128;
@@ -39,6 +39,7 @@ int main() {
 
   SimpleTracer tracer;
   l1d->attach_monitor(&tracer);
+  mem->attach_monitor(&tracer);
 
   std::vector<uint64_t> addr_pool(AddrN);
   for(int i=0; i<AddrN; i++) addr_pool[i] = hasher(gi++) & addr_mask;

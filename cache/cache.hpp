@@ -86,7 +86,7 @@ public:
 //////////////// define cache ////////////////////
 
 // base class for a cache
-class CacheBase
+class CacheBase : public CacheMonitorSupport
 {
 protected:
   const uint32_t id;                    // a unique id to identify this cache
@@ -100,13 +100,10 @@ protected:
   std::vector<CacheArrayBase *> arrays;
 
 public:
-  MonitorContainerBase *monitors; // monitor container
-
   CacheBase(std::string name) : id(UniqueID::new_id(name)), name(name) {}
 
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
-    delete monitors;
   }
 
   virtual bool hit(uint64_t addr,
@@ -119,13 +116,7 @@ public:
     return hit(addr, &ai, &s, &w);
   }
 
-  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
-
-  // hook interface for replacer state update, Monitor and delay estimation
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) = 0;
-  // probe, invalidate and writeback
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_meta(s, w);
@@ -134,6 +125,11 @@ public:
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_data(s, w);
   }
+
+  virtual CMDataBase *data_copy_buffer() = 0;               // allocate a copy buffer, needed by exclusive cache with extended meta
+  virtual void data_return_buffer(CMDataBase *buf) = 0;     // return a copy buffer, used to detect conflicts in copy buffer
+  virtual CMMetadataBase *meta_copy_buffer() = 0;           // allocate a copy buffer, needed by exclusive cache with extended meta
+  virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
 
   uint32_t get_id() const { return id; }
   const std::string& get_name() const { return name;} 
@@ -156,19 +152,28 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
 class CacheSkewed : public CacheBase
 {
 protected:
-  IDX indexer;     // index resolver
-  RPC replacer[P]; // replacer
+  IDX indexer;      // index resolver
+  RPC replacer[P];  // replacer
+  DT * data_buffer; // the data copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
+  MT * meta_buffer; // the metadata copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
+  bool data_buffer_busy, meta_buffer_busy;
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
-    : CacheBase(name)
+    : CacheBase(name), data_buffer(nullptr), meta_buffer(new MT()), data_buffer_busy(false), meta_buffer_busy(false)
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
-    monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
+    CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(CacheBase::id);
+    if constexpr (!C_VOID(DT)) data_buffer = new DT();
+    else                       data_buffer = nullptr;
   }
 
-  virtual ~CacheSkewed() {}
+  virtual ~CacheSkewed() {
+    delete CacheMonitorSupport::monitors;
+    if constexpr (!C_VOID(DT)) delete data_buffer;
+    delete meta_buffer;
+  }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
@@ -182,33 +187,49 @@ public:
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
     auto meta = arrays[ai]->get_meta(s, w);
     if constexpr (!C_VOID(DT))
-      return std::make_pair(meta, arrays[ai]->get_data(s, w));
+      return std::make_pair(meta, w < NW ? arrays[ai]->get_data(s, w) : nullptr);
     else
       return std::make_pair(meta, nullptr);
   }
 
-  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
     if constexpr (P==1) *ai = 0;
     else                *ai = (cm_get_random_uint32() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
-    return true;
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
-    replacer[ai].access(s, w, false);
+    if(ai < P) replacer[ai].access(s, w, false);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) {
-    replacer[ai].access(s, w, is_release);
+    if(ai < P) replacer[ai].access(s, w, is_release);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {
-    if(hit && evict) replacer[ai].invalid(s, w);
+    if(ai < P && hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
+
+  virtual CMDataBase *data_copy_buffer() {
+    assert(!data_buffer_busy);
+    data_buffer_busy = true;
+    if constexpr (C_VOID(DT)) return nullptr;
+    else                      return data_buffer;
+  }
+
+  virtual void data_return_buffer(CMDataBase *buf) { data_buffer_busy = false; }
+
+  virtual CMMetadataBase *meta_copy_buffer() {
+    assert(!meta_buffer_busy);
+    meta_buffer_busy = true;
+    return meta_buffer;
+  }
+
+  virtual void meta_return_buffer(CMMetadataBase *buf) { meta_buffer_busy = false; }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
     for(int i=0; i<P; i++) 

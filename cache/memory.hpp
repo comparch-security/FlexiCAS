@@ -2,14 +2,16 @@
 #define CM_CACHE_MEMORY_HPP
 
 #include "cache/coherence.hpp"
+#include "cache/msi.hpp"
 #include <sys/mman.h>
 #include <unordered_map>
 
-template<typename DT, typename DLY>
+template<typename DT, typename DLY, bool EnMon = false>
   requires C_DERIVE_OR_VOID(DT, CMDataBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
-class SimpleMemoryModel : public InnerCohPortUncached
+  class SimpleMemoryModel : public InnerCohPortUncached, public CacheMonitorSupport
 {
 protected:
+  const uint32_t id;                    // a unique id to identify this memory
   const std::string name;
   std::unordered_map<uint64_t, char *> pages;
   DLY *timer;      // delay estimator
@@ -21,14 +23,19 @@ protected:
   }
   
 public:
-  SimpleMemoryModel(const std::string &n) : InnerCohPortUncached(nullptr), name(n) {
-    if constexpr (!C_VOID(DLY)) timer = new DLY();
-  }
-  virtual ~SimpleMemoryModel() {
-    if constexpr (!C_VOID(DLY)) delete timer;
+  SimpleMemoryModel(const std::string &n)
+    : InnerCohPortUncached(nullptr), id(UniqueID::new_id(n)), name(n)
+  {
+    InnerCohPortBase::policy = new MSIPolicy<MetadataBroadcastBase,false,true>();
+    CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(id);
   }
 
-  virtual CMMetadataBase * acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual ~SimpleMemoryModel() {
+    delete CacheMonitorSupport::monitors;
+    delete InnerCohPortBase::policy;
+  }
+
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     if constexpr (!C_VOID(DT)) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
@@ -37,8 +44,7 @@ public:
       data_inner->write(mem_addr);
       if(meta_inner) meta_inner->to_modified(-1);
     }
-    if constexpr (!C_VOID(DLY)) timer->read(addr, 0, 0, 0, 0, delay);
-    return nullptr;
+    hook_read(addr, 0, 0, 0, true, delay);
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
@@ -49,12 +55,28 @@ public:
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
       for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
     }
-    if constexpr (!C_VOID(DLY)) timer->write(addr, 0, 0, 0, 0, delay);
+    hook_write(addr, 0, 0, 0, true, true, delay);
+  }
+
+  // monitor related
+  void attach_monitor(MonitorBase *m) { CacheMonitorSupport::monitors->attach_monitor(m); }
+  // support run-time assign/reassign mointors
+  void detach_monitor() { CacheMonitorSupport::monitors->detach_monitor(); }
+
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
+    if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_read(addr, -1, -1, -1, hit, delay);
+  }
+
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) {
+    if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_write(addr, -1, -1, -1, hit, delay);
   }
 
 private:
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) {}
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) {}
-  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) { return false; } // hidden
+  virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
+    return std::make_pair(false,false);
+  } // hidden
 };
 
 #endif

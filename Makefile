@@ -12,7 +12,7 @@ CXXSTD = --std=c++17 -fconcepts
 ifeq ($(MODE), release)
     CXXFLAGS = $(CXXSTD) -O2 -DNDEBUG -I. -fPIC
 else ifeq ($(MODE), debug)
-    CXXFLAGS = $(CXXSTD) -O1 -g -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC
 else
     CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
@@ -73,7 +73,8 @@ $(UTIL_OBJS) : %o:%cpp $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 
-REGRESSION_TESTS = c1-l1d_s8w4 c1-l1d_s8w4-l2_s16w8
+REGRESSION_TESTS = c1-l1d_s8w4 c1-l1d_s8w4-l2_s16w8 c1-l1d_s8w4-l2_s16w8_exclusive
+
 REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(REGRESSION_TESTS))
 REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))
 REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(REGRESSION_TESTS))

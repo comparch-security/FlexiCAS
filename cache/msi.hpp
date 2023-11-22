@@ -45,26 +45,21 @@ public:
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
       assert(is_acquire(cmd));
-      if(is_fetch_write(cmd)) return std::make_pair(true, coh_cmd_t{cmd.id, probe_msg, evict_act});
+      if(is_fetch_write(cmd)) return std::make_pair(true, cmd_for_probe_release(cmd.id));
       else                    return need_sync(meta, cmd.id);
     } else return std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if constexpr (!isLLC) { // ToDo: do we really need this, let memory always set OutMT to M
-      assert(is_acquire(cmd));
-      auto outer_meta = meta->get_outer_meta();
-      if(is_fetch_write(cmd) && !(outer_meta ? outer_meta->allow_write() : meta->allow_write()))
-        return std::make_pair(true, outer->cmd_for_write());
-      else
-        return std::make_pair(false, cmd_for_null());
-    } else return std::make_pair(false, cmd_for_null());
+    if(is_fetch_write(cmd) && !meta->allow_write())
+      return std::make_pair(true, outer->cmd_for_write());
+    else return std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
       assert(outer->is_probe(outer_cmd));
-      if(outer->is_evict(outer_cmd)) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
+      if(outer->is_evict(outer_cmd)) return std::make_pair(true, cmd_for_probe_release());
       else                           return need_sync(meta, -1);
     } else return std::make_pair(false, cmd_for_null());
   }
@@ -87,24 +82,22 @@ public:
     }
 
   }
-  virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
+
+  virtual bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
     assert(outer->is_probe(outer_cmd));
-    if(meta)
-      if(meta->is_dirty()) return std::make_pair(true , outer->cmd_for_release_writeback());
-      else                 return std::make_pair(false, outer->cmd_for_null());
-    else                   return std::make_pair(false, outer->cmd_for_null());
+    return meta->is_dirty();
   }
   
 
   virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
-    if constexpr (!isL1) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
+    if constexpr (!isL1) return std::make_pair(true, cmd_for_probe_release());
     else                 return std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (isLLC) {
       assert(is_flush(cmd));
-      if(is_evict(cmd)) return std::make_pair(true, coh_cmd_t{-1, probe_msg, evict_act});
+      if(is_evict(cmd)) return std::make_pair(true, cmd_for_probe_release());
       else              return need_sync(meta, -1);
     } else
       return std::make_pair(false, cmd_for_null());
