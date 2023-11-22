@@ -33,7 +33,7 @@ public:
   }
 
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
-    meta->copy(meta_inner);
+    meta->get_outer_meta()->copy(meta_inner);
     if(meta_inner) {
       assert(PolicyT::is_release(cmd) && PolicyT::is_evict(cmd));
       meta_inner->to_invalid();

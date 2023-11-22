@@ -92,7 +92,7 @@ public:
   MetadataBroadcastBase() : state(0), dirty(0), extend(0) {}
   virtual ~MetadataBroadcastBase() {}
 
-  virtual void to_invalid() { state = state_invalid; }
+  virtual void to_invalid() { state = state_invalid; dirty = 0; }
   virtual void to_shared(int32_t coh_id) { state = state_shared; }
   virtual void to_modified(int32_t coh_id) { state = state_modified; }
   virtual void to_exclusive(int32_t coh_id) { state = state_exclusive; }
@@ -139,7 +139,7 @@ protected:
   virtual bool is_exclusive_sharer(int32_t coh_id) const {return (1ull << coh_id) == sharer; }
 
 public:
-  virtual void to_invalid()                 { MetadataBroadcastBase::to_invalid();         clean_sharer(); }
+  virtual void to_invalid()                 { MetadataBroadcastBase::to_invalid();         clean_sharer();          }
   virtual void to_shared(int32_t coh_id)    { MetadataBroadcastBase::to_shared(coh_id);    add_sharer_help(coh_id); }
   virtual void to_modified(int32_t coh_id)  { MetadataBroadcastBase::to_modified(coh_id);  add_sharer_help(coh_id); }
   virtual void to_exclusive(int32_t coh_id) { MetadataBroadcastBase::to_exclusive(coh_id); add_sharer_help(coh_id); }
@@ -203,6 +203,12 @@ public:
     return addr;
   }
   virtual void sync(int32_t coh_id) {}
+
+  virtual void to_invalid() { MT::to_invalid(); outer_meta.to_invalid(); }
+  virtual void to_dirty() { outer_meta.to_dirty(); } // directly use the outer meta so the dirty state is release to outer when evicted
+  virtual void to_clean() { outer_meta.to_clean(); }
+  virtual bool is_dirty() const { return outer_meta.is_dirty(); }
+  virtual bool allow_write() const {return outer_meta.allow_write(); }
 
   virtual void copy(const CMMetadataBase *m_meta) {
     // ATTN! tag is not coped.

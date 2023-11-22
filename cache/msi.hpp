@@ -51,7 +51,7 @@ public:
   }
 
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if(is_fetch_write(cmd) && !meta->get_outer_meta()->allow_write())
+    if(is_fetch_write(cmd) && !meta->allow_write())
       return std::make_pair(true, outer->cmd_for_write());
     else return std::make_pair(false, cmd_for_null());
   }

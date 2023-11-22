@@ -74,7 +74,7 @@ public:
       meta->init(addr);
       if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
       else {
-        assert(outer->is_fetch_write(outer_cmd) && meta->get_outer_meta()->allow_write());
+        assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
         meta->to_modified(-1);
       }
     }
