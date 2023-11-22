@@ -86,7 +86,7 @@ public:
 //////////////// define cache ////////////////////
 
 // base class for a cache
-class CacheBase
+class CacheBase : public CacheMonitorSupport
 {
 protected:
   const uint32_t id;                    // a unique id to identify this cache
@@ -100,13 +100,10 @@ protected:
   std::vector<CacheArrayBase *> arrays;
 
 public:
-  MonitorContainerBase *monitors; // monitor container
-
   CacheBase(std::string name) : id(UniqueID::new_id(name)), name(name) {}
 
   virtual ~CacheBase() {
     for(auto a: arrays) delete a;
-    delete monitors;
   }
 
   virtual bool hit(uint64_t addr,
@@ -120,12 +117,6 @@ public:
   }
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
-
-  // hook interface for replacer state update, Monitor and delay estimation
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) = 0;
-  // probe, invalidate and writeback
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
 
   virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_meta(s, w);
@@ -173,12 +164,13 @@ public:
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
-    monitors = new CacheMonitorSupport<DLY, EnMon>(CacheBase::id);
+    CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(CacheBase::id);
     if constexpr (!C_VOID(DT)) data_buffer = new DT();
     else                       data_buffer = nullptr;
   }
 
   virtual ~CacheSkewed() {
+    delete CacheMonitorSupport::monitors;
     if constexpr (!C_VOID(DT)) delete data_buffer;
     delete meta_buffer;
   }

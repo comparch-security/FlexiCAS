@@ -50,19 +50,33 @@ public:
   virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, uint64_t *delay, unsigned int genre = 0) = 0;
 };
 
+// class monitor helper
+class CacheMonitorSupport
+{
+public:
+  MonitorContainerBase *monitors; // monitor container
+
+  // hook interface for replacer state update, Monitor and delay estimation
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, uint64_t *delay) = 0;
+  // probe, invalidate and writeback
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, uint64_t *delay) = 0;
+
+};
+
 // Cache monitor and delay support
 template<typename DLY, bool EnMon>
-class CacheMonitorSupport : public MonitorContainerBase
+class CacheMonitorImp : public MonitorContainerBase
 {
 protected:
   DLY *timer;                           // delay estimator
 
 public:
-  CacheMonitorSupport(uint32_t id) : MonitorContainerBase(id) {
+  CacheMonitorImp(uint32_t id) : MonitorContainerBase(id) {
     if constexpr (!C_VOID(DLY)) timer = new DLY();
   }
 
-  virtual ~CacheMonitorSupport() {
+  virtual ~CacheMonitorImp() {
     if constexpr (!C_VOID(DLY)) delete timer;
   }
 
