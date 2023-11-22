@@ -175,7 +175,7 @@ public:
     return std::make_pair(d_s, d_w);
   }
 
-  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
     int max_free = -1, p = 0;
     std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > candidates(P);
     uint32_t m_s, m_w;
@@ -187,7 +187,6 @@ public:
         candidates[p++] = std::make_tuple(i, m_s, m_w);
     }
     std::tie(*ai, *s, *w) = candidates[cm_get_random_uint32() % p];
-    return true;
   }
 
   void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack){

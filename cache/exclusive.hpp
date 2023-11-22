@@ -72,16 +72,17 @@ protected:
 public:
   CacheSkewedExclusive(std::string name = "") : CacheSkewedT(name, 0, (EnDir ? DW : 0)) {}
 
-  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0){
-    if(0 == genre)
-      return CacheSkewedT::replace(addr, ai, s, w);
-
-    if constexpr (P==1) *ai = 0;
-    else                *ai = (cm_get_random_uint32() % P);
-    *s = CacheSkewedT::indexer.index(addr, *ai);
-    ext_replacer[*ai].replace(*s, w);
-    *w += NW;
-    return true;
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
+    // ToDo: need further optimization
+    if(0 == genre) {
+      CacheSkewedT::replace(addr, ai, s, w);
+    } else {
+      if constexpr (P==1) *ai = 0;
+      else                *ai = (cm_get_random_uint32() % P);
+      *s = CacheSkewedT::indexer.index(addr, *ai);
+      ext_replacer[*ai].replace(*s, w);
+      *w += NW;
+    }
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay) {
