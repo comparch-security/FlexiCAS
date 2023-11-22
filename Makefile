@@ -73,7 +73,8 @@ $(UTIL_OBJS) : %o:%cpp $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 
-REGRESSION_TESTS = c1-l1d_s8w4 c1-l1d_s8w4-l2_s16w8
+REGRESSION_TESTS = c1-l1d_s8w4 c1-l1d_s8w4-l2_s16w8 c1-l1d_s8w4-l2_s16w8_exclusive
+
 REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(REGRESSION_TESTS))
 REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))
 REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(REGRESSION_TESTS))
