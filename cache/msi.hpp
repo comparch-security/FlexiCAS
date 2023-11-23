@@ -31,12 +31,15 @@ protected:
   using CohPolicyBase::outer;
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
+  using CohPolicyBase::is_evict;
+  using CohPolicyBase::is_writeback;
+  using CohPolicyBase::is_downgrade;
   using CohPolicyBase::cmd_for_probe_release;
+  using CohPolicyBase::cmd_for_probe_writeback;
+  using CohPolicyBase::cmd_for_probe_downgrade;
   using CohPolicyBase::cmd_for_null;
-  using CohPolicyBase::need_sync;
 
 public:
-  MSIPolicy() : PolicT() {}
   virtual ~MSIPolicy() {}
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const {
@@ -45,8 +48,9 @@ public:
   }
 
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if(is_fetch_write(cmd)) return std::make_pair(true, cmd_for_probe_release(cmd.id));
-    else                    return need_sync(meta, cmd.id);
+    if(is_fetch_write(cmd))    return std::make_pair(true, cmd_for_probe_release(cmd.id));
+    else if(meta->is_shared()) return std::make_pair(false, cmd_for_null());
+    else                       return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
   }
 
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
@@ -77,6 +81,36 @@ public:
       meta->to_modified(id);
       meta_inner->to_modified(-1);
     }
+  }
+
+  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
+    if constexpr (!isL1) {
+      assert(outer->is_probe(outer_cmd));
+      if(outer->is_evict(outer_cmd))
+        return std::make_pair(true, cmd_for_probe_release());
+      else {
+        if(meta->is_shared())
+          return std::make_pair(false, cmd_for_null());
+        else if(outer->is_downgrade(outer_cmd))
+          return std::make_pair(true, cmd_for_probe_downgrade());
+        else
+          return std::make_pair(true, cmd_for_probe_writeback());
+      }
+    } else return std::make_pair(false, cmd_for_null());
+  }
+
+  virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+    if constexpr (isLLC) {
+      if(is_evict(cmd)) return std::make_pair(true, cmd_for_probe_release());
+      else {
+        assert(is_writeback(cmd));
+        if(meta && meta->is_shared())
+          return std::make_pair(false, cmd_for_null());
+        else
+          return std::make_pair(true, cmd_for_probe_writeback());
+      }
+    } else
+      return std::make_pair(false, cmd_for_null());
   }
 };
 

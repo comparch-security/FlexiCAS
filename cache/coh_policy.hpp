@@ -23,14 +23,19 @@ class CohPolicyBase {
 
 protected:
   CacheBase *cache;        // reverse pointer for the cache parent
-  const uint32_t acquire_msg, release_msg, probe_msg, flush_msg;
-  const uint32_t fetch_read_act, fetch_write_act, evict_act, writeback_act;
   CohPolicyBase *outer;    // the outer policy need for command translation
 
+  static const uint32_t acquire_msg = 1;
+  static const uint32_t release_msg = 2;
+  static const uint32_t probe_msg   = 3;
+  static const uint32_t flush_msg   = 4;
+  static const uint32_t fetch_read_act  = 0;
+  static const uint32_t fetch_write_act = 1;
+  static const uint32_t evict_act       = 2;
+  static const uint32_t writeback_act   = 3;
+  static const uint32_t downgrade_act   = 4;
+
 public:
-  // constructor
-  CohPolicyBase(uint32_t a, uint32_t r, uint32_t p, uint32_t f, uint32_t fr, uint32_t fw, uint32_t ev, uint32_t wb)
-    : acquire_msg(a), release_msg(r), probe_msg(p), flush_msg(f), fetch_read_act(fr), fetch_write_act(fw), evict_act(ev), writeback_act(wb) {}
   virtual ~CohPolicyBase() {}
 
   friend CoherentCacheBase; // deferred assignment for cache
@@ -48,17 +53,22 @@ public:
   bool is_fetch_write(coh_cmd_t cmd) const { return cmd.act == fetch_write_act; }
   bool is_evict(coh_cmd_t cmd) const       { return cmd.act == evict_act;       }
   bool is_outer_evict(coh_cmd_t cmd) const { return outer->is_evict(cmd);       }
-  bool is_writeback(coh_cmd_t cmd) const   { return cmd.act == writeback_act;  }
+  bool is_writeback(coh_cmd_t cmd) const   { return cmd.act == writeback_act;   }
+  bool is_downgrade(coh_cmd_t cmd) const   { return cmd.act == downgrade_act;   }
 
   // generate command
-  coh_cmd_t cmd_for_read()                           const { return {-1, acquire_msg, fetch_read_act }; }
-  coh_cmd_t cmd_for_write()                          const { return {-1, acquire_msg, fetch_write_act}; }
-  coh_cmd_t cmd_for_flush()                          const { return {-1, flush_msg,   evict_act      }; }
-  coh_cmd_t cmd_for_writeback()                      const { return {-1, flush_msg,   writeback_act  }; }
-  coh_cmd_t cmd_for_release()                        const { return {-1, release_msg, evict_act      }; }
-  coh_cmd_t cmd_for_null()                           const { return {-1, 0,           0              }; }
-  coh_cmd_t cmd_for_probe_writeback(int32_t id = -1) const { return {id, probe_msg,   writeback_act  }; }
-  coh_cmd_t cmd_for_probe_release(int32_t id = -1)   const { return {id, probe_msg,   evict_act      }; }
+  constexpr coh_cmd_t cmd_for_read()             const { return {-1, acquire_msg, fetch_read_act }; }
+  constexpr coh_cmd_t cmd_for_write()            const { return {-1, acquire_msg, fetch_write_act}; }
+  constexpr coh_cmd_t cmd_for_flush()            const { return {-1, flush_msg,   evict_act      }; }
+  constexpr coh_cmd_t cmd_for_writeback()        const { return {-1, flush_msg,   writeback_act  }; }
+  constexpr coh_cmd_t cmd_for_release()          const { return {-1, release_msg, evict_act      }; }
+  constexpr coh_cmd_t cmd_for_null()             const { return {-1, 0,           0              }; }
+  constexpr coh_cmd_t cmd_for_probe_writeback()  const { return {-1, probe_msg,   writeback_act  }; }
+  constexpr coh_cmd_t cmd_for_probe_release()    const { return {-1, probe_msg,   evict_act      }; }
+  constexpr coh_cmd_t cmd_for_probe_downgrade()  const { return {-1, probe_msg,   downgrade_act  }; }
+  coh_cmd_t cmd_for_probe_writeback(int32_t id)  const { return {id, probe_msg,   writeback_act  }; }
+  coh_cmd_t cmd_for_probe_release(int32_t id)    const { return {id, probe_msg,   evict_act      }; }
+  coh_cmd_t cmd_for_probe_downgrade(int32_t id)  const { return {id, probe_msg,   downgrade_act  }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
 
@@ -159,11 +169,6 @@ public:
     return std::make_pair(false, cmd_for_null());
   }
 
-protected:
-  std::pair<bool, coh_cmd_t> need_sync(const CMMetadataBase *meta, int32_t coh_id) const {
-    if(meta && meta->is_shared()) return std::make_pair(false, cmd_for_null());
-    else                          return std::make_pair(true, cmd_for_probe_writeback(coh_id));
-  }
 };
 
 #endif
