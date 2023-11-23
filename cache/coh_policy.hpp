@@ -61,71 +61,75 @@ public:
   coh_cmd_t cmd_for_probe_release(int32_t id = -1)   const { return {id, probe_msg,   evict_act      }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
-  virtual coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const = 0;
+
+  coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const {
+    assert(is_flush(cmd));
+    if(is_evict(cmd)) return outer->cmd_for_flush();
+    else              return outer->cmd_for_writeback();
+  }
 
   // acquire
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
 
   // update meta after fetching from outer cache
-  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
-    assert(outer->is_acquire(outer_cmd));
-    if(meta){ // exclusive snooping cache use nullptr as meta when acquire outer
-      meta->init(addr);
-      if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
-      else {
-        assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
-        meta->to_modified(-1);
-      }
-    }
-  }
+  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const = 0;
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
-    assert(is_acquire(cmd));
-    int32_t id = cmd.id;
-    if(is_fetch_read(cmd)) {
-      meta->to_shared(id);
-      meta_inner->to_shared(-1);
-    } else {
-      assert(is_fetch_write(cmd));
-      meta->to_modified(id);
-      meta_inner->to_modified(-1);
-    }
-  }
+  // update meta after grant to inner
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const = 0;
 
   // probe
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const = 0;
-  virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const = 0;
-  virtual bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) = 0;
-  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id) const {
+
+  std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const {
+    assert(is_probe(cmd));
+    if(meta) {
+      if((is_evict(cmd)     && static_cast<const MetadataBroadcastBase *>(meta)->evict_need_probe(target_inner_id, cmd.id))     ||
+        (is_writeback(cmd)  && static_cast<const MetadataBroadcastBase *>(meta)->writeback_need_probe(target_inner_id, cmd.id)) )
+      {
+        cmd.id = -1;
+        return std::make_pair(true, cmd);
+      } else
+        return std::make_pair(false, cmd_for_null());
+    }
+    else{
+      cmd.id = -1;
+      return std::make_pair(true, cmd);
+    }
+  }
+
+  bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
+    assert(outer->is_probe(outer_cmd));
+    return meta->is_dirty();
+  }
+
+  void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id) const {
     assert(outer->is_probe(outer_cmd));
 
     if(meta_outer) { // clean sharer if evict or miss
       if(outer->is_evict(outer_cmd) || !meta) meta_outer->sync(inner_id);
     }
 
-    if(meta){
-      if(outer->is_evict(outer_cmd)) meta->to_invalid();
-      else {
-        assert(outer->is_writeback(outer_cmd));
-        meta->to_shared(-1);
-      }
-    }
+    if(meta && outer->is_evict(outer_cmd)) meta->to_invalid();
   }
 
   // writeback due to conflict, probe, flush
-  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const = 0;
-  virtual std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta) const {
+  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
+    return std::make_pair(true, cmd_for_probe_release());
+  }
+
+  std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta) const {
     if(meta->is_dirty())
       return std::make_pair(true, outer->cmd_for_release());
     else
       return outer->inner_need_release();
   }
 
-  virtual void meta_after_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
+  void meta_after_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
     if(meta) meta->to_clean(); // flush may send out writeback request with null meta
   }
-  virtual void meta_after_evict(CMMetadataBase *meta) const{
+
+  void meta_after_evict(CMMetadataBase *meta) const{
     assert(!meta->is_dirty());
     meta->to_invalid();
   }
@@ -145,7 +149,8 @@ public:
 
   // flush
   virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
-  virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const  {
+
+  void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const  {
     if(meta && is_evict(cmd)) meta->to_invalid();
   }
 

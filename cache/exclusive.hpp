@@ -9,9 +9,9 @@ class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L
 {
   typedef MSIPolicy<MT, false, isLLC> PolicyT;
 protected:
-  using PolicyT::probe_msg;
-  using PolicyT::evict_act;
-  using PolicyT::writeback_act;
+  using CohPolicyBase::probe_msg;
+  using CohPolicyBase::evict_act;
+  using CohPolicyBase::writeback_act;
 public:
 
   virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
@@ -33,6 +33,11 @@ public:
     }
   }
 
+  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
+    // for exclusive cache, no sync is needed for normal way, always sync for extended way
+    return meta->is_extend() ? std::make_pair(true, CohPolicyBase::cmd_for_probe_release()) : std::make_pair(false, PolicyT::cmd_for_null());
+  }
+
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
     meta->get_outer_meta()->copy(meta_inner);
     if(meta_inner) {
@@ -49,11 +54,6 @@ public:
     assert(PolicyT::is_release(cmd));
     // if the inner cache is not an exclusive ower (M/O/E), probe to see whether there are other copies
     return std::make_pair(!meta_inner->allow_write(), CohPolicyBase::cmd_for_probe_writeback(cmd.id));
-  }
-
-  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
-    // for exclusive cache, no sync is needed for normal way, always sync for extended way
-    return meta->is_extend() ? std::make_pair(true, CohPolicyBase::cmd_for_probe_release()) : std::make_pair(false, PolicyT::cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> inner_need_release(){
