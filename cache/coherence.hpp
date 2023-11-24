@@ -125,7 +125,7 @@ public:
         if(data_outer) data_outer->copy(data);
       }
     }
-    OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id); // alway update meta
+    OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
     cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, delay);
     return std::make_pair(hit, writeback);
   }

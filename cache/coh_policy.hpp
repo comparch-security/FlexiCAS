@@ -94,9 +94,7 @@ public:
   std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const {
     assert(is_probe(cmd));
     if(meta) {
-      if((is_evict(cmd)     && meta->evict_need_probe(target_inner_id, cmd.id))     ||
-        (is_writeback(cmd)  && meta->writeback_need_probe(target_inner_id, cmd.id)) )
-      {
+      if((is_evict(cmd) && meta->evict_need_probe(target_inner_id, cmd.id)) || meta->writeback_need_probe(target_inner_id, cmd.id) ) {
         cmd.id = -1;
         return std::make_pair(true, cmd);
       } else
@@ -113,14 +111,18 @@ public:
     return meta->is_dirty();
   }
 
-  void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id) const {
-    assert(outer->is_probe(outer_cmd));
-
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const {
     if(meta_outer) { // clean sharer if evict or miss
+      if(writeback) {
+        if(!meta_outer->is_valid()) {
+          assert(meta);
+          meta_outer->to_shared(-1);
+          meta_outer->get_outer_meta()->copy(meta->get_outer_meta());
+        }
+        meta_outer->to_dirty();
+      }
       if(outer->is_evict(outer_cmd) || !meta) meta_outer->sync(inner_id);
     }
-
-    if(meta && outer->is_evict(outer_cmd)) meta->to_invalid();
   }
 
   // writeback due to conflict, probe, flush

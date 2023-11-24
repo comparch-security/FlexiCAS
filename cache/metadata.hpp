@@ -111,11 +111,10 @@ class MetadataDirectoryBase : public MetadataBroadcastBase
 
 protected:
   uint64_t sharer = 0;
-  virtual void add_sharer(int32_t coh_id) { sharer |= (1ull << coh_id); }
-  virtual void clean_sharer(){ sharer = 0; }
-  virtual void delete_sharer(int32_t coh_id){ sharer &= ~(1ull << coh_id); }
-  virtual bool is_sharer(int32_t coh_id) const { return ((1ull << coh_id) & (sharer))!= 0; }
-  virtual bool is_exclusive_sharer(int32_t coh_id) const {return (1ull << coh_id) == sharer; }
+  void add_sharer(int32_t coh_id) { sharer |= (1ull << coh_id); }
+  void clean_sharer(){ sharer = 0; }
+  void delete_sharer(int32_t coh_id){ sharer &= ~(1ull << coh_id); }
+  bool is_sharer(int32_t coh_id) const { return ((1ull << coh_id) & (sharer))!= 0; }
 
 public:
   virtual void to_invalid()                 { MetadataBroadcastBase::to_invalid();         clean_sharer();          }
@@ -123,6 +122,7 @@ public:
   virtual void to_modified(int32_t coh_id)  { MetadataBroadcastBase::to_modified(coh_id);  add_sharer_help(coh_id); }
   virtual void to_exclusive(int32_t coh_id) { MetadataBroadcastBase::to_exclusive(coh_id); add_sharer_help(coh_id); }
   virtual void to_owned(int32_t coh_id)     { MetadataBroadcastBase::to_owned(coh_id);     add_sharer_help(coh_id); }
+  bool is_exclusive_sharer(int32_t coh_id) const {return (1ull << coh_id) == sharer; }
 
   virtual void copy(const CMMetadataBase *m_meta) {
     MetadataBroadcastBase::copy(m_meta);
@@ -170,7 +170,7 @@ public:
   virtual const CMMetadataBase * get_outer_meta() const { return &outer_meta; }
 
   virtual bool match(uint64_t addr) const { return MT::is_valid() && ((addr >> TOfst) & mask) == tag; }
-  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; MT::state = 0; MT::dirty = 0; }
+  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; CMMetadataBase::state = 0; }
   virtual uint64_t addr(uint32_t s) const {
     uint64_t addr = tag << TOfst;
     if constexpr (IW > 0) {

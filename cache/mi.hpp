@@ -64,6 +64,13 @@ public:
     } else return std::make_pair(false, cmd_for_null());
   }
 
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const {
+    CohPolicyBase::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
+    if(meta) {
+      if(outer->is_evict(outer_cmd) || outer->is_downgrade(outer_cmd)) meta->to_invalid();
+    }
+  }
+
   virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (isLLC) {
       if(is_evict(cmd)) return std::make_pair(true, cmd_for_probe_release());

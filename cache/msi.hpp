@@ -60,14 +60,11 @@ public:
   }
 
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
-    assert(outer->is_acquire(outer_cmd));
-    if(meta){ // exclusive snooping cache use nullptr as meta when acquire outer
-      meta->init(addr);
-      if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
-      else {
-        assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
-        meta->to_modified(-1);
-      }
+    meta->init(addr);
+    if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
+    else {
+      assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
+      meta->to_modified(-1);
     }
   }
 
@@ -85,7 +82,6 @@ public:
 
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
-      assert(outer->is_probe(outer_cmd));
       if(outer->is_evict(outer_cmd))
         return std::make_pair(true, cmd_for_probe_release());
       else {
@@ -97,6 +93,14 @@ public:
           return std::make_pair(true, cmd_for_probe_writeback());
       }
     } else return std::make_pair(false, cmd_for_null());
+  }
+
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const {
+    CohPolicyBase::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
+    if(meta) {
+      if(outer->is_evict(outer_cmd))          meta->to_invalid();
+      else if(outer->is_downgrade(outer_cmd)) meta->get_outer_meta()->to_shared(-1);
+    }
   }
 
   virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {

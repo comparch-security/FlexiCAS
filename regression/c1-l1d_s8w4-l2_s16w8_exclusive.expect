@@ -436,6 +436,7 @@ l2         write 0000d4ca99802e80 00 0010 05 0
 l1d        evict 0000d4ca99802e80 00 0002 03
 l2         read  0000b916652bb280 00 0010 03 1
 l1d        read  0000b916652bb280 00 0002 03 0
+mem        write 0000bc7b1359a840 -1 -001 -1 1
 l2         evict 0000bc7b1359a840 00 0001 04
 l2         write 0000499b54de4440 00 0001 04 0
 l1d        evict 0000499b54de4440 00 0001 00
@@ -986,6 +987,7 @@ l2         read  0000456a117bc4c0 -1 -001 -1 0
 l1d        read  0000456a117bc4c0 00 0003 01 0
 l1d        read  0000febe06090540 00 0005 00 1
 l1d        write 0000ca539a29f0c0 00 0003 03 1
+mem        write 0000bff3c84edd80 -1 -001 -1 1
 l2         evict 0000bff3c84edd80 00 0006 06
 l2         write 00007436a223d980 00 0006 06 0
 l1d        evict 00007436a223d980 00 0006 02
@@ -1036,6 +1038,7 @@ l1d        evict 000081ac4a4bcdc0 00 0007 01
 mem        read  0000808d8c6391c0 -1 -001 -1 1
 l2         read  0000808d8c6391c0 -1 -001 -1 0
 l1d        write 0000808d8c6391c0 00 0007 01 0
+mem        write 00000ad338e93680 -1 -001 -1 1
 l2         evict 00000ad338e93680 00 0010 02
 l2         write 000069bc0ebcf280 00 0010 02 0
 l1d        evict 000069bc0ebcf280 00 0002 03
@@ -1056,6 +1059,7 @@ l1d        evict 0000149f385e0d40 00 0005 01
 mem        read  000027e6864e3940 -1 -001 -1 1
 l2         read  000027e6864e3940 -1 -001 -1 0
 l1d        read  000027e6864e3940 00 0005 01 0
+mem        write 0000f5b48675d940 -1 -001 -1 1
 l2         evict 0000f5b48675d940 00 0005 00
 l2         write 0000ae80e4403540 00 0005 00 0
 l1d        evict 0000ae80e4403540 00 0005 02
@@ -1178,6 +1182,7 @@ l2         write 0000da70c969a400 00 0000 00 0
 l1d        evict 0000da70c969a400 00 0000 02
 l2         read  00003cd64a8fd200 00 0008 04 1
 l1d        read  00003cd64a8fd200 00 0000 02 0
+mem        write 0000a65cf5f1f380 -1 -001 -1 1
 l2         evict 0000a65cf5f1f380 00 0014 03
 l2         write 000028ccc9523f80 00 0014 03 0
 l1d        evict 000028ccc9523f80 00 0006 02
@@ -1230,6 +1235,7 @@ l2         write 0000078bf8a373c0 00 0015 07 0
 l1d        evict 0000078bf8a373c0 00 0007 01
 l2         read  0000a82444b831c0 00 0007 01 1
 l1d        write 0000a82444b831c0 00 0007 01 0
+mem        write 000077fa0eb93d80 -1 -001 -1 1
 l2         evict 000077fa0eb93d80 00 0006 00
 l2         write 0000a350ae074d80 00 0006 00 0
 l1d        evict 0000a350ae074d80 00 0006 03
@@ -1350,6 +1356,7 @@ l1d        evict 0000450e4751df80 00 0006 01
 mem        read  00009ffe5bbcc980 -1 -001 -1 1
 l2         read  00009ffe5bbcc980 -1 -001 -1 0
 l1d        read  00009ffe5bbcc980 00 0006 01 0
+mem        write 000069bc0ebcf280 -1 -001 -1 1
 l2         evict 000069bc0ebcf280 00 0010 02
 l2         write 0000e1d4c6616e80 00 0010 02 0
 l1d        evict 0000e1d4c6616e80 00 0002 01
@@ -1444,6 +1451,7 @@ l1d        evict 000001ab6a09a300 00 0004 01
 mem        read  000014637f6aab00 -1 -001 -1 1
 l2         read  000014637f6aab00 -1 -001 -1 0
 l1d        read  000014637f6aab00 00 0004 01 0
+mem        write 0000d30d3874ff80 -1 -001 -1 1
 l2         evict 0000d30d3874ff80 00 0014 06
 l2         write 0000714de5187f80 00 0014 06 0
 l1d        evict 0000714de5187f80 00 0006 02
@@ -1814,6 +1822,7 @@ l2         write 0000c14149aa4dc0 00 0007 07 0
 l1d        evict 0000c14149aa4dc0 00 0007 01
 l2         read  000081ac4a4bcdc0 00 0007 05 1
 l1d        write 000081ac4a4bcdc0 00 0007 01 0
+mem        write 000096872eb1bfc0 -1 -001 -1 1
 l2         evict 000096872eb1bfc0 00 0015 00
 l2         write 000092d8e2c367c0 00 0015 00 0
 l1d        evict 000092d8e2c367c0 00 0007 00
@@ -2088,6 +2097,7 @@ l2         write 0000a7090e103fc0 00 0015 06 0
 l1d        evict 0000a7090e103fc0 00 0007 00
 l2         read  0000808d8c6391c0 00 0007 00 1
 l1d        read  0000808d8c6391c0 00 0007 00 0
+mem        write 0000358664f81440 -1 -001 -1 1
 l2         evict 0000358664f81440 00 0001 03
 l2         write 0000193afd7b1040 00 0001 03 0
 l1d        evict 0000193afd7b1040 00 0001 02
@@ -2130,6 +2140,7 @@ l1d        evict 0000814aeaa97ac0 00 0003 01
 l2         read  0000ea725f63d8c0 00 0003 01 1
 l1d        read  0000ea725f63d8c0 00 0003 01 0
 l1d        read  00009da6392d4b80 00 0006 03 1
+mem        write 0000aaee500c0340 -1 -001 -1 1
 l2         evict 0000aaee500c0340 00 0013 02
 l2         write 00003c2c2c97b740 00 0013 02 0
 l1d        evict 00003c2c2c97b740 00 0005 03
