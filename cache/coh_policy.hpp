@@ -94,8 +94,8 @@ public:
   std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const {
     assert(is_probe(cmd));
     if(meta) {
-      if((is_evict(cmd)     && static_cast<const MetadataBroadcastBase *>(meta)->evict_need_probe(target_inner_id, cmd.id))     ||
-        (is_writeback(cmd)  && static_cast<const MetadataBroadcastBase *>(meta)->writeback_need_probe(target_inner_id, cmd.id)) )
+      if((is_evict(cmd)     && meta->evict_need_probe(target_inner_id, cmd.id))     ||
+        (is_writeback(cmd)  && meta->writeback_need_probe(target_inner_id, cmd.id)) )
       {
         cmd.id = -1;
         return std::make_pair(true, cmd);

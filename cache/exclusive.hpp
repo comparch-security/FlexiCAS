@@ -4,7 +4,7 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
 {
   typedef MSIPolicy<MT, false, isLLC> PolicyT;
@@ -286,7 +286,7 @@ protected:
         // move it to extended meta
         uint32_t mai, ms, mw;
         cache->replace(addr, &ai, &ms, &mw, true);
-        auto mmeta = cache->access(mai, ms, mw);
+        auto mmeta = static_cast<CMMetadataBase *>(cache->access(mai, ms, mw));
         CMDataBase *mdata = cache->data_copy_buffer();
         if(mmeta->is_valid()) evict(mmeta, mdata, mai, ms, mw, delay);
         cache->data_return_buffer(mdata);

@@ -5,10 +5,10 @@
 
 // assuming MI policy is used only by memory
 
-class MetadataMIBase : public MetadataBroadcastBase
+class MetadataMIBase : public CMMetadataBase
 {
 public:
-  MetadataMIBase(): MetadataBroadcastBase() {}
+  MetadataMIBase(): CMMetadataBase() {}
   virtual ~MetadataMIBase() {}
 
 private:
@@ -19,7 +19,7 @@ private:
 
 typedef MetadataMIBase MetadataMI;
 
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
 class MIPolicy : public CohPolicyBase
 {
 protected:

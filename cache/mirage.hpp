@@ -5,7 +5,7 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
-class MirageDataMeta : public CMMetadataBase
+class MirageDataMeta : public CMMetadataCommon
 {
 protected:
   bool state; // false: invalid, true: valid
@@ -16,29 +16,14 @@ public:
   void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
   std::tuple<uint32_t, uint32_t, uint32_t> pointer() { return std::make_tuple(mai, ms, mw);} // return the pointer to data
   virtual void to_invalid() { state = false; }
-  virtual void to_extend() {}
+  virtual void to_extend() {} // dummy to meet the virtual class requirement
   virtual bool is_valid() const { return state; }
-  virtual bool allow_write() const {return state; }
-  
-  virtual void copy(const CMMetadataBase *m_meta) {
-    auto meta = static_cast<const MirageDataMeta *>(m_meta);
+  virtual bool match(uint64_t addr) const { return false; } // dummy to meet the virtual class requirement
+  virtual void copy(const MirageDataMeta *meta) {
     std::tie(state, mai, ms, mw) = std::make_tuple(meta->state, meta->mai, meta->ms, meta->mw);
   }
 
   virtual ~MirageDataMeta() {}
-
-private:
-  virtual void sync(int32_t coh_id) {}
-  virtual void to_shared(int32_t coh_id) {}
-  virtual void to_modified(int32_t coh_id) {}
-  virtual void to_owned(int32_t coh_id) {}
-  virtual void to_exclusive(int32_t coh_id) {}
-  virtual void to_dirty(int32_t coh_id) {}
-  virtual void to_clean(int32_t coh_id) {}
-  virtual void init(uint64_t addr) {}
-  virtual void to_dirty() {}
-  virtual void to_clean() {}
-  virtual uint64_t addr(uint32_t s) const { return 0; }
 };
 
 // metadata supporting MSI coherency
@@ -62,13 +47,13 @@ public:
 template <int AW, int IW, int TOfst>
 class MirageMetadataMSIBroadcast : public MetadataBroadcast<AW, IW, TOfst, MetadataMSIBase<MetadataBroadcastBase> >, public MirageMetadataSupport
 {
-  typedef MetadataBroadcast<AW, IW, TOfst, MetadataMSIBase<MetadataBroadcastBase> > MetadataBase_t;
+  typedef MetadataBroadcast<AW, IW, TOfst, MetadataMSIBase<MetadataBroadcastBase> > MetadataT;
 public:
-  MirageMetadataMSIBroadcast() : MetadataBase_t(), MirageMetadataSupport() {}
+  MirageMetadataMSIBroadcast() : MetadataT(), MirageMetadataSupport() {}
   virtual ~MirageMetadataMSIBroadcast() {}
 
   virtual void copy(const CMMetadataBase *m_meta) {
-    MetadataBase_t::copy(m_meta);
+    MetadataT::copy(m_meta);
     auto meta = static_cast<const MirageMetadataMSIBroadcast<AW, IW, TOfst> *>(m_meta);
     std::tie(ds, dw) = std::make_tuple(meta->ds, meta->dw);
   }
@@ -109,7 +94,7 @@ private:
 template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation>
   requires C_DERIVE2(MT, MetadataBroadcastBase, MirageMetadataSupport) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
-           C_DERIVE(DTMT, CMMetadataBase)  && C_DERIVE(MIDX, IndexFuncBase)   && C_DERIVE(DIDX, IndexFuncBase) &&
+           C_DERIVE(DTMT, MirageDataMeta)  && C_DERIVE(MIDX, IndexFuncBase)   && C_DERIVE(DIDX, IndexFuncBase) &&
            C_DERIVE(MRPC, ReplaceFuncBase) && C_DERIVE(DRPC, ReplaceFuncBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
 class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>
 {
@@ -136,7 +121,7 @@ public:
   }
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
-    auto meta = arrays[ai]->get_meta(s, w);
+    auto meta = static_cast<CMMetadataBase *>(arrays[ai]->get_meta(s, w));
     if constexpr (!C_VOID(DT))
       return std::make_pair(meta, get_data_data(static_cast<MT *>(meta)));
     else
@@ -190,7 +175,7 @@ public:
         m_ai = (*ai+1)%P; // Do we need total random selection of partition here, does not matter for Mirage as P=2
         m_s  = CacheT::indexer.index(addr, m_ai);
         CacheT::replacer[m_ai].replace(m_s, &m_w);
-        auto m_meta = CacheT::access(m_ai, m_s, m_w);
+        auto m_meta = static_cast<MT *>(CacheT::access(m_ai, m_s, m_w));
         auto m_addr = m_meta->addr(m_s);
         if(remapped.count(m_addr)) break;
         remapped.insert(addr);
@@ -202,7 +187,7 @@ public:
 
   void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
     auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
-    auto m_meta = CacheT::access(m_ai, m_s, m_w);
+    auto m_meta = static_cast<MT *>(CacheT::access(m_ai, m_s, m_w));
     auto addr = m_meta->addr(m_s);
     meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
     get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
@@ -244,7 +229,7 @@ protected:
     } else { // miss
       // get the way to be replaced
       cache->replace(addr, &ai, &s, &w);
-      meta = cache->access(ai, s, w);
+      meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
       std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > stack;
       if(meta->is_valid()) cache->cuckoo_search(&ai, &s, &w, meta, stack);
       if(meta->is_valid()) { // associative eviction!
@@ -252,7 +237,7 @@ protected:
         cache->get_data_meta(static_cast<MT *>(meta))->to_invalid();
       }
       while(!stack.empty()) cache->cuckoo_relocate(&ai, &s, &w, meta, stack, delay);
-      meta = cache->access(ai, s, w);
+      meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
       auto data_pointer = cache->replace_data(addr);
       auto data_meta = cache->get_data_meta(data_pointer);
       data = cache->get_data_data(data_pointer);
