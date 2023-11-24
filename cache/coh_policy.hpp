@@ -93,10 +93,9 @@ public:
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const = 0;
   virtual std::pair<bool, coh_cmd_t> probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) = 0;
-  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id) const {
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, int32_t inner_id) const {
     assert(outer->is_probe(outer_cmd));
     // meta and meta_outer may be nullptr
-    if(meta_outer) outer->meta_after_probe_ack(outer_cmd, meta_outer, inner_id); // meta_outer needed to be inited
     if(meta){
       if(outer->is_evict(outer_cmd)) meta->to_invalid();
       else {
@@ -105,6 +104,11 @@ public:
       }
     }
   }
+  virtual void meta_outer_after_probe(coh_cmd_t outer_cmd, CMMetadataBase* meta_outer, int32_t inner_id) const{
+    assert(outer->is_probe(outer_cmd));
+    if(meta_outer) outer->meta_after_probe_ack(outer_cmd, meta_outer, inner_id);
+  }
+  
   virtual void meta_after_probe_ack(coh_cmd_t cmd, CMMetadataBase *meta, int32_t inner_id) const{
     assert(is_probe(cmd));
     if(is_evict(cmd)) meta->sync(inner_id);

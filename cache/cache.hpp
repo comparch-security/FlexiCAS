@@ -8,6 +8,8 @@
 #include <set>
 #include <map>
 #include <vector>
+#include <mutex>
+#include <condition_variable>
 
 #include "util/random.hpp"
 #include "util/monitor.hpp"
@@ -110,6 +112,10 @@ public:
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
+  virtual std::vector<uint32_t> *get_status() = 0;
+  virtual std::mutex* get_mutex() = 0;
+  virtual std::condition_variable* get_cv() = 0;
+
 };
 
 // normal set associative cache array
@@ -122,6 +128,9 @@ class CacheArrayNorm : public CacheArrayBase
 protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
+  std::vector<uint32_t> status; // record every set status
+  std::mutex mtx; // mutex for status
+  std::condition_variable cv;
   unsigned int extra_way = 0;
 
 public:
@@ -136,6 +145,8 @@ public:
       data.resize(data_num);
       for(auto &d:data) d = new DT();
     }
+    status.resize(nset);
+    for(int i = 0; i < nset; i++) status[i] = 0;
   }
 
   virtual ~CacheArrayNorm() {
@@ -160,6 +171,11 @@ public:
     } else
       return data[s*NW + w];
   }
+
+  virtual std::vector<uint32_t> *get_status(){ return &status; }
+  virtual std::mutex* get_mutex() { return &mtx; }
+  virtual std::condition_variable* get_cv() { return &cv; }
+
 };
 
 //////////////// define cache ////////////////////
@@ -218,6 +234,24 @@ public:
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
+
+  virtual std::vector<uint32_t> *get_status(uint32_t ai){
+    return arrays[ai]->get_status();
+  }
+  virtual std::mutex* get_mutex(uint32_t ai){
+    return arrays[ai]->get_mutex();
+  }
+  virtual std::condition_variable* get_cv(uint32_t ai) {
+    return arrays[ai]->get_cv();
+  }
+  
+  virtual uint32_t get_id() {
+    return id;
+  }
+
+  virtual std::string get_name(){
+    return name;
+  }
 };
 
 // Skewed Cache
