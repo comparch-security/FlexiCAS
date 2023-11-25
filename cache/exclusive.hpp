@@ -64,10 +64,10 @@ public:
 
 };
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
-class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, EnDir, isLLC>
+template<typename MT, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase)
+class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
 {
-  typedef ExclusiveMSIPolicy<MT, EnDir, isLLC> PolicyT;
+  typedef ExclusiveMSIPolicy<MT, true, isLLC> PolicyT;
 protected:
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
@@ -75,22 +75,17 @@ public:
 
   virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
     int32_t id = cmd.id;
-    if constexpr (EnDir) {
-      if(is_fetch_read(cmd)) {
-        meta->to_shared(id);
-        if(static_cast<MetadataDirectoryBase *>(meta)->is_exclusive_sharer(id)) { // add the support for exclusive
-          meta->to_exclusive(id);
-          meta_inner->to_exclusive(-1);
-        } else
-          meta_inner->to_shared(-1);
-      } else {
-        assert(is_fetch_write(cmd));
-        meta->to_modified(id);
-        meta_inner->to_modified(-1);
-      }
+    if(is_fetch_read(cmd)) {
+      meta->to_shared(id);
+      if(static_cast<MetadataDirectoryBase *>(meta)->is_exclusive_sharer(id)) { // add the support for exclusive
+        meta->to_exclusive(id);
+        meta_inner->to_exclusive(-1);
+      } else
+        meta_inner->to_shared(-1);
     } else {
-      meta_inner->copy(meta->get_outer_meta()); // delegate all permision to inner
-      meta->to_invalid();
+      assert(is_fetch_write(cmd));
+      meta->to_modified(id);
+      meta_inner->to_modified(-1);
     }
   }
 
