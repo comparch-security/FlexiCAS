@@ -4,7 +4,7 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 #include "cache/memory.hpp"
-#include "util/random.hpp"
+#include "util/regression.hpp"
 
 #define L1IW 3
 #define L1WN 4
@@ -25,7 +25,6 @@ typedef SimpleMemoryModel<data_type,void,true> memory_type;
 static uint64_t gi = 703;
 const int AddrN = 128;
 const int TestN = 256;
-const uint64_t addr_mask = 0x0ffffffffffc0ull;
 
 CMHasher hasher(gi);
 data_type data;
@@ -41,15 +40,18 @@ int main() {
   l1d->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
 
-  std::vector<uint64_t> addr_pool(AddrN);
-  for(int i=0; i<AddrN; i++) addr_pool[i] = hasher(gi++) & addr_mask;
+  RegressionGen<1, false, 128, 0, data_type> tgen;
 
   for(int i=0; i<TestN; i++) {
-    if(i%3) // read
-      core->read(addr_pool[hasher(gi++)%AddrN], nullptr);
-    else {
-      data.write(0, i, 0xffffffffull);
-      core->write(addr_pool[hasher(gi++)%(AddrN/2)], &data, nullptr);
+    auto [addr, wdata, rw, nc, ic, flush] = tgen.gen();
+    if(flush) {
+      core->writeback(addr, nullptr);
+      core->write(addr, wdata, nullptr);
+    } else if(rw) {
+      core->write(addr, wdata, nullptr);
+    } else {
+      auto rdata = static_cast<const data_type *>(core->read(addr, nullptr));
+      if(!tgen.check(addr, rdata)) return 1; // test failed!
     }
   }
 
