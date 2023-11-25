@@ -27,14 +27,14 @@ public:
   virtual ~CacheArrayBase() {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) = 0;
+  virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
 };
 
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
 template<int IW, int NW, typename MT, typename DT>
-  requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE_OR_VOID(MT, CMMetadataBase)
+  requires C_DERIVE(MT, CMMetadataCommon) && C_DERIVE_OR_VOID(DT, CMDataBase)
 class CacheArrayNorm : public CacheArrayBase
 {
 protected:
@@ -76,7 +76,7 @@ public:
     return false;
   }
 
-  virtual CMMetadataBase * get_meta(uint32_t s, uint32_t w) { return meta[s*way_num + w]; }
+  virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) { return meta[s*way_num + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
     if constexpr (C_VOID(DT)) return nullptr;
     else                      return data[s*NW + w];
@@ -118,7 +118,7 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
-  virtual CMMetadataBase *access(uint32_t ai, uint32_t s, uint32_t w) {
+  virtual CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_meta(s, w);
   }
 
@@ -185,7 +185,7 @@ public:
   }
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
-    auto meta = arrays[ai]->get_meta(s, w);
+    auto meta = static_cast<CMMetadataBase *>(arrays[ai]->get_meta(s, w));
     if constexpr (!C_VOID(DT))
       return std::make_pair(meta, w < NW ? arrays[ai]->get_data(s, w) : nullptr);
     else

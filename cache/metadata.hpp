@@ -4,43 +4,6 @@
 #include <cstdint>
 #include "util/concept_macro.hpp"
 
-class CMMetadataBase
-{
-public:
-  // implement a totally useless base class
-  virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
-  virtual void reset() {}                                   // reset the metadata
-  virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
-  virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
-  virtual void sync(int32_t coh_id) = 0;                    // sync after probe
-
-  virtual void to_invalid() = 0;                            // change state to invalid
-  virtual void to_shared(int32_t coh_id) = 0;               // change to shared
-  virtual void to_modified(int32_t coh_id) = 0;             // change to modified
-  virtual void to_owned(int32_t coh_id) = 0;                // change to owned
-  virtual void to_exclusive(int32_t coh_id) = 0;            // change to exclusive
-  virtual void to_dirty() = 0;                              // change to dirty
-  virtual void to_clean() = 0;                              // change to clean
-  virtual void to_extend() = 0;                             // change to extend directory meta
-
-  virtual bool is_valid() const { return false; }
-  virtual bool is_shared() const { return false; }
-  virtual bool is_modified() const { return false; }
-  virtual bool is_owned() const { return false; }
-  virtual bool is_exclusive() const { return false; }
-  virtual bool is_dirty() const { return false; }
-  virtual bool is_extend() const { return false; }
-
-  virtual bool allow_write() const = 0;
-
-  virtual CMMetadataBase * get_outer_meta() { return nullptr; } // return the outer metadata if supported
-  virtual const CMMetadataBase * get_outer_meta() const { return nullptr; }
-
-  virtual void copy(const CMMetadataBase *meta) = 0;        // copy the content of meta
-
-  virtual ~CMMetadataBase() {}
-};
-
 class CMDataBase
 {
 public:
@@ -74,9 +37,19 @@ public:
   }
 };
 
+// a common base between data metadat and normal coherence metadata
+class CMMetadataCommon
+{
+public:
+  virtual void to_invalid() = 0;      // change state to invalid
+  virtual bool is_valid() const = 0;
+  virtual bool match(uint64_t addr) const = 0;
+  virtual void to_extend() = 0;
+};
+
 // base class for all metadata supporting coherence
 // assuming the minimal coherence protocol is MI
-class MetadataBroadcastBase : public CMMetadataBase
+class CMMetadataBase : public CMMetadataCommon
 {
 protected:
   unsigned int state     : 3;
@@ -89,8 +62,13 @@ public:
   static const unsigned int state_exclusive = 4; // 110 clean, exclusive
   static const unsigned int state_owned     = 2; // 010 may dirty, shared
 
-  MetadataBroadcastBase() : state(0), dirty(0), extend(0) {}
-  virtual ~MetadataBroadcastBase() {}
+  CMMetadataBase() : state(0), dirty(0), extend(0) {}
+  virtual ~CMMetadataBase() {}
+
+  // implement a totally useless base class
+  virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
+  virtual void init(uint64_t addr) {}                       // initialize the meta for addr
+  virtual uint64_t addr(uint32_t s) const { return 0; }     // assemble the block address from the metadata
 
   virtual void to_invalid() { state = state_invalid; dirty = 0; }
   virtual void to_shared(int32_t coh_id) { state = state_shared; }
@@ -100,29 +78,30 @@ public:
   virtual void to_dirty() { dirty = 1; }
   virtual void to_clean() { dirty = 0; }
   virtual void to_extend() { extend = 1; }
-  virtual bool is_valid() const { return state; }
-  virtual bool is_shared() const { return state == state_shared; }
-  virtual bool is_modified() const {return state == state_modified; }
-  virtual bool is_exclusive() const { return state == state_exclusive; }
-  virtual bool is_owned() const { return state == state_owned; }
+  bool is_valid() const { return state; }
+  bool is_shared() const { return state == state_shared; }
+  bool is_modified() const {return state == state_modified; }
+  bool is_exclusive() const { return state == state_exclusive; }
+  bool is_owned() const { return state == state_owned; }
   virtual bool is_dirty() const { return dirty; }
-  virtual bool is_extend() const { return extend; }
+  bool is_extend() const { return extend; }
 
   virtual bool allow_write() const {return 0 != (state & 0x4); }
 
-  virtual void copy(const CMMetadataBase *m_meta) {
-    auto meta = static_cast<const MetadataBroadcastBase *>(m_meta);
+  virtual void sync(int32_t coh_id) {}     // sync after probe
+  virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; }
+  virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; }
+
+  virtual CMMetadataBase * get_outer_meta() { return nullptr; } // return the outer metadata if supported
+  virtual const CMMetadataBase * get_outer_meta() const { return nullptr; }
+
+  virtual void copy(const CMMetadataBase *meta) {
     state  = meta->state;
     dirty  = meta->dirty;
   }
-
-  // coherence related methods
-  virtual bool evict_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; }
-  virtual bool writeback_need_probe(int32_t target_id, int32_t request_id) const { return target_id != request_id; } 
-  virtual void init(uint64_t addr) {}
-  virtual uint64_t addr(uint32_t s) const { return 0; }
-  virtual void sync(int32_t coh_id) {}
 };
+
+typedef CMMetadataBase MetadataBroadcastBase;
 
 class MetadataDirectoryBase : public MetadataBroadcastBase
 {
@@ -132,11 +111,10 @@ class MetadataDirectoryBase : public MetadataBroadcastBase
 
 protected:
   uint64_t sharer = 0;
-  virtual void add_sharer(int32_t coh_id) { sharer |= (1ull << coh_id); }
-  virtual void clean_sharer(){ sharer = 0; }
-  virtual void delete_sharer(int32_t coh_id){ sharer &= ~(1ull << coh_id); }
-  virtual bool is_sharer(int32_t coh_id) const { return ((1ull << coh_id) & (sharer))!= 0; }
-  virtual bool is_exclusive_sharer(int32_t coh_id) const {return (1ull << coh_id) == sharer; }
+  void add_sharer(int32_t coh_id) { sharer |= (1ull << coh_id); }
+  void clean_sharer(){ sharer = 0; }
+  void delete_sharer(int32_t coh_id){ sharer &= ~(1ull << coh_id); }
+  bool is_sharer(int32_t coh_id) const { return ((1ull << coh_id) & (sharer))!= 0; }
 
 public:
   virtual void to_invalid()                 { MetadataBroadcastBase::to_invalid();         clean_sharer();          }
@@ -144,6 +122,7 @@ public:
   virtual void to_modified(int32_t coh_id)  { MetadataBroadcastBase::to_modified(coh_id);  add_sharer_help(coh_id); }
   virtual void to_exclusive(int32_t coh_id) { MetadataBroadcastBase::to_exclusive(coh_id); add_sharer_help(coh_id); }
   virtual void to_owned(int32_t coh_id)     { MetadataBroadcastBase::to_owned(coh_id);     add_sharer_help(coh_id); }
+  bool is_exclusive_sharer(int32_t coh_id) const {return (1ull << coh_id) == sharer; }
 
   virtual void copy(const CMMetadataBase *m_meta) {
     MetadataBroadcastBase::copy(m_meta);
@@ -173,16 +152,15 @@ public:
 // TOfst : tag offset
 // MT    : metadata type
 // OutMT : the metadata type to store outer cache state
-template <int AW, int IW, int TOfst, typename MT, typename OutMT>
-  requires C_DERIVE(MT, MetadataBroadcastBase) && C_DERIVE_OR_VOID(OutMT, MetadataBroadcastBase) && !C_DERIVE(OutMT, MetadataDirectoryBase)
+template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, CMMetadataBase)
 class MetadataMixer : public MT
 {
 protected:
   uint64_t     tag   : AW-TOfst;
   constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
-  OutMT outer_meta; // maintain a copy of metadata for hierarchical coherence support
-                    // this outer metadata is responsible only to record the S/M/E/O state seen by the outer
-                    // whether the block is dirty, shared by inner caches, and directory, etc. are hold by the metadata
+  CMMetadataBase outer_meta; // maintain a copy of metadata for hierarchical coherence support
+                             // this outer metadata is responsible only to record the S/M/E/O state seen by the outer
+                             // whether the block is dirty, shared by inner caches, and directory, etc. are hold by the metadata
 
 public:
   MetadataMixer() : tag(0) {}
@@ -192,8 +170,7 @@ public:
   virtual const CMMetadataBase * get_outer_meta() const { return &outer_meta; }
 
   virtual bool match(uint64_t addr) const { return MT::is_valid() && ((addr >> TOfst) & mask) == tag; }
-  virtual void reset() { tag = 0; MT::state = 0; MT::dirty = 0; }
-  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; MT::state = 0; MT::dirty = 0; }
+  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; CMMetadataBase::state = 0; }
   virtual uint64_t addr(uint32_t s) const {
     uint64_t addr = tag << TOfst;
     if constexpr (IW > 0) {
@@ -217,12 +194,10 @@ public:
   }
 };
 
-template <int AW, int IW, int TOfst, typename MT, typename OutMT = MetadataBroadcastBase>
-  requires !C_DERIVE(MT, MetadataDirectoryBase)
-using MetadataBroadcast = MetadataMixer<AW, IW, TOfst, MT, OutMT>;
+template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, MetadataBroadcastBase) && !C_DERIVE(MT, MetadataDirectoryBase)
+using MetadataBroadcast = MetadataMixer<AW, IW, TOfst, MT>;
 
-template <int AW, int IW, int TOfst, typename MT, typename OutMT = MetadataBroadcastBase>
-  requires C_DERIVE(MT, MetadataDirectoryBase)
-using MetadataDirectory = MetadataMixer<AW, IW, TOfst, MT, OutMT>;
+template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, MetadataDirectoryBase)
+using MetadataDirectory = MetadataMixer<AW, IW, TOfst, MT>;
 
 #endif

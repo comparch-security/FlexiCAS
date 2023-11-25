@@ -4,21 +4,29 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
 {
   typedef MSIPolicy<MT, false, isLLC> PolicyT;
 protected:
-  using PolicyT::probe_msg;
-  using PolicyT::evict_act;
-  using PolicyT::writeback_act;
+  using CohPolicyBase::is_fetch_read;
+  using CohPolicyBase::is_fetch_write;
+  using CohPolicyBase::cmd_for_null;
+  using CohPolicyBase::cmd_for_probe_release;
+  using CohPolicyBase::cmd_for_probe_writeback;
+  using CohPolicyBase::cmd_for_probe_downgrade;
+  using CohPolicyBase::cmd_for_release;
 public:
 
+  virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+    if(is_fetch_write(cmd))    return std::make_pair(true, cmd_for_probe_release(cmd.id));
+    else                       return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
+  }
+
   virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
-    assert(PolicyT::is_acquire(cmd));
     int32_t id = cmd.id;
     if constexpr (EnDir) {
-      if(PolicyT::is_fetch_read(cmd)) {
+      if(is_fetch_read(cmd)) {
         meta->to_shared(id);
         meta_inner->to_shared(-1);
       } else {
@@ -26,38 +34,59 @@ public:
         meta_inner->to_modified(-1);
       }
     } else {
-      // delegate all permission to inner as there is no copy in the exclusive cache
-      if(meta->allow_write()) meta_inner->to_modified(-1);
-      else                    meta_inner->to_shared(-1);
+      meta_inner->copy(meta->get_outer_meta()); // delegate all permision to inner
       meta->to_invalid();
     }
   }
 
+  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
+    // for exclusive cache, no sync is needed for normal way, always sync for extended way
+    return meta->is_extend() ? std::make_pair(true, cmd_for_probe_release()) : std::make_pair(false, cmd_for_null());
+  }
+
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
     meta->get_outer_meta()->copy(meta_inner);
-    if(meta_inner) {
-      assert(PolicyT::is_release(cmd) && PolicyT::is_evict(cmd));
-      meta_inner->to_invalid();
-    }
+    meta_inner->to_invalid();
+
     if constexpr (!EnDir) { // need to validate meta when using the snoopying protocol
-      if(meta->allow_write()) meta->to_modified(-1);
-      else                    meta->to_shared(-1);
+      meta->to_shared(-1);
     }
   }
 
   virtual std::pair<bool, coh_cmd_t> release_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, const CMMetadataBase* meta_inner) const {
-    assert(PolicyT::is_release(cmd));
     // if the inner cache is not an exclusive ower (M/O/E), probe to see whether there are other copies
-    return std::make_pair(!meta_inner->allow_write(), CohPolicyBase::cmd_for_probe_writeback(cmd.id));
-  }
-
-  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
-    // for exclusive cache, no sync is needed for normal way, always sync for extended way
-    return meta->is_extend() ? std::make_pair(true, CohPolicyBase::cmd_for_probe_release()) : std::make_pair(false, PolicyT::cmd_for_null());
+    return std::make_pair(!meta_inner->allow_write(), cmd_for_probe_writeback(cmd.id));
   }
 
   virtual std::pair<bool, coh_cmd_t> inner_need_release(){
-    return std::make_pair(true, PolicyT::cmd_for_release());
+    return std::make_pair(true, cmd_for_release());
+  }
+
+};
+
+template<typename MT, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase)
+class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
+{
+  typedef ExclusiveMSIPolicy<MT, true, isLLC> PolicyT;
+protected:
+  using CohPolicyBase::is_fetch_read;
+  using CohPolicyBase::is_fetch_write;
+public:
+
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
+    int32_t id = cmd.id;
+    if(is_fetch_read(cmd)) {
+      meta->to_shared(id);
+      if(static_cast<MetadataDirectoryBase *>(meta)->is_exclusive_sharer(id)) { // add the support for exclusive
+        meta->to_exclusive(id);
+        meta_inner->to_exclusive(-1);
+      } else
+        meta_inner->to_shared(-1);
+    } else {
+      assert(is_fetch_write(cmd));
+      meta->to_modified(id);
+      meta_inner->to_modified(-1);
+    }
   }
 
 };
@@ -165,6 +194,8 @@ protected:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     bool hit = cache->hit(addr, &ai, &s, &w);
+    bool probe_hit = false;
+    bool probe_writeback = false;
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto promote = policy->acquire_need_promote(cmd, meta);
@@ -174,9 +205,19 @@ protected:
       }
       return std::make_tuple(meta, data, ai, s, w, hit);
     } else {
-      meta = cache->meta_copy_buffer();
+      meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
       data = cache->data_copy_buffer();
-      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
+      auto sync = policy->acquire_need_sync(cmd, meta);
+      if(sync.first) {
+        std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+        if(probe_writeback) cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
+      }
+      if(probe_writeback) {
+        auto promote = policy->acquire_need_promote(cmd, meta);
+        if(promote.first) outer->acquire_req(addr, meta, data, promote.second, delay); // promote permission if needed
+      } else {
+        outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
+      }
       return std::make_tuple(meta, data, ai, s, w, hit);
     }
   }
@@ -217,7 +258,7 @@ protected:
     if(flush.first) {
       hit = cache->hit(addr, &ai, &s, &w);
       if(!hit) {
-        meta = cache->meta_copy_buffer();
+        meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
         data = cache->data_copy_buffer();
         auto [phit, pwb] = probe_req(addr, meta, data, flush.second, delay);
         if(pwb) cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
@@ -286,7 +327,7 @@ protected:
         // move it to extended meta
         uint32_t mai, ms, mw;
         cache->replace(addr, &ai, &ms, &mw, true);
-        auto mmeta = cache->access(mai, ms, mw);
+        auto mmeta = static_cast<CMMetadataBase *>(cache->access(mai, ms, mw));
         CMDataBase *mdata = cache->data_copy_buffer();
         if(mmeta->is_valid()) evict(mmeta, mdata, mai, ms, mw, delay);
         cache->data_return_buffer(mdata);
@@ -406,7 +447,7 @@ public:
       std::tie(meta, data) = cache->access_line(ai, s, w); // need c++17 for auto type infer
     } else {
       auto sync = policy->probe_need_sync(outer_cmd, meta);
-      meta = cache->meta_copy_buffer();
+      meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
       data = cache->data_copy_buffer();
       std::tie(probe_hit, probe_writeback) = inner->probe_req(addr, meta, data, sync.second, delay);
       if(probe_writeback) cache->hook_write(addr, ai, s, w, true, true, delay);
@@ -415,9 +456,9 @@ public:
     if(hit || probe_writeback) {
       if(writeback = policy->probe_need_writeback(outer_cmd, meta))
         if(data_outer) data_outer->copy(data);
-      policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id);
     }
 
+    policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id, writeback);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, delay);
 
     if(!hit) {
@@ -466,9 +507,9 @@ public:
 
       if(writeback = policy->probe_need_writeback(outer_cmd, meta))
         if(data_outer) data_outer->copy(data);
-      policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id);
     }
 
+    policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id, writeback);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, delay);
 
     if(hit && meta->is_extend()) {
@@ -481,5 +522,17 @@ public:
 };
 
 typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortUncached> ExclusiveOuterCohPortDirectory;
+
+template<typename CT>
+using ExclusiveL2CacheBroadcast = CoherentCacheNorm<CT, ExclusiveOuterCohPortBroadcast, ExclusiveInnerPortBroadcast>;
+
+template<typename CT>
+using ExclusiveLLCBroadcast = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerPortBroadcast>;
+
+template<typename CT>
+using ExclusiveL2CacheDirectory = CoherentCacheNorm<CT, ExclusiveOuterCohPortDirectory, ExclusiveInnerPortDirectory>;
+
+template<typename CT>
+using ExclusiveLLCDirectory = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerPortDirectory>;
 
 #endif

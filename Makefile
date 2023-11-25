@@ -1,6 +1,7 @@
 
 CONFIG ?= example
 MODE ?=
+NCORE ?= `nproc`
 
 MAKE = make
 CXX = g++
@@ -45,7 +46,7 @@ all: lib$(CONFIG).a
 .PHONY: all
 
 $(CRYPTO_LIB):
-	$(MAKE) -C cryptopp -j
+	$(MAKE) -C cryptopp -j$(NCORE)
 
 lib$(CONFIG).a : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $(CONFIG).o

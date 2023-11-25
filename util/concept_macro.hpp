@@ -4,13 +4,13 @@
 // a macro header to reduce the burden of writing constraints
 // also a common place to handle the differences between C++17 and C++20
 
-#include <concepts>
-
 #if (__cplusplus < 202002L)
   // C++17 with -fconcepts in GCC
+  #include <type_traits>
   #define C_DERIVE(c, b) (std::is_base_of_v<b, c> && std::is_convertible_v<const volatile c*, const volatile b*>)
 #else
   // C++20
+  #include <concepts>
   #define C_DERIVE(c, b) std::derived_from<c, b>
 #endif
 

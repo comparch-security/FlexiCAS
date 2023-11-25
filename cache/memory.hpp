@@ -2,7 +2,7 @@
 #define CM_CACHE_MEMORY_HPP
 
 #include "cache/coherence.hpp"
-#include "cache/msi.hpp"
+#include "cache/mi.hpp"
 #include <sys/mman.h>
 #include <unordered_map>
 
@@ -26,7 +26,7 @@ public:
   SimpleMemoryModel(const std::string &n)
     : InnerCohPortUncached(nullptr), id(UniqueID::new_id(n)), name(n)
   {
-    InnerCohPortBase::policy = new MSIPolicy<MetadataBroadcastBase,false,true>();
+    InnerCohPortBase::policy = new MIPolicy<MetadataMI,false,false>();
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(id);
   }
 

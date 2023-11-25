@@ -1,4 +1,5 @@
 #include "cache/exclusive.hpp"
+#include "cache/mesi.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
 #include "cache/memory.hpp"
@@ -12,6 +13,10 @@
 #define L2WN 8
 #define L2Toff 10
 
+#define L3IW 6
+#define L3WN 16
+#define L3Toff 12
+
 typedef Data64B data_type;
 typedef MetadataMSIBroadcast<48, L1IW, L1Toff> l1_metadata_type;
 typedef IndexNorm<L1IW,6> l1_indexer_type;
@@ -24,10 +29,17 @@ typedef MetadataMSIBroadcast<48, L2IW, L2Toff> l2_metadata_type;
 typedef IndexNorm<L2IW,6> l2_indexer_type;
 typedef ReplaceSRRIP<L2IW,L2WN,1> l2_replacer_type;
 typedef CacheNormExclusiveBroadcast<L2IW,L2WN,l2_metadata_type,data_type,l2_indexer_type,l2_replacer_type,void,true> l2_type;
-typedef ExclusiveMSIPolicy<l2_metadata_type,false,true> l2_policy_type;
+typedef ExclusiveMSIPolicy<l2_metadata_type,false,false> l2_policy_type;
+typedef ExclusiveL2CacheBroadcast<l2_type> l2_cache_type;
+
+typedef MetadataMSIDirectory<48, L3IW, L3Toff> l3_metadata_type;
+typedef IndexNorm<L3IW,6> l3_indexer_type;
+typedef ReplaceSRRIP<L3IW,L3WN,1> l3_replacer_type;
+typedef CacheNorm<L3IW,L3WN,l3_metadata_type,data_type,l3_indexer_type,l3_replacer_type,void,true> l3_type;
+typedef MESIPolicy<l3_metadata_type,true> l3_policy_type;
 
 typedef OuterCohPortUncached memory_port_type;
-typedef ExclusiveLLCBroadcast<l2_type> l2_cache_type;
+typedef CoherentCacheNorm<l3_type,memory_port_type> l3_cache_type;
 typedef SimpleMemoryModel<data_type,void,true> memory_type;
 
 static uint64_t gi = 703;
@@ -44,14 +56,18 @@ int main() {
   CoreInterface * core = static_cast<CoreInterface *>(l1d->inner);
   l2_policy_type *l2_policy = new l2_policy_type();
   l2_cache_type * l2 = new l2_cache_type(l2_policy, "l2");
+  l3_policy_type *l3_policy = new l3_policy_type();
+  l3_cache_type * l3 = new l3_cache_type(l3_policy, "l3");
   memory_type * mem = new memory_type("mem");
 
   l1d->outer->connect(l2->inner, l2->inner->connect(l1d->outer));
-  l2->outer->connect(mem, mem->connect(l2->outer));
+  l2->outer->connect(l3->inner, l3->inner->connect(l2->outer));
+  l3->outer->connect(mem, mem->connect(l3->outer));
 
   SimpleTracer tracer;
   l1d->attach_monitor(&tracer);
   l2->attach_monitor(&tracer);
+  l3->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
 
   std::vector<uint64_t> addr_pool(AddrN);

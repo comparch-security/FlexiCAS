@@ -4,7 +4,6 @@
 #include <unordered_map>
 #include <cstdint>
 #include <cassert>
-#include <concepts>
 #include "util/random.hpp"
 
 /////////////////////////////////

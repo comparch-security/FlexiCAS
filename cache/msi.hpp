@@ -1,7 +1,7 @@
 #ifndef CM_CACHE_MSI_HPP
 #define CM_CACHE_MSI_HPP
 
-#include "cache/coh_policy.hpp"
+#include "cache/mi.hpp"
 
 // metadata supporting MSI coherency
 template <typename BT>
@@ -24,30 +24,33 @@ template <int AW, int IW, int TOfst>
 using MetadataMSIDirectory = MetadataDirectory<AW, IW, TOfst, MetadataMSIBase<MetadataDirectoryBase> >;
 
 template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
-class MSIPolicy : public CohPolicyBase
+  class MSIPolicy : public MIPolicy<MT, isL1, isLLC>
 {
+  typedef MIPolicy<MT, isL1, isLLC> PolicT;
+protected:
+  using CohPolicyBase::outer;
+  using CohPolicyBase::is_fetch_read;
+  using CohPolicyBase::is_fetch_write;
+  using CohPolicyBase::is_evict;
+  using CohPolicyBase::is_writeback;
+  using CohPolicyBase::is_downgrade;
+  using CohPolicyBase::cmd_for_probe_release;
+  using CohPolicyBase::cmd_for_probe_writeback;
+  using CohPolicyBase::cmd_for_probe_downgrade;
+  using CohPolicyBase::cmd_for_null;
+
 public:
-  MSIPolicy() : CohPolicyBase(1, 2, 3, 4, 0, 1, 2, 3) {}
   virtual ~MSIPolicy() {}
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const {
-    assert(is_acquire(cmd));
     if(is_fetch_write(cmd)) return outer->cmd_for_write();
     else                    return outer->cmd_for_read();
   }
 
-  virtual coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const {
-    assert(is_flush(cmd));
-    if(is_evict(cmd)) return outer->cmd_for_flush();
-    else              return outer->cmd_for_writeback();
-  }
-
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if constexpr (!isL1) {
-      assert(is_acquire(cmd));
-      if(is_fetch_write(cmd)) return std::make_pair(true, cmd_for_probe_release(cmd.id));
-      else                    return need_sync(meta, cmd.id);
-    } else return std::make_pair(false, cmd_for_null());
+    if(is_fetch_write(cmd))    return std::make_pair(true, cmd_for_probe_release(cmd.id));
+    else if(meta->is_shared()) return std::make_pair(false, cmd_for_null());
+    else                       return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
   }
 
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
@@ -56,53 +59,63 @@ public:
     else return std::make_pair(false, cmd_for_null());
   }
 
+  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
+    meta->init(addr);
+    if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
+    else {
+      assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
+      meta->to_modified(-1);
+    }
+  }
+
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const {
+    int32_t id = cmd.id;
+    if(is_fetch_read(cmd)) {
+      meta->to_shared(id);
+      meta_inner->to_shared(-1);
+    } else {
+      assert(is_fetch_write(cmd));
+      meta->to_modified(id);
+      meta_inner->to_modified(-1);
+    }
+  }
+
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
-      assert(outer->is_probe(outer_cmd));
-      if(outer->is_evict(outer_cmd)) return std::make_pair(true, cmd_for_probe_release());
-      else                           return need_sync(meta, -1);
+      if(outer->is_evict(outer_cmd))
+        return std::make_pair(true, cmd_for_probe_release());
+      else {
+        if(meta->is_shared())
+          return std::make_pair(false, cmd_for_null());
+        else if(outer->is_downgrade(outer_cmd))
+          return std::make_pair(true, cmd_for_probe_downgrade());
+        else
+          return std::make_pair(true, cmd_for_probe_writeback());
+      }
     } else return std::make_pair(false, cmd_for_null());
   }
 
-  virtual std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const {
-    assert(is_probe(cmd));
-    if(meta){
-      auto meta_msi = static_cast<const MT *>(meta);
-      if((is_evict(cmd)     && meta_msi->evict_need_probe(target_inner_id, cmd.id))     ||
-        (is_writeback(cmd)  && meta_msi->writeback_need_probe(target_inner_id, cmd.id)) )
-      {
-        cmd.id = -1;
-        return std::make_pair(true, cmd);
-      } else
-        return std::make_pair(false, cmd_for_null());
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const {
+    CohPolicyBase::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
+    if(meta) {
+      if(outer->is_evict(outer_cmd))          meta->to_invalid();
+      else if(outer->is_downgrade(outer_cmd)) meta->get_outer_meta()->to_shared(-1);
     }
-    else{
-      cmd.id = -1;
-      return std::make_pair(true, cmd);
-    }
-
-  }
-
-  virtual bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
-    assert(outer->is_probe(outer_cmd));
-    return meta->is_dirty();
-  }
-  
-
-  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
-    if constexpr (!isL1) return std::make_pair(true, cmd_for_probe_release());
-    else                 return std::make_pair(false, cmd_for_null());
   }
 
   virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     if constexpr (isLLC) {
-      assert(is_flush(cmd));
       if(is_evict(cmd)) return std::make_pair(true, cmd_for_probe_release());
-      else              return need_sync(meta, -1);
+      else {
+        assert(is_writeback(cmd));
+        if(meta && meta->is_shared())
+          return std::make_pair(false, cmd_for_null());
+        else
+          return std::make_pair(true, cmd_for_probe_writeback());
+      }
     } else
       return std::make_pair(false, cmd_for_null());
   }
-
 };
 
 #endif
