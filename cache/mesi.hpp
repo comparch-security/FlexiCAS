@@ -5,8 +5,7 @@
 
 #include "cache/msi.hpp"
 
-template <typename BT>
-  requires C_SAME(BT, MetadataBroadcastBase) || C_SAME(BT, MetadataDirectoryBase)
+template <typename BT> requires C_DERIVE(MT, MetadataDirectoryBase)
 class MetadataMESIBase : public BT
 {
 public:
