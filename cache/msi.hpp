@@ -100,6 +100,8 @@ public:
     if(meta) {
       if(outer->is_evict(outer_cmd))          meta->to_invalid();
       else if(outer->is_downgrade(outer_cmd)) meta->get_outer_meta()->to_shared(-1);
+      meta->to_shared(-1);
+      meta->to_clean();
     }
   }
 
