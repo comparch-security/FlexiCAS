@@ -56,7 +56,14 @@ public:
   InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~InnerCohPortBase() { delete policy; }
 
-  std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c) { coh.push_back(c); return std::make_pair(coh.size()-1, policy);}
+  std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c, bool uncached = false) {
+    if(uncached) {
+      return std::make_pair(-1, policy);
+    } else {
+      coh.push_back(c);
+      return std::make_pair(coh.size()-1, policy);
+    }
+  }
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
