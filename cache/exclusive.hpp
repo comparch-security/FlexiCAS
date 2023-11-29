@@ -210,7 +210,7 @@ protected:
       auto sync = policy->acquire_need_sync(cmd, meta);
       if(sync.first) {
         std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-        if(probe_writeback) cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
+        if(probe_writeback) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
       }
       if(probe_writeback) {
         auto promote = policy->acquire_need_promote(cmd, meta);
@@ -222,7 +222,7 @@ protected:
     }
   }
 
-  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
+  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
@@ -362,7 +362,7 @@ protected:
     }
   }
 
-  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
+  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
@@ -388,7 +388,7 @@ protected:
       mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
       if(data_inner && mdata) mdata->copy(data_inner);
       policy->meta_after_release(cmd, mmeta, meta_inner);
-      cache->hook_write(addr, mai, ms, mw, true, true, delay);
+      cache->hook_write(addr, mai, ms, mw, true, true, mdata, delay);
     }
   }
 

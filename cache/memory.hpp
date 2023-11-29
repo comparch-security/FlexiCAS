@@ -47,7 +47,7 @@ public:
     hook_read(addr, 0, 0, 0, true, data_inner, delay);
   }
 
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     if constexpr (!C_VOID(DT)) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
