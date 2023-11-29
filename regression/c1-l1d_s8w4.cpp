@@ -6,6 +6,9 @@
 #include "cache/memory.hpp"
 #include "util/regression.hpp"
 
+#define AddrN 128
+#define TestN 512
+
 #define L1IW 3
 #define L1WN 4
 #define L1Toff 9
@@ -22,30 +25,23 @@ typedef OuterCohPortUncached memory_port_type;
 typedef CoherentL1CacheNorm<l1_type,memory_port_type> l1_cache_type;
 typedef SimpleMemoryModel<data_type,void,true> memory_type;
 
-static uint64_t gi = 703;
-const int AddrN = 128;
-const int TestN = 256;
-
-CMHasher hasher(gi);
-data_type data;
-
 int main() {
-  l1_policy_type *l1_policy = new l1_policy_type();
-  l1_cache_type * l1d = new l1_cache_type(l1_policy, "l1d");
-  CoreInterface * core = static_cast<CoreInterface *>(l1d->inner);
-  memory_type * mem = new memory_type("mem");
+  auto l1_policy = new l1_policy_type();
+  auto l1d = new l1_cache_type(l1_policy, "l1d");
+  auto core = static_cast<CoreInterface *>(l1d->inner);
+  auto mem = new memory_type("mem");
   l1d->outer->connect(mem, mem->connect(l1d->outer));
 
-  SimpleTracer tracer;
+  SimpleTracer tracer(true);
   l1d->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
 
-  RegressionGen<1, false, 128, 0, data_type> tgen;
+  RegressionGen<1, false, AddrN, 0, data_type> tgen;
 
   for(int i=0; i<TestN; i++) {
     auto [addr, wdata, rw, nc, ic, flush] = tgen.gen();
     if(flush) {
-      core->writeback(addr, nullptr);
+      core->flush(addr, nullptr);
       core->write(addr, wdata, nullptr);
     } else if(rw) {
       core->write(addr, wdata, nullptr);

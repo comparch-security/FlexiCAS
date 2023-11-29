@@ -191,8 +191,8 @@ public:
     auto addr = m_meta->addr(m_s);
     meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
     get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
-    CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, delay);
-    CacheT::hook_read(addr, *ai, *s, *w, false, delay); // hit is true or false? may have impact on delay
+    CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, delay);
+    CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, delay); // hit is true or false? may have impact on delay
     std::tie(*ai, *s, *w, meta) = std::make_tuple(m_ai, m_s, m_w, m_meta);
   }
 
@@ -222,7 +222,7 @@ protected:
       auto sync = policy->acquire_need_sync(cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-        if(pwb) cache->hook_write(addr, ai, s, w, true, true, delay); // a write occurred during the probe
+        if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
       }
       auto promote = policy->acquire_need_promote(cmd, meta);
       if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = false; } // promote permission if needed

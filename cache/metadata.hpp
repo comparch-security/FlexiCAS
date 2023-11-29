@@ -2,6 +2,7 @@
 #define CM_CACHE_METADATA_HPP
 
 #include <cstdint>
+#include <string>
 #include "util/concept_macro.hpp"
 
 class CMDataBase
@@ -13,6 +14,7 @@ public:
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) {} // write a 64b data with wmask
   virtual void write(uint64_t *wdata) {} // write the whole cache block
   virtual void copy(const CMDataBase *block) = 0; // copy the content of block
+  virtual std::string to_string() const = 0;
 
   virtual ~CMDataBase() {}
 };
@@ -35,6 +37,7 @@ public:
     auto block = static_cast<const Data64B *>(m_block);
     for(int i=0; i<8; i++) data[i] = block->data[i];
   }
+  virtual std::string to_string() const;
 };
 
 // a common base between data metadat and normal coherence metadata
