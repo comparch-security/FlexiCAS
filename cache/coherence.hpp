@@ -178,7 +178,7 @@ protected:
       auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
     }
-    auto writeback = policy->writeback_need_writeback(meta);
+    auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     policy->meta_after_evict(meta);
     cache->hook_manage(addr, ai, s, w, true, true, writeback.first, data, delay);
@@ -240,7 +240,7 @@ protected:
       auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
       if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
     }
-    auto writeback = policy->writeback_need_writeback(meta);
+    auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
     policy->meta_after_flush(cmd, meta);

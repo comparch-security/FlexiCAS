@@ -200,7 +200,7 @@ public:
     policy->meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, data, delay);
 
-    if(!hit && cmd.id != -1) {
+    if(!hit) {
       cache->meta_return_buffer(meta);
       cache->data_return_buffer(data);
     }
@@ -208,20 +208,21 @@ public:
 
 
 protected:
-  void fetch_line(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { // fetch a missing line
+  bool fetch_line(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { // fetch a missing line
     bool probe_hit = false;
     bool probe_writeback = false;
     auto sync = policy->access_need_sync(cmd, meta);
     if(sync.first) {
       std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-      if(probe_writeback) cache->hook_write(addr, -1, 0, 0, true, true, data, delay); // a write occurred during the probe
+      if(probe_writeback) {
+        // writeback the line as there will be no place to hold the dirty line
+        outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
+        cache->hook_write(addr, -1, 0, 0, true, true, data, delay); // a write occurred during the probe
+      }
     }
-    if(probe_writeback) {
-      auto promote = policy->access_need_promote(cmd, meta);
-      if(promote.first) outer->acquire_req(addr, meta, data, promote.second, delay); // promote permission if needed
-    } else {
+    if(!probe_writeback)
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
-    }
+    return probe_hit;
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
@@ -230,23 +231,28 @@ protected:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
 
-    if(cmd.id == -1) // request from an uncached inner
-      return InnerCohPortUncached::access_line(addr, cmd, delay);
-
     bool hit = cache->hit(addr, &ai, &s, &w);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto promote = policy->access_need_promote(cmd, meta);
-      if(promote.first) { // lack of permission
+      if(promote.first) { // promote permission if needed
         outer->acquire_req(addr, meta, data, promote.second, delay);
         hit = false;
       }
+      return std::make_tuple(meta, data, ai, s, w, hit);
     } else { // miss
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
       data = cache->data_copy_buffer();
-      fetch_line(addr, meta, data, cmd, delay);
+      auto probe_hit = fetch_line(addr, meta, data, cmd, delay);
+      if(cmd.id == -1 && !probe_hit) { // need to reserve a place in the normal way if there no cached copy
+        auto [mmeta, mdata, mai, ms, mw] = InnerCohPortUncached::replace_line(addr, delay);
+        mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
+        if(mdata) mdata->copy(data);
+        return std::make_tuple(mmeta, mdata, mai, ms, mw, hit);
+      } else {
+        return std::make_tuple(meta, data, ai, s, w, hit);
+      }
     }
-    return std::make_tuple(meta, data, ai, s, w, hit);
   }
 
   virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -256,6 +262,8 @@ protected:
 
     if(cmd.id == -1) { // request from an uncached inner
       InnerCohPortUncached::write_line(addr, data_inner, meta_inner, cmd, delay);
+      cache->meta_return_buffer(meta);
+      cache->data_return_buffer(data);
       return;
     }
 
@@ -297,7 +305,7 @@ protected:
       if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
     }
 
-    auto writeback = policy->writeback_need_writeback(meta);
+    auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
     policy->meta_after_flush(cmd, meta);
@@ -462,7 +470,7 @@ protected:
       if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
     }
 
-    auto writeback = policy->writeback_need_writeback(meta);
+    auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
     policy->meta_after_flush(cmd, meta);

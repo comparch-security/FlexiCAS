@@ -76,7 +76,6 @@ public:
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
 
   coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const {
-    assert(is_flush(cmd));
     if(is_evict(cmd)) return outer->cmd_for_flush();
     else              return outer->cmd_for_writeback();
   }
@@ -133,11 +132,13 @@ public:
     return std::make_pair(true, cmd_for_probe_release());
   }
 
-  std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta) const {
+  std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta, bool uncached) const {
     if(meta->is_dirty())
       return std::make_pair(true, outer->cmd_for_release());
-    else
+    else if(!uncached)
       return outer->inner_need_release();
+    else
+      return std::make_pair(false, cmd_for_null());
   }
 
   void meta_after_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
