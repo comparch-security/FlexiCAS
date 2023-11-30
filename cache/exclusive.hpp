@@ -38,8 +38,10 @@ public:
       meta_inner->copy(meta->get_outer_meta()); // delegate all permision to inner
       meta->to_invalid();
     } else { // acquire from an uncached inner, still cache it in normal way as the inner does not exist
-      meta_inner->copy(meta->get_outer_meta()); // delegate all permision to inner
+      if(is_fetch_read(cmd)) meta_inner->to_shared(-1);
+      else                   meta_inner->to_modified(-1);
       meta->to_shared(-1); // as the inner does not exist, state is shared
+      assert(!meta_inner->is_dirty());
     }
   }
 
@@ -104,8 +106,10 @@ public:
         meta_inner->to_modified(-1);
       }
     } else { // acquire from an uncached inner, still cache it in normal way as the inner does not exist
-      meta_inner->copy(meta->get_outer_meta()); // delegate all permision to inner
+      if(is_fetch_read(cmd)) meta_inner->to_shared(-1);
+      else                   meta_inner->to_modified(-1);
       meta->to_shared(-1); // as the inner does not exist, state is shared
+      assert(!meta_inner->is_dirty());
     }
   }
 
@@ -217,7 +221,6 @@ protected:
       if(probe_writeback) {
         // writeback the line as there will be no place to hold the dirty line
         outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
-        cache->hook_write(addr, -1, 0, 0, true, true, data, delay); // a write occurred during the probe
       }
     }
     if(!probe_writeback)
@@ -248,6 +251,7 @@ protected:
         auto [mmeta, mdata, mai, ms, mw] = InnerCohPortUncached::replace_line(addr, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(mdata) mdata->copy(data);
+        cache->hook_write(addr, mai, ms, mw, false, false, data, delay); // a write occurred during the probe
         return std::make_tuple(mmeta, mdata, mai, ms, mw, hit);
       } else {
         return std::make_tuple(meta, data, ai, s, w, hit);
