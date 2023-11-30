@@ -100,10 +100,13 @@ public:
   virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const {
     CohPolicyBase::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
     if(meta) {
-      if(outer->is_evict(outer_cmd))          meta->to_invalid();
-      else if(outer->is_downgrade(outer_cmd)) meta->get_outer_meta()->to_shared(-1);
-      meta->to_shared(-1);
-      meta->to_clean();
+      if(outer->is_evict(outer_cmd))
+        meta->to_invalid();
+      else if(outer->is_downgrade(outer_cmd)) {
+        meta->get_outer_meta()->to_shared(-1);
+        meta->to_shared(-1);
+        meta->to_clean();
+      }
     }
   }
 

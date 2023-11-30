@@ -56,7 +56,7 @@ public:
   }
 
   // <addr, data, r/w, core, i/d, flush>
-  std::tuple<uint64_t, DT *, bool, int, bool, bool>
+  std::tuple<uint64_t, DT *, bool, int, bool, int>
   gen() {
     int core = hasher(gi++)%NC;
     bool shared = SAddrN != 0 ? 0 == (hasher(gi++) & 0x111) : false; // 12.5% is shared
@@ -72,10 +72,10 @@ public:
 
     if(is_inst && rw) { // write an instruction
       ic = false;       // write by a data cache and flush before write
-      flush = true;
+      flush = shared ? 2 : 1;
     } else {
       ic = is_inst ? 0 != (hasher(gi++) & 0x111) : false;
-      flush = false;
+      flush = 0;
     }
 
     if(rw) {
