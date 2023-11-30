@@ -9,9 +9,9 @@
 #define AddrN 128
 #define TestN 512
 
-#define L1IW 3
+#define L1IW 4
 #define L1WN 4
-#define L1Toff 9
+#define L1Toff (L1IW + 6)
 
 typedef Data64B data_type;
 typedef MetadataMSIBroadcast<48, L1IW, L1Toff> l1_metadata_type;
