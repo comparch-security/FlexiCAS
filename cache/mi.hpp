@@ -36,11 +36,11 @@ public:
     return outer->cmd_for_write();
   }
 
-  virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     return std::make_pair(true, cmd_for_probe_release(cmd.id));
   }
 
-  virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+  virtual std::pair<bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
     return std::make_pair(false, cmd_for_null());
   }
 
@@ -71,12 +71,12 @@ public:
     }
   }
 
-  virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if constexpr (isLLC) {
-      if(is_evict(cmd)) return std::make_pair(true, cmd_for_probe_release());
-      else              return std::make_pair(true, cmd_for_probe_writeback());
+  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const {
+    if (isLLC || (uncached && meta)) {
+      if(is_evict(cmd)) return std::make_tuple(true, true, cmd_for_probe_release());
+      else              return std::make_tuple(true, true, cmd_for_probe_writeback());
     } else
-      return std::make_pair(false, cmd_for_null());
+      return std::make_tuple(false, false, cmd_for_null());
   }
 
 };

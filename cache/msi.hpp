@@ -31,6 +31,7 @@ protected:
   using CohPolicyBase::outer;
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
+  using CohPolicyBase::is_write;
   using CohPolicyBase::is_evict;
   using CohPolicyBase::is_writeback;
   using CohPolicyBase::is_downgrade;
@@ -43,20 +44,21 @@ public:
   virtual ~MSIPolicy() {}
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const {
-    if(is_fetch_write(cmd)) return outer->cmd_for_write();
-    else                    return outer->cmd_for_read();
+    if(is_fetch_write(cmd) || is_evict(cmd) || is_writeback(cmd))
+      return outer->cmd_for_write();
+    else
+      return outer->cmd_for_read();
   }
 
-  virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if(is_fetch_write(cmd))    return std::make_pair(true, cmd_for_probe_release(cmd.id));
-    else if(meta->is_shared()) return std::make_pair(false, cmd_for_null());
-    else                       return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
+  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+    if(is_fetch_write(cmd)) return std::make_pair(true, cmd_for_probe_release(cmd.id));
+    if(meta->is_shared())   return std::make_pair(false, cmd_for_null());
+    return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
   }
 
-  virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if(is_fetch_write(cmd) && !meta->allow_write())
-      return std::make_pair(true, outer->cmd_for_write());
-    else return std::make_pair(false, cmd_for_null());
+  virtual std::pair<bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+    if(is_write(cmd) && !meta->allow_write()) return std::make_pair(true, outer->cmd_for_write());
+    return std::make_pair(false, cmd_for_null());
   }
 
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
@@ -100,21 +102,20 @@ public:
     if(meta) {
       if(outer->is_evict(outer_cmd))          meta->to_invalid();
       else if(outer->is_downgrade(outer_cmd)) meta->get_outer_meta()->to_shared(-1);
+      meta->to_shared(-1);
+      meta->to_clean();
     }
   }
 
-  virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if constexpr (isLLC) {
-      if(is_evict(cmd)) return std::make_pair(true, cmd_for_probe_release());
-      else {
-        assert(is_writeback(cmd));
-        if(meta && meta->is_shared())
-          return std::make_pair(false, cmd_for_null());
-        else
-          return std::make_pair(true, cmd_for_probe_writeback());
-      }
+  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const {
+    if (isLLC || (uncached && meta)) {
+      if(is_evict(cmd)) return std::make_tuple(true, true, cmd_for_probe_release());
+      else if(meta && meta->is_shared())
+        return std::make_tuple(true, false, cmd_for_null());
+      else
+        return std::make_tuple(true, true, cmd_for_probe_writeback());
     } else
-      return std::make_pair(false, cmd_for_null());
+      return std::make_tuple(false, false, cmd_for_null());
   }
 };
 

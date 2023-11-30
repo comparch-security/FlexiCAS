@@ -2,6 +2,7 @@
 #define CM_CACHE_COH_POLICY_HPP
 
 #include <utility>
+#include <tuple>
 #include <cassert>
 #include "cache/cache.hpp"
 
@@ -49,12 +50,14 @@ public:
   bool is_flush(coh_cmd_t cmd) const       { return cmd.msg == flush_msg;       }
 
   // action type
-  bool is_fetch_read(coh_cmd_t cmd) const  { return cmd.act == fetch_read_act;  }
-  bool is_fetch_write(coh_cmd_t cmd) const { return cmd.act == fetch_write_act; }
-  bool is_evict(coh_cmd_t cmd) const       { return cmd.act == evict_act;       }
-  bool is_outer_evict(coh_cmd_t cmd) const { return outer->is_evict(cmd);       }
-  bool is_writeback(coh_cmd_t cmd) const   { return cmd.act == writeback_act;   }
-  bool is_downgrade(coh_cmd_t cmd) const   { return cmd.act == downgrade_act;   }
+  bool is_fetch_read(coh_cmd_t cmd) const      { return cmd.act == fetch_read_act;  }
+  bool is_fetch_write(coh_cmd_t cmd) const     { return cmd.act == fetch_write_act; }
+  bool is_evict(coh_cmd_t cmd) const           { return cmd.act == evict_act;       }
+  bool is_outer_evict(coh_cmd_t cmd) const     { return outer->is_evict(cmd);       }
+  bool is_writeback(coh_cmd_t cmd) const       { return cmd.act == writeback_act;   }
+  bool is_outer_writeback(coh_cmd_t cmd) const { return outer->is_writeback(cmd);   }
+  bool is_downgrade(coh_cmd_t cmd) const       { return cmd.act == downgrade_act;   }
+  bool is_write(coh_cmd_t cmd) const           { return cmd.act == fetch_write_act || cmd.act == evict_act || cmd.act == writeback_act; }
 
   // generate command
   constexpr coh_cmd_t cmd_for_read()             const { return {-1, acquire_msg, fetch_read_act }; }
@@ -73,14 +76,13 @@ public:
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
 
   coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const {
-    assert(is_flush(cmd));
     if(is_evict(cmd)) return outer->cmd_for_flush();
     else              return outer->cmd_for_writeback();
   }
 
   // acquire
-  virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
-  virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
+  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
+  virtual std::pair<bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
 
   // update meta after fetching from outer cache
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const = 0;
@@ -130,11 +132,13 @@ public:
     return std::make_pair(true, cmd_for_probe_release());
   }
 
-  std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta) const {
+  std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta, bool uncached) const {
     if(meta->is_dirty())
       return std::make_pair(true, outer->cmd_for_release());
-    else
+    else if(!uncached)
       return outer->inner_need_release();
+    else
+      return std::make_pair(false, cmd_for_null());
   }
 
   void meta_after_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
@@ -160,7 +164,7 @@ public:
   }
 
   // flush
-  virtual std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
+  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const = 0;
 
   void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const  {
     if(meta && is_evict(cmd)) meta->to_invalid();

@@ -39,6 +39,7 @@ CACHE_HEADERS = $(wildcard cache/*.hpp)
 DSL_HEADERS   = $(wildcard dsl/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
+CACHE_OBJS    = cache/metadata.o
 UTIL_OBJS     = util/random.o util/query.o util/monitor.o
 DSL_OBJS      = dsl/dsl.o dsl/entity.o dsl/statement.o dsl/type_description.o
 
@@ -48,12 +49,12 @@ all: lib$(CONFIG).a
 $(CRYPTO_LIB):
 	$(MAKE) -C cryptopp -j$(NCORE)
 
-lib$(CONFIG).a : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
+lib$(CONFIG).a : $(CONFIG).cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $(CONFIG).o
-	ar rvs $@ $(CONFIG).o $(UTIL_OBJS)
+	ar rvs $@ $(CONFIG).o $(CACHE_OBJS) $(UTIL_OBJS)
 
 lib$(CONFIG).so : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) -shared -o $@
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -shared -o $@
 
 $(CONFIG).cpp : $(CONFIG_FILE) dsl-decoder
 	./dsl-decoder $(CONFIG_FILE) $(CONFIG)
@@ -70,7 +71,10 @@ dsl-decoder : $(DSL_OBJS)
 $(DSL_OBJS) : %o:%cpp $(DSL_HEADERS)
 	$(CXX) $(DSLCXXFLAGS) -c $< -o $@
 
-$(UTIL_OBJS) : %o:%cpp $(UTIL_HEADERS)
+$(CACHE_OBJS) : %o:%cpp $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(UTIL_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 
@@ -80,8 +84,8 @@ REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(REGRESSION_TESTS))
 REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))
 REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(REGRESSION_TESTS))
 
-$(REGRESSION_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+$(REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
 
 $(REGRESSION_TESTS_LOG): %.log:%
 	$< > $@
