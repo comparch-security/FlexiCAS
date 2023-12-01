@@ -218,13 +218,18 @@ protected:
     auto sync = policy->access_need_sync(cmd, meta);
     if(sync.first) {
       std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-      if(probe_writeback) {
+      if(probe_writeback && !policy->is_write(cmd)) {
         // writeback the line as there will be no place to hold the dirty line
         outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
       }
     }
-    if(!probe_writeback)
+
+    if(!probe_writeback) // need to fetch it from outer
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
+
+    if(probe_hit && !policy->is_write(cmd)) // manually maintain the coherence if there are other inner copies, must be share
+      meta->get_outer_meta()->to_shared(-1);
+
     return probe_hit;
   }
 
