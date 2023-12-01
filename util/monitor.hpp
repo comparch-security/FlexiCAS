@@ -7,6 +7,7 @@
 #include "util/concept_macro.hpp"
 
 class CMDataBase;
+class CMMetadataBase;
 
 // monitor base class
 class MonitorBase
@@ -17,9 +18,9 @@ public:
 
   // standard functions to supprt a type of monitoring
   virtual bool attach(uint64_t cache_id) = 0; // decide whether to attach the mointor to this cache
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data) = 0;
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data) = 0;
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMDataBase *data) = 0;
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) = 0;
 
   // control
   virtual void start() = 0;    // start the monitor, assuming the monitor is just initialized
@@ -47,9 +48,9 @@ public:
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors.clear(); }
 
-  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
-  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
-  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
 };
 
 // class monitor helper
@@ -59,10 +60,10 @@ public:
   MonitorContainerBase *monitors; // monitor container
 
   // hook interface for replacer state update, Monitor and delay estimation
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMDataBase *data, uint64_t *delay) = 0;
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMDataBase *data, uint64_t *delay) = 0;
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
   // probe, invalidate and writeback
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMDataBase *data, uint64_t *delay) = 0;
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
 
 };
 
@@ -88,19 +89,19 @@ public:
     }
   }
 
-  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
-    if constexpr (EnMon) for(auto m:monitors) m->read(id, addr, ai, s, w, hit, data);
+  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
+    if constexpr (EnMon) for(auto m:monitors) m->read(id, addr, ai, s, w, hit, meta, data);
     if constexpr (!C_VOID(DLY)) timer->read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
-    if constexpr (EnMon) for(auto m:monitors) m->write(id, addr, ai, s, w, hit, data);
+  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
+    if constexpr (EnMon) for(auto m:monitors) m->write(id, addr, ai, s, w, hit, meta, data);
     if constexpr (!C_VOID(DLY)) timer->write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
+  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
     if(hit && evict) {
-      if constexpr (EnMon) for(auto m:monitors) m->invalid(id, addr, ai, s, w, data);
+      if constexpr (EnMon) for(auto m:monitors) m->invalid(id, addr, ai, s, w, meta, data);
     }
     if constexpr (!C_VOID(DLY)) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
@@ -120,13 +121,13 @@ public:
 
   virtual bool attach(uint64_t cache_id) { return true; }
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data)  {
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  {
     if(!active) return;
     cnt_access++;
     if(!hit) cnt_miss++;
   }
 
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data) {
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) {
     if(!active) return;
     cnt_access++;
     cnt_write++;
@@ -136,7 +137,7 @@ public:
     }
   }
 
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMDataBase *data) {
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) {
     if(!active) return;
     cnt_invalid++;
   }
@@ -175,9 +176,9 @@ public:
 
   virtual bool attach(uint64_t cache_id) { return true; }
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data);
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMDataBase *data);
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMDataBase *data);
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data);
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data);
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data);
 
   virtual void start() { active = true;  }
   virtual void stop()  { active = false; }

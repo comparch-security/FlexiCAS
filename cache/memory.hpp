@@ -44,7 +44,7 @@ public:
       data_inner->write(mem_addr);
       if(meta_inner) meta_inner->to_modified(-1);
     }
-    hook_read(addr, 0, 0, 0, true, data_inner, delay);
+    hook_read(addr, 0, 0, 0, true, meta_inner, data_inner, delay);
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -55,7 +55,7 @@ public:
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
       for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
     }
-    hook_write(addr, 0, 0, 0, true, true, data_inner, delay);
+    hook_write(addr, 0, 0, 0, true, true, meta_inner, data_inner, delay);
   }
 
   // monitor related
@@ -63,16 +63,16 @@ public:
   // support run-time assign/reassign mointors
   void detach_monitor() { CacheMonitorSupport::monitors->detach_monitor(); }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMDataBase *data, uint64_t *delay) {
-    if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_read(addr, -1, -1, -1, hit, data, delay);
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
+    if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMDataBase *data, uint64_t *delay) {
-    if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_write(addr, -1, -1, -1, hit, data, delay);
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
+    if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
 private:
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMDataBase *data, uint64_t *delay) {}
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {}
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) {}
   virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
     return std::make_pair(false,false);
