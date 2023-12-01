@@ -272,13 +272,18 @@ protected:
     }
 
     bool probe_hit = false;
+    bool probe_writeback = false;
     assert(!cache->hit(addr, &ai, &s, &w)); // must not hit
 
     // check whether there are other copies
     auto sync = policy->release_need_sync(cmd, meta, meta_inner);
     if(sync.first) {
-      auto [probe_hit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-      assert(!pwb); // there should be no probe writeback
+      meta = cache->meta_copy_buffer();
+      data = cache->data_copy_buffer();
+      std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      assert(!probe_writeback); // there should be no probe writeback
+      cache->meta_return_buffer(meta);
+      cache->data_return_buffer(data);
     }
 
     if(!probe_hit) { // exclusive cache handles a release only when there is no other sharer
