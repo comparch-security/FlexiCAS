@@ -10,11 +10,16 @@
 #include <vector>
 #include <mutex>
 #include <condition_variable>
+#include <thread>
+
 
 #include "util/random.hpp"
 #include "util/monitor.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
+#include "util/log.hpp"
+#include "util/common.hpp"
+
 
 class CMMetadataBase
 {
@@ -214,6 +219,9 @@ public:
     return hit(addr, &ai, &s, &w);
   }
 
+  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1) = 0;
+  
+
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
   // hook interface for replacer state update, Monitor and delay estimation
@@ -287,6 +295,38 @@ public:
       *s = indexer.index(addr, *ai);
       for(*w=0; *w<NW; (*w)++)
         if(access(*ai, *s, *w)->match(addr)) return true;
+    }
+    return false;
+  }
+
+  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1){
+    for(*ai=0; *ai<P; (*ai)++){
+      *s = indexer.index(addr, *ai);
+      auto status = get_status(*ai);
+      auto mtx    = get_mutex(*ai);
+      auto cv     = get_cv(*ai);
+      std::unique_lock lk(*mtx, std::defer_lock);
+      uint32_t ss = *s;
+      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+      mutex: %p, check hit(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+      get_name().c_str(), *ai, *s, mtx);
+      WAIT_CV(cv, lk, ss, status, value, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+      check hit, get cv\n", get_time(), database.get_id(get_thread_id), addr, get_name().c_str(), mtx);
+      (*status)[*s] |= value;
+      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+      mutex: %p, check hit(unset lock)\n",get_time(), database.get_id(get_thread_id), addr, \
+      get_name().c_str(), *ai, *s, mtx);
+      for(*w=0; *w<NW; (*w)++){
+        if(access(*ai, *s, *w)->match(addr)) return true;
+      }
+      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+      mutex: %p, check hit(set lock), miss on ai\n", get_time(), database.get_id(get_thread_id), addr, \
+      get_name().c_str(), *ai, *s, mtx);
+      (*status)[*s] &= ~(value);
+      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+      mutex: %p, check hit(unset lock), miss on ai\n",get_time(), database.get_id(get_thread_id), addr, \
+      get_name().c_str(), *ai, *s, mtx);
+      cv->notify_all();
     }
     return false;
   }

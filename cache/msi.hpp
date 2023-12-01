@@ -90,7 +90,7 @@ public:
 
   virtual bool match(uint64_t addr) const { return is_valid() && ((addr >> TOfst) & mask) == tag; }
   virtual void reset() { tag = 0; state = 0; dirty = 0; }
-  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0; }
+  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; }
   virtual uint64_t addr(uint32_t s) const {
     uint64_t addr = tag << TOfst;
     if constexpr (IW > 0) {
