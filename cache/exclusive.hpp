@@ -34,15 +34,14 @@ public:
         meta->to_modified(id);
         meta_inner->to_modified(-1);
       }
-    } else if(id != -1) {
-      meta_inner->copy(meta->get_outer_meta()); // delegate all permision to inner
-      meta->to_invalid();
-    } else { // acquire from an uncached inner, still cache it in normal way as the inner does not exist
+    } else {
       if(is_fetch_read(cmd)) meta_inner->to_shared(-1);
       else                   meta_inner->to_modified(-1);
-      meta->to_shared(-1); // as the inner does not exist, state is shared
-      assert(!meta_inner->is_dirty());
+
+      if(id != -1) meta->to_invalid();
+      else         meta->to_shared(-1); // as the inner does not exist, state is shared
     }
+    assert(!meta_inner->is_dirty());
   }
 
   virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
@@ -109,8 +108,8 @@ public:
       if(is_fetch_read(cmd)) meta_inner->to_shared(-1);
       else                   meta_inner->to_modified(-1);
       meta->to_shared(-1); // as the inner does not exist, state is shared
-      assert(!meta_inner->is_dirty());
     }
+    assert(!meta_inner->is_dirty());
   }
 
 };
