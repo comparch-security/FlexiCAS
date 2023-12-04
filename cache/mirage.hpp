@@ -191,8 +191,8 @@ public:
     auto addr = m_meta->addr(m_s);
     meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
     get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
-    CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, delay);
-    CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, delay); // hit is true or false? may have impact on delay
+    CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
+    CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // hit is true or false? may have impact on delay
     std::tie(*ai, *s, *w, meta) = std::make_tuple(m_ai, m_s, m_w, m_meta);
   }
 

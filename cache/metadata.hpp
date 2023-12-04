@@ -98,6 +98,7 @@ public:
   virtual CMMetadataBase * get_outer_meta() { return nullptr; } // return the outer metadata if supported
   virtual const CMMetadataBase * get_outer_meta() const { return nullptr; }
 
+  virtual std::string to_string() const;
   virtual void copy(const CMMetadataBase *meta) {
     state  = meta->state;
     dirty  = meta->dirty;

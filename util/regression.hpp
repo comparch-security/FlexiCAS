@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <vector>
 #include <tuple>
+#include <cmath>
 #include "util/random.hpp"
 #include "util/concept_macro.hpp"
 #include "cache/metadata.hpp"
@@ -15,12 +16,12 @@ static const uint64_t addr_mask = 0x0ffffffffffc0ull;
 // PAddrN: number of private addresses per core
 // SAddrN: number of shared address between cores
 // DT:     data type
-template<int NC, bool EnIC, int PAddrN, int SAddrN, typename DT>
+template<int NC, bool EnIC, unsigned int PAddrN, unsigned int SAddrN, typename DT>
 class RegressionGen
 {
   int64_t gi;
   CMHasher hasher;
-  const int total;
+  const unsigned int total;
   std::vector<uint64_t> addr_pool;   // random addresses
   std::map<uint64_t, int> addr_map;
   std::vector<DT>       data_pool;   // data copy
@@ -46,14 +47,22 @@ public:
     }
   }
 
+  unsigned int locality_scale(unsigned int num, unsigned int mod, double rate) {
+    num %= mod;
+    double factor = (double)(num) / mod;
+    double scale = rate + (1.0 - rate) * std::pow(factor, 3);
+    assert(scale >= 0.0 && scale < 1);
+    return (unsigned int)(std::floor(num * scale));
+  }
+
   // <addr, data, r/w, core, i/d, flush>
-  std::tuple<uint64_t, DT *, bool, int, bool, bool>
+  std::tuple<uint64_t, DT *, bool, int, bool, int>
   gen() {
     int core = hasher(gi++)%NC;
     bool shared = SAddrN != 0 ? 0 == (hasher(gi++) & 0x111) : false; // 12.5% is shared
-    int index = shared ?
-      PAddrN*NC   + (hasher(gi++)%SAddrN) :
-      PAddrN*core + (hasher(gi++)%PAddrN) ;
+    unsigned int index = shared ?
+      PAddrN*NC   + locality_scale(hasher(gi++), SAddrN, 0.2) :
+      PAddrN*core + locality_scale(hasher(gi++), PAddrN, 0.2) ;
     uint64_t addr = addr_pool[index];
     DT *data = &(data_pool[index]);
     bool rw = 0 == (hasher(gi++) & 0x11); // 25% write
@@ -63,10 +72,10 @@ public:
 
     if(is_inst && rw) { // write an instruction
       ic = false;       // write by a data cache and flush before write
-      flush = true;
+      flush = shared ? 2 : 1;
     } else {
       ic = is_inst ? 0 != (hasher(gi++) & 0x111) : false;
-      flush = false;
+      flush = 0;
     }
 
     if(rw) {

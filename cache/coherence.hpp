@@ -126,7 +126,7 @@ public:
       auto sync = OPUC::policy->probe_need_sync(outer_cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = inner->probe_req(addr, meta, data, sync.second, delay);
-        if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay);
+        if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
       }
 
       // writeback if dirty
@@ -135,7 +135,7 @@ public:
       }
     }
     OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-    cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, data, delay);
+    cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
     return std::make_pair(hit, writeback);
   }
 };
@@ -153,7 +153,7 @@ public:
 
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -176,12 +176,12 @@ protected:
     auto sync = policy->writeback_need_sync(meta);
     if(sync.first) {
       auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-      if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
+      if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
     }
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     policy->meta_after_evict(meta);
-    cache->hook_manage(addr, ai, s, w, true, true, writeback.first, data, delay);
+    cache->hook_manage(addr, ai, s, w, true, true, writeback.first, meta, data, delay);
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
@@ -206,10 +206,11 @@ protected:
       auto sync = policy->access_need_sync(cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-        if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
+        if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
       }
-      auto promote = policy->access_need_promote(cmd, meta);
-      if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = false; } // promote permission if needed
+      auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
+      if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
+      else if(promote_local) meta->to_modified(-1);
     } else { // miss
       std::tie(meta, data, ai, s, w) = replace_line(addr, delay);
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
@@ -223,7 +224,7 @@ protected:
     if(data_inner) data->copy(data_inner);
     policy->meta_after_release(cmd, meta, meta_inner);
     assert(meta_inner); // assume meta_inner is valid for all writebacks
-    cache->hook_write(addr, ai, s, w, hit, true, data, delay);
+    cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
   }
 
   virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
@@ -238,13 +239,13 @@ protected:
 
     if(probe) {
       auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
-      if(pwb) cache->hook_write(addr, ai, s, w, true, true, data, delay); // a write occurred during the probe
+      if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
     }
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
     policy->meta_after_flush(cmd, meta);
-    cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, data, delay);
+    cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, meta, data, delay);
   }
 
 };
@@ -287,17 +288,17 @@ public:
     addr = normalize(addr);
     auto cmd = policy->cmd_for_read();
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
-    cache->hook_read(addr, ai, s, w, hit, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     return data;
   }
 
-  virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
+  virtual void write(uint64_t addr, const CMDataBase *m_data, uint64_t *delay) {
     addr = normalize(addr);
     auto cmd = policy->cmd_for_write();
-    auto [meta, m_data, ai, s, w, hit] = access_line(addr, cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
     meta->to_dirty();
-    cache->hook_write(addr, ai, s, w, hit, false, data, delay);
-    if(m_data) m_data->copy(data);
+    if(data) data->copy(m_data);
+    cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
   }
 
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
