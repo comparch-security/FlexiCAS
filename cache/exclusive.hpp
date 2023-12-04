@@ -218,8 +218,8 @@ protected:
     auto sync = policy->access_need_sync(cmd, meta);
     if(sync.first) {
       std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-      if(probe_writeback && !policy->is_write(cmd)) {
-        // writeback the line as there will be no place to hold the dirty line
+      if(probe_writeback) { // always writeback the line as it likely(always??) dirty
+        assert(meta->is_dirty());
         outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
       }
     }
@@ -248,6 +248,8 @@ protected:
         hit = false;
       }
       else if(promote_local) meta->to_modified(-1);
+      if(cmd.id != -1 && policy->is_acquire(cmd) && meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
+        outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
       return std::make_tuple(meta, data, ai, s, w, hit);
     } else { // miss
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
@@ -395,6 +397,8 @@ protected:
         if(cmd.id == -1) // request from an uncached inner
           return std::make_tuple(meta, data, ai, s, w, hit);
         else { // normal request, move it to an extended way
+          if(meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
+            outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
           auto [mmeta, mdata, mai, ms, mw] = replace_line_ext(addr, delay);
           mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
           return std::make_tuple(mmeta, data, mai, ms, mw, hit);
@@ -406,7 +410,10 @@ protected:
         auto sync = policy->access_need_sync(cmd, meta);
         if(sync.first) {
           std::tie(phit, pwb) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-          if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
+          if(pwb) { // a write occurred during the probe, always write it back as it likely (always??) dirty
+            assert(meta->is_dirty());
+            outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
+          }
         }
         if(!pwb) { // still get it from outer
           outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
