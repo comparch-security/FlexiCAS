@@ -132,9 +132,9 @@ public:
   CacheSkewedExclusive(std::string name = "") : CacheSkewedT(name, 0, (EnDir ? DW : 0)) {}
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
-    if constexpr (EnDir) CacheSkewedT::replace(addr, ai, s, w, 0);
+    if constexpr (!EnDir) CacheSkewedT::replace(addr, ai, s, w, 0);
     else {
-      if(0 == genre) CacheSkewedT::replace(addr, ai, s, w);
+      if(0 == genre) CacheSkewedT::replace(addr, ai, s, w, 0);
       else {
         if constexpr (P==1) *ai = 0;
         else                *ai = (cm_get_random_uint32() % P);
