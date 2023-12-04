@@ -3,8 +3,6 @@
 
 #include "cache/coh_policy.hpp"
 
-// assuming MI policy is used only by memory
-
 class MetadataMIBase : public CMMetadataBase
 {
 public:
@@ -18,6 +16,9 @@ private:
 };
 
 typedef MetadataMIBase MetadataMI;
+
+template <int AW, int IW, int TOfst>
+using MetadataMIBroadcast = MetadataBroadcast<AW, IW, TOfst, MetadataMIBase>;
 
 template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
 class MIPolicy : public CohPolicyBase
@@ -45,6 +46,7 @@ public:
   }
 
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
+    meta->init(addr);
     assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
     meta->to_modified(-1);
   }
