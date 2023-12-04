@@ -56,9 +56,12 @@ public:
     return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
   }
 
-  virtual std::pair<bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
-    if(is_write(cmd) && !meta->allow_write()) return std::make_pair(true, outer->cmd_for_write());
-    return std::make_pair(false, cmd_for_null());
+  virtual std::tuple<bool, bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+    if(is_write(cmd)) {
+      if(!meta->allow_write())       return std::make_tuple(true,  false, outer->cmd_for_write());
+      else if(!meta->is_modified())  return std::make_tuple(false, true,  cmd_for_null()); // promote locally
+    }
+    return std::make_tuple(false, false, cmd_for_null());
   }
 
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {

@@ -208,8 +208,9 @@ protected:
         auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
       }
-      auto promote = policy->access_need_promote(cmd, meta);
-      if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = false; } // promote permission if needed
+      auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
+      if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
+      else if(promote_local) meta->to_modified(-1);
     } else { // miss
       std::tie(meta, data, ai, s, w) = replace_line(addr, delay);
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
@@ -291,13 +292,13 @@ public:
     return data;
   }
 
-  virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
+  virtual void write(uint64_t addr, const CMDataBase *m_data, uint64_t *delay) {
     addr = normalize(addr);
     auto cmd = policy->cmd_for_write();
-    auto [meta, m_data, ai, s, w, hit] = access_line(addr, cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
     meta->to_dirty();
+    if(data) data->copy(m_data);
     cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
-    if(m_data) m_data->copy(data);
   }
 
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)

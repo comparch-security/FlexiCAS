@@ -2,7 +2,7 @@
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
 #include "cache/coherence.hpp"
-#include "cache/msi.hpp"
+#include "cache/mesi.hpp"
 #include "cache/memory.hpp"
 #include "util/random.hpp"
 #include "util/regression.hpp"
@@ -29,11 +29,11 @@ typedef MSIPolicy<l1_metadata_type,true,false> l1_policy_type;
 typedef CoherentL1CacheNorm<l1_type, OuterCohPortUncached> l1i_cache_type;
 typedef CoherentL1CacheNorm<l1_type> l1d_cache_type;
 
-typedef MetadataMSIBroadcast<48, L2IW, L2Toff> l2_metadata_type;
+typedef MetadataMESIDirectory<48, L2IW, L2Toff> l2_metadata_type;
 typedef IndexNorm<L2IW,6> l2_indexer_type;
 typedef ReplaceSRRIP<L2IW,L2WN,true> l2_replacer_type;
 typedef CacheNorm<L2IW,L2WN,l2_metadata_type,data_type,l2_indexer_type,l2_replacer_type,void,true> l2_type;
-typedef MSIPolicy<l2_metadata_type,false,true> l2_policy_type;
+typedef MESIPolicy<l2_metadata_type,true> l2_policy_type;
 
 typedef OuterCohPortUncached memory_port_type;
 typedef CoherentCacheNorm<l2_type,memory_port_type> l2_cache_type;

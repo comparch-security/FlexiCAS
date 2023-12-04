@@ -242,11 +242,12 @@ protected:
     bool hit = cache->hit(addr, &ai, &s, &w);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
-      auto promote = policy->access_need_promote(cmd, meta);
-      if(promote.first) { // promote permission if needed
-        outer->acquire_req(addr, meta, data, promote.second, delay);
+      auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
+      if(promote) { // promote permission if needed
+        outer->acquire_req(addr, meta, data, promote_cmd, delay);
         hit = false;
       }
+      else if(promote_local) meta->to_modified(-1);
       return std::make_tuple(meta, data, ai, s, w, hit);
     } else { // miss
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
@@ -385,11 +386,12 @@ protected:
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       if(!meta->is_extend()) { // hit on normal way
-        auto promote = policy->access_need_promote(cmd, meta);
-        if(promote.first) { // promote permission if needed
-          outer->acquire_req(addr, meta, data, promote.second, delay);
+        auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
+        if(promote) { // promote permission if needed
+          outer->acquire_req(addr, meta, data, promote_cmd, delay);
           hit = false;
         }
+        else if(promote_local) meta->to_modified(-1);
         if(cmd.id == -1) // request from an uncached inner
           return std::make_tuple(meta, data, ai, s, w, hit);
         else { // normal request, move it to an extended way
@@ -410,11 +412,12 @@ protected:
           outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
           hit = false;
         } else {
-          auto promote = policy->access_need_promote(cmd, meta);
-          if(promote.first) { // get from inner but lack of permission
-            outer->acquire_req(addr, meta, data, promote.second, delay);
+          auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
+          if(promote) { // get from inner but lack of permission
+            outer->acquire_req(addr, meta, data, promote_cmd, delay);
             hit = false;
           }
+          else if(promote_local) meta->to_modified(-1);
         }
         return std::make_tuple(meta, data, ai, s, w, hit);
       }
