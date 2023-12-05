@@ -80,7 +80,7 @@ public:
   }
 };
 
-template<typename MT, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase)
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase) && EnDir
 class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
 {
   typedef ExclusiveMSIPolicy<MT, true, isLLC> PolicyT;
@@ -188,13 +188,13 @@ public:
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNormExclusiveBroadcast = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, ReplaceRandom<1,1>, DLY, EnMon, false>;
 
-class ExclusiveInnerPortUncachedBroadcast : public InnerCohPortUncached
+class ExclusiveInnerCohPortUncachedBroadcast : public InnerCohPortUncached
 {
 protected:
   using InnerCohPortBase::cache;
 public:
-  ExclusiveInnerPortUncachedBroadcast(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
-  virtual ~ExclusiveInnerPortUncachedBroadcast() {}
+  ExclusiveInnerCohPortUncachedBroadcast(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
+  virtual ~ExclusiveInnerCohPortUncachedBroadcast() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
@@ -335,7 +335,7 @@ protected:
 
 };
 
-typedef InnerCohPortT<ExclusiveInnerPortUncachedBroadcast> ExclusiveInnerPortBroadcast;
+typedef InnerCohPortT<ExclusiveInnerCohPortUncachedBroadcast> ExclusiveInnerCohPortBroadcast;
 
 // Norm Exclusive Cache with Extened Directory
 // Assume extended directory meta is always supported when directory is used
@@ -346,13 +346,13 @@ typedef InnerCohPortT<ExclusiveInnerPortUncachedBroadcast> ExclusiveInnerPortBro
 template<int IW, int NW, int DW, typename MT, typename DT, typename IDX, typename RPC, typename DRPC, typename DLY, bool EnMon>
 using CacheNormExclusiveDirectory = CacheSkewedExclusive<IW, NW, DW, 1, MT, DT, IDX, RPC, DRPC, DLY, EnMon, true>;
 
-class ExclusiveInnerPortUncachedDirectory : public InnerCohPortUncached
+class ExclusiveInnerCohPortUncachedDirectory : public InnerCohPortUncached
 {
 protected:
   using InnerCohPortBase::cache;
 public:
-  ExclusiveInnerPortUncachedDirectory(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
-  virtual ~ExclusiveInnerPortUncachedDirectory() {}
+  ExclusiveInnerCohPortUncachedDirectory(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
+  virtual ~ExclusiveInnerCohPortUncachedDirectory() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
     auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, delay);
@@ -504,7 +504,7 @@ protected:
 
 };
 
-typedef InnerCohPortT<ExclusiveInnerPortUncachedDirectory> ExclusiveInnerPortDirectory;
+typedef InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory> ExclusiveInnerCohPortDirectory;
 
 
 template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
@@ -609,15 +609,15 @@ public:
 typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortUncached> ExclusiveOuterCohPortDirectory;
 
 template<typename CT>
-using ExclusiveL2CacheBroadcast = CoherentCacheNorm<CT, ExclusiveOuterCohPortBroadcast, ExclusiveInnerPortBroadcast>;
+using ExclusiveL2CacheBroadcast = CoherentCacheNorm<CT, ExclusiveOuterCohPortBroadcast, ExclusiveInnerCohPortBroadcast>;
 
 template<typename CT>
-using ExclusiveLLCBroadcast = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerPortBroadcast>;
+using ExclusiveLLCBroadcast = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerCohPortBroadcast>;
 
 template<typename CT>
-using ExclusiveL2CacheDirectory = CoherentCacheNorm<CT, ExclusiveOuterCohPortDirectory, ExclusiveInnerPortDirectory>;
+using ExclusiveL2CacheDirectory = CoherentCacheNorm<CT, ExclusiveOuterCohPortDirectory, ExclusiveInnerCohPortDirectory>;
 
 template<typename CT>
-using ExclusiveLLCDirectory = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerPortDirectory>;
+using ExclusiveLLCDirectory = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerCohPortDirectory>;
 
 #endif
