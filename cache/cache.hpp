@@ -224,6 +224,8 @@ public:
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
+  virtual void withdraw_replace(uint32_t ai, uint32_t s, uint32_t w) = 0;
+
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
@@ -367,6 +369,10 @@ public:
       if(indexer.index(addrA, i) == indexer.index(addrB, i)) 
         return true;
     return false;
+  }
+
+  virtual void withdraw_replace(uint32_t ai, uint32_t s, uint32_t w) {
+    replacer[ai].withdraw_replace(s, w);
   }
 };
 

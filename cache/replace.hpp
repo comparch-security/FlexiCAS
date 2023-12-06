@@ -1,6 +1,8 @@
 #ifndef CM_REPLACE_HPP_
 #define CM_REPLACE_HPP_
 
+#include <cstdint>
+#include <cstdio>
 #include <list>
 #include <mutex>
 #include <unordered_set>
@@ -21,6 +23,7 @@ public:
   virtual uint32_t replace(uint32_t s, uint32_t *w) = 0; // return the number of free places
   virtual void access(uint32_t s, uint32_t w) = 0;
   virtual void invalid(uint32_t s, uint32_t w) = 0;
+  virtual void withdraw_replace(uint32_t s, uint32_t w) {}
   virtual ~ReplaceFuncBase() {}
 };
 
@@ -32,7 +35,7 @@ class ReplaceFIFO : public ReplaceFuncBase
 {
 protected:
   std::vector<std::list<uint32_t> > used_map;
-  std::vector<std::unordered_set<uint32_t> > using_map; // Write in the way that the thread needs to use during runtime
+  std::vector<std::unordered_map<uint32_t, bool> > using_map; // Write in the way that the thread needs to use during runtime
   std::vector<std::unordered_set<uint32_t> > free_map; 
 
 public:
@@ -40,18 +43,30 @@ public:
     for (auto &s : free_map) for(uint32_t i=0; i<NW; i++) s.insert(i);
   }
   virtual ~ReplaceFIFO() {}
+  virtual void withdraw_replace(uint32_t s, uint32_t w) {
+    std::unique_lock lk(mtx);
+    assert(using_map[s].count(w));
+    if(using_map[s][w]){
+      used_map[s].push_front(w);
+    }else{
+      free_map[s].insert(w);
+    }
+    using_map[s].erase(w);
+    lk.unlock();
+  }
+
   virtual uint32_t replace(uint32_t s, uint32_t *w){
     std::unique_lock lk(mtx);
     if(!free_map[s].empty()){
       *w = *(free_map[s].begin());
       free_map[s].erase(*w);
-      using_map[s].insert(*w);
+      using_map[s][*w] = false;
     }
     else{
       assert(used_map[s].size() >= 1);
       *w = used_map[s].front();
       used_map[s].remove(*w);
-      using_map[s].insert(*w);
+      using_map[s][*w] = true;
     }
     lk.unlock();
     return free_map[s].size();

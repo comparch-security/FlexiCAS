@@ -1,6 +1,7 @@
 #ifndef CM_CACHE_MEMORY_HPP
 #define CM_CACHE_MEMORY_HPP
 
+#include "cache/cache.hpp"
 #include "cache/coherence.hpp"
 #include <mutex>
 #include <sys/mman.h>
@@ -32,7 +33,7 @@ public:
     if constexpr (!std::is_void<DLY>::value) delete timer;
   }
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, CMMetadataBase* meta_inner = nullptr) {
     if constexpr (!std::is_void<DT>::value) {
       std::unique_lock lk(mtx);
       auto ppn = addr >> 12;
