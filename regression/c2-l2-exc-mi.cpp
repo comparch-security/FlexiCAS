@@ -44,9 +44,7 @@ int main() {
     } else if(rw) {
       core_data[nc]->write(addr, wdata, nullptr);
     } else {
-      const Data64B *rdata;
-      if(ic) rdata = static_cast<const Data64B *>(core_inst[nc]->read(addr, nullptr));
-      else   rdata = static_cast<const Data64B *>(core_data[nc]->read(addr, nullptr));
+      auto rdata = ic ? core_inst[nc]->read(addr, nullptr) : core_data[nc]->read(addr, nullptr);
       if(!tgen.check(addr, rdata)) return 1; // test failed!
     }
   }

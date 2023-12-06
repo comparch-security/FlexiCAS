@@ -26,8 +26,7 @@ int main() {
     } else if(rw) {
       core->write(addr, wdata, nullptr);
     } else {
-      auto rdata = static_cast<const Data64B *>(core->read(addr, nullptr));
-      if(!tgen.check(addr, rdata)) return 1; // test failed!
+      if(!tgen.check(addr, core->read(addr, nullptr))) return 1; // test failed!
     }
   }
 

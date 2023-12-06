@@ -86,7 +86,7 @@ public:
     return std::make_tuple(addr, data, rw, core, ic, flush);
   }
 
-  bool check(uint64_t addr, const DT *data) {
+  bool check(uint64_t addr, const CMDataBase *data) {
     assert(addr_map.count(addr));
     int index = addr_map[addr];
     assert(data_pool[index].read(0) == data->read(0));
