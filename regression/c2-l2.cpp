@@ -12,7 +12,6 @@
 
 #define L2IW 5
 #define L2WN 8
-#define L2Toff (L2IW + 6)
 
 int main() {
   auto l1d = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NCore, "l1d");
@@ -35,20 +34,5 @@ int main() {
   mem->attach_monitor(&tracer);
 
   RegressionGen<NCore, true, PAddrN, SAddrN, Data64B> tgen;
-
-  for(int i=0; i<TestN; i++) {
-    auto [addr, wdata, rw, nc, ic, flush] = tgen.gen();
-    if(flush) {
-      if(flush > 1) for( auto ci:core_inst) ci->flush(addr, nullptr); // shared instruction, flush all cores
-      else          core_inst[nc]->flush(addr, nullptr);
-      core_data[nc]->write(addr, wdata, nullptr);
-    } else if(rw) {
-      core_data[nc]->write(addr, wdata, nullptr);
-    } else {
-      auto rdata = ic ? core_inst[nc]->read(addr, nullptr) : core_data[nc]->read(addr, nullptr);
-      if(!tgen.check(addr, rdata)) return 1; // test failed!
-    }
-  }
-
-  return 0;
+  return tgen.run(TestN, core_inst, core_data);
 }

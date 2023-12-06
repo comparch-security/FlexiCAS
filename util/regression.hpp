@@ -92,6 +92,23 @@ public:
     assert(data_pool[index].read(0) == data->read(0));
     return data_pool[index].read(0) == data->read(0);
   }
+
+  bool run(uint64_t TestN, std::vector<CoreInterface *>& core_inst, std::vector<CoreInterface *>& core_data) {
+    for(int i=0; i<TestN; i++) {
+      auto [addr, wdata, rw, nc, ic, flush] = gen();
+      if(flush) {
+        if(flush > 1) for( auto ci:core_inst) ci->flush(addr, nullptr); // shared instruction, flush all cores
+        else          core_inst[nc]->flush(addr, nullptr);
+        core_data[nc]->write(addr, wdata, nullptr);
+      } else if(rw) {
+        core_data[nc]->write(addr, wdata, nullptr);
+      } else {
+        auto rdata = ic ? core_inst[nc]->read(addr, nullptr) : core_data[nc]->read(addr, nullptr);
+        if(!check(addr, rdata)) return 1; // test failed!
+      }
+    }
+    return 0;
+  }
 };
 
 #endif
