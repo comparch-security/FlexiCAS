@@ -3,6 +3,8 @@
 
 #include <cassert>
 #include <condition_variable>
+#include <cstddef>
+#include <cstdio>
 #include <mutex>
 #include <type_traits>
 #include <tuple>
@@ -189,15 +191,14 @@ public:
       }
       UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
       acquire_resp(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
-
-      std::unique_lock lk(*mtx, std::defer_lock);
-      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      acquire_resp(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
-      (*status)[s] = (*status)[s] & (~0x01);
-      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      acquire_resp(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
-      cv->notify_all();
     }
+    std::unique_lock lk(*mtx, std::defer_lock);
+    SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    acquire_resp(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+    (*status)[s] = (*status)[s] & (~0x01);
+    UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    acquire_resp(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+    cv->notify_all();
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {

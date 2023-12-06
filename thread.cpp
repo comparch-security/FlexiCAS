@@ -16,7 +16,7 @@
 #include <cstdio>
 #include <thread>
 
-int threads_num = 1;
+int threads_num = 4;
 
 uint64_t da[8] = {0, 1, 2, 3, 4, 5, 6, 7};
 uint64_t db[8] = {1, 1, 1, 1, 1, 1, 1, 1};
@@ -41,7 +41,7 @@ std::mutex  mtx;
 std::vector<uint64_t> addr_buffer(threads_num);
 std::condition_variable cv_addr;
 uint64_t buffer_record = 0; 
-uint64_t addr_num = 128000;
+uint64_t addr_num = 12800;
 
 
 void init(){
@@ -68,10 +68,10 @@ void init(){
     l1[1]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[1]->outer));
     l1[2]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[2]->outer));
     l1[3]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[3]->outer));
-    l1[4]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[4]->outer));
-    l1[5]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[5]->outer));
-    l1[6]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[6]->outer));
-    l1[7]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[7]->outer));
+    // l1[4]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[4]->outer));
+    // l1[5]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[5]->outer));
+    // l1[6]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[6]->outer));
+    // l1[7]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[7]->outer));
     // l1[8]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[8]->outer));
     // l1[9]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[9]->outer));
     // l1[10]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[10]->outer));
@@ -99,8 +99,7 @@ void del(){
 void threadRW(int operation){
   database.insert_id(get_thread_id);
   uint64_t delay = 0;
-  // uint64_t src1 = get_thread_id & 0xFFFFC0;
-  uint64_t src1 = 0;
+  uint64_t src1 = get_thread_id & 0xFFFFC0;
   uint64_t src2 = cm_get_random_uint64() & 0xFFFFC0;
   uint64_t addr = src1 + src2;
   data_type thread_data;
@@ -125,6 +124,8 @@ void producer_thread(){
 
   for(int i = 0; i < addr_num/threads_num; i++){
     lk.lock();
+    printf("sync %d\n", i);
+    lock_log_write("sync %d\n", i);
     cv_addr.wait(lk, [] { return buffer_record == 0;});
 
     for(int i = 0; i < threads_num; i++){
@@ -135,7 +136,6 @@ void producer_thread(){
 
     lk.unlock();
     cv_addr.notify_all();
-    // lock_log_write("sync %d\n", i);
   }
 
   lk.lock();
@@ -181,24 +181,42 @@ int main(){
   init();
   #ifdef LEVEL_1
     lock_log_fp = fopen("dtrace", "w");
+    // for time test 
+    // auto start = std::chrono::high_resolution_clock::now();
+    // std::thread producer(producer_thread);
+    // std::vector<std::thread> thread_array(threads_num);
+    // for(int i = 0; i < threads_num; i++){
+    //   thread_array[i] = std::thread(worker_thread, i);
+    // }
 
-    auto start = std::chrono::high_resolution_clock::now();
-    std::thread producer(producer_thread);
-    std::vector<std::thread> thread_array(threads_num);
-    for(int i = 0; i < threads_num; i++){
-      thread_array[i] = std::thread(worker_thread, i);
+    // producer.join();
+    // for(int i = 0; i < threads_num; i++){
+    //   thread_array[i].join();
+    // }
+    // auto end = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double> duration = end - start;
+
+    // std::cout << "thread num  : " << threads_num << std::endl;
+    // std::cout << "access addr : " << addr_num << std::endl;
+    // std::cout << "cost time   : " << duration.count() << " s " << std::endl;
+
+    for(int i = 0; i < 12800/threads_num; i++){
+      std::thread threadA(threadRW, 0);
+      std::thread threadB(threadRW, 0);
+      std::thread threadC(threadRW, 0);
+      std::thread threadD(threadRW, 0);
+
+      threadA.join();
+      threadB.join();
+      threadC.join();
+      threadD.join();
+
+      database.clear();
+      database.add_sync();
+
+      printf("sync %d\n", i);
+      lock_log_write("sync %d\n", i);
     }
-
-    producer.join();
-    for(int i = 0; i < threads_num; i++){
-      thread_array[i].join();
-    }
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end - start;
-
-    std::cout << "thread num  : " << threads_num << std::endl;
-    std::cout << "access addr : " << addr_num << std::endl;
-    std::cout << "cost time   : " << duration.count() << " s " << std::endl;
 
     close_log();
     uint64_t delay;
