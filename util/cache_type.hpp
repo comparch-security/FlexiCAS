@@ -123,4 +123,31 @@ inline auto cache_gen_l2_exc(int size, const std::string& name_prefix) {
   return cache_type_compile<IW, WN, DW, DT, MBT, RPT, DRPT,       CPT, false, isLLC, false, true, DLY, EnMon>(size, name_prefix);
 }
 
+template<int IW, int WN, typename DT, typename MBT,
+         template <int, int, bool> class RPT,
+         template <typename, bool, bool> class CPT,
+         typename DLY, bool EnMon>
+inline auto cache_gen_llc_inc(int size, const std::string& name_prefix) {
+  return cache_type_compile<IW, WN, 1, DT, MBT, RPT, ReplaceLRU, CPT, false, true, false, false, DLY, EnMon>(size, name_prefix);
+}
+
+template<int IW, int WN, typename DT, typename MBT,
+         template <int, int, bool> class RPT,
+         template <typename, bool, bool> class CPT,
+         typename DLY, bool EnMon>
+inline auto cache_gen_llc_exc(int size, const std::string& name_prefix) {
+  return cache_type_compile<IW, WN, 1,  DT, MBT, RPT, ReplaceLRU, CPT, false, true, false, true, DLY, EnMon>(size, name_prefix);
+}
+
+template<int IW, int WN, int DW, typename DT, typename MBT,
+         template <int, int, bool> class RPT,
+         template <int, int, bool> class DRPT,
+         template <typename, bool, bool> class CPT,
+         typename DLY, bool EnMon>
+inline auto cache_gen_llc_exc(int size, const std::string& name_prefix) {
+  constexpr bool isDir  = std::is_same_v<MBT, MetadataDirectoryBase>;
+  assert(isDir);
+  return cache_type_compile<IW, WN, DW, DT, MBT, RPT, DRPT,       CPT, false, true, false, true, DLY, EnMon>(size, name_prefix);
+}
+
 #endif

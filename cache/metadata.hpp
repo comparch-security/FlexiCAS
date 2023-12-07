@@ -5,6 +5,11 @@
 #include <string>
 #include "util/concept_macro.hpp"
 
+#ifndef NDEBUG
+#include <typeinfo>
+#include <cassert>
+#endif
+
 class CMDataBase
 {
 public:
@@ -100,6 +105,7 @@ public:
 
   virtual std::string to_string() const;
   virtual void copy(const CMMetadataBase *meta) {
+    assert(typeid(*this) == typeid(*meta));
     state  = meta->state;
     dirty  = meta->dirty;
   }
@@ -174,11 +180,14 @@ public:
   virtual const CMMetadataBase * get_outer_meta() const { return &outer_meta; }
 
   virtual bool match(uint64_t addr) const { return MT::is_valid() && ((addr >> TOfst) & mask) == tag; }
-  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; CMMetadataBase::state = 0; }
+  virtual void init(uint64_t addr) {
+    tag = (addr >> TOfst) & mask;
+    CMMetadataBase::state = 0;
+  }
   virtual uint64_t addr(uint32_t s) const {
     uint64_t addr = tag << TOfst;
     if constexpr (IW > 0) {
-      constexpr uint32_t index_mask = (1 << IW) - 1;
+      constexpr uint64_t index_mask = (1 << IW) - 1;
       addr |= (s & index_mask) << (TOfst - IW);
     }
     return addr;

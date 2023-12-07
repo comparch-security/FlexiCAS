@@ -5,6 +5,7 @@
 #include <vector>
 #include <tuple>
 #include <cmath>
+#include <unordered_map>
 #include "util/random.hpp"
 #include "util/concept_macro.hpp"
 #include "cache/metadata.hpp"
@@ -23,7 +24,7 @@ class RegressionGen
   CMHasher hasher;
   const unsigned int total;
   std::vector<uint64_t> addr_pool;   // random addresses
-  std::map<uint64_t, int> addr_map;
+  std::unordered_map<uint64_t, int> addr_map;
   std::vector<DT>       data_pool;   // data copy
   std::vector<bool>     wflag;       // whether written
   std::vector<bool>     iflag;       // belong to instruction
@@ -37,7 +38,9 @@ public:
     wflag.resize(total);
     iflag.resize(total);
     for(int i=0; i<total; i++) {
-      addr_pool[i] = hasher(gi++) & addr_mask;
+      auto addr = hasher(gi++) & addr_mask;
+      while(addr_map.count(addr)) addr = hasher(gi++) & addr_mask;
+      addr_pool[i] = addr;
       addr_map[addr_pool[i]] = i;
       wflag[i] = false;
       if(EnIC)
@@ -68,7 +71,8 @@ public:
     bool rw = 0 == (hasher(gi++) & 0x11); // 25% write
     if(!wflag[index]) rw = true; // always write first
     bool is_inst = iflag[index];
-    bool ic, flush;
+    bool ic;
+    int flush;
 
     if(is_inst && rw) { // write an instruction
       ic = false;       // write by a data cache and flush before write
