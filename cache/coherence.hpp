@@ -4,10 +4,12 @@
 #include <cassert>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <mutex>
 #include <type_traits>
 #include <tuple>
+#include <utility>
 #include <vector>
 #include "cache/cache.hpp"
 #include "cache/slicehash.hpp"
@@ -28,16 +30,46 @@ typedef InnerCohPortBase CohMasterBase;
 std::mutex Mlock;
 
 /////////////////////////////////
+// Record which addresses the inner working on
+class InnerAddressRecord
+{
+protected:
+  std::mutex  mtx;           // mutex for protecting record
+  std::unordered_map<uint64_t, std::set<uint32_t> > map;
+public:
+  void add(uint64_t addr, int32_t inner_id){
+    std::unique_lock lk(mtx, std::defer_lock);
+    lk.lock();
+    assert(!map[addr].count(inner_id));
+    map[addr].insert(inner_id);
+    lk.unlock();
+  }
+  bool valid(uint64_t addr, int32_t inner_id){
+    std::unique_lock lk(mtx, std::defer_lock);
+    lk.lock();
+    bool va = map[addr].count(inner_id);
+    lk.unlock();
+    return va; 
+  }
+  void erase(uint64_t addr, int32_t inner_id){
+    std::unique_lock lk(mtx, std::defer_lock);
+    lk.lock();
+    map[addr].erase(inner_id);
+    lk.unlock();
+  }
+};
+
+/////////////////////////////////
 // Base interface for outer ports
 
 class OuterCohPortBase
 {
 protected:
-  CacheBase *cache;        // reverse pointer for the cache parent
-  InnerCohPortBase *inner; // inner port for probe when sync
-  CohMasterBase *coh;      // hook up with the coherence hub
-  int32_t coh_id;          // the identifier used in locating this cache client by the coherence master
-  CohPolicyBase *policy;   // the coherence policy
+  CacheBase *cache;          // reverse pointer for the cache parent
+  InnerCohPortBase *inner;   // inner port for probe when sync
+  CohMasterBase *coh;        // hook up with the coherence hub
+  int32_t coh_id;            // the identifier used in locating this cache client by the coherence master
+  CohPolicyBase *policy;     // the coherence policy
 
 public:
   OuterCohPortBase(CohPolicyBase *policy) : policy(policy) {}
@@ -62,6 +94,7 @@ protected:
   OuterCohPortBase *outer; // outer port for writeback when replace
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
   CohPolicyBase *policy; // the coherence policy
+  InnerAddressRecord record; // record working address
 public:
   InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~InnerCohPortBase() { delete policy; }
@@ -91,7 +124,6 @@ public:
     UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     acuqire_line(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
     coh->acquire_resp(addr, data, outer_cmd, delay, meta);
-
   }
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = this->coh_id;
@@ -103,6 +135,7 @@ public:
     UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     writeback_line(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
   }
+
 };
 
 // common behavior for cached outer ports
@@ -167,6 +200,7 @@ public:
     this->cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, delay);
     return hit;
   }
+
 };
 
 typedef OuterCohPortT<OuterCohPortUncached> OuterCohPort;
@@ -178,6 +212,7 @@ public:
   virtual ~InnerCohPortUncached() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, CMMetadataBase* meta_inner = nullptr) {
+    record.add(addr, cmd.id);
     auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line(addr, data_inner, cmd, delay, false, meta_inner);
 
     if(meta_inner && meta_inner->is_valid()){
@@ -198,6 +233,7 @@ public:
     (*status)[s] = (*status)[s] & (~0x01);
     UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     acquire_resp(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+    record.erase(addr, cmd.id);
     cv->notify_all();
   }
 
@@ -363,11 +399,19 @@ public:
 
   virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
     bool hit = false;
+    std::list<std::pair<int32_t, coh_cmd_t> > waiting_coh;
     for(uint32_t i=0; i<this->coh.size(); i++) {
       auto probe = IPUC::policy->probe_need_probe(cmd, meta, i);
-      if(probe.first) 
-        if(this->coh[i]->probe_resp(addr, meta, data, probe.second, delay))
+      if(probe.first){
+        if(this->record.valid(addr, i))
+          waiting_coh.push_back(std::make_pair(i, probe.second));
+        else if(this->coh[i]->probe_resp(addr, meta, data, probe.second, delay))
           hit = true;
+      }
+    }
+    for(auto c : waiting_coh){
+      if(this->coh[c.first]->probe_resp(addr, meta, data, c.second, delay))
+        hit = true;
     }
     return hit;
   }
