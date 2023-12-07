@@ -94,7 +94,7 @@ protected:
   OuterCohPortBase *outer; // outer port for writeback when replace
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
   CohPolicyBase *policy; // the coherence policy
-  InnerAddressRecord record; // record working address
+  InnerAddressRecord record; // record the address being processed
 public:
   InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~InnerCohPortBase() { delete policy; }
@@ -347,8 +347,8 @@ protected:
       std::unique_lock lkm(Mlock, std::defer_lock);
       SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
       write_line(set Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
-      if(meta->addr(s) == addr){
-        if(data_inner) data->copy(data_inner);
+      if(meta->is_valid() && meta->addr(s) == addr){
+        if(data_inner && data) data->copy(data_inner);
         policy->meta_after_release(meta);
         this->cache->hook_write(addr, ai, s, w, hit, delay);
       }
@@ -404,6 +404,8 @@ public:
       auto probe = IPUC::policy->probe_need_probe(cmd, meta, i);
       if(probe.first){
         if(this->record.valid(addr, i))
+        // If an acquire request needs to be issued by the inner of the probe, 
+        // we will place this inner at the end of the probe to maintain cache consistency
           waiting_coh.push_back(std::make_pair(i, probe.second));
         else if(this->coh[i]->probe_resp(addr, meta, data, probe.second, delay))
           hit = true;
@@ -436,7 +438,7 @@ public:
     std::unique_lock lkm(Mlock, std::defer_lock);
     SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     set Mlock\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
-    if(meta->addr(s) == addr)
+    if(meta->is_valid() && meta->addr(s) == addr)
       this->cache->hook_read(addr, ai, s, w, hit, delay);
     UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     unset Mlock\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
