@@ -203,10 +203,8 @@ public:
     policy->meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
 
-    if(!hit) {
-      cache->meta_return_buffer(meta);
-      cache->data_return_buffer(data);
-    }
+    cache->meta_return_buffer(meta);
+    cache->data_return_buffer(data);
   }
 
 
@@ -259,6 +257,8 @@ protected:
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(mdata) mdata->copy(data);
         cache->hook_write(addr, mai, ms, mw, false, false, mmeta, mdata, delay); // a write occurred during the probe
+        cache->meta_return_buffer(meta);
+        cache->data_return_buffer(data);
         return std::make_tuple(mmeta, mdata, mai, ms, mw, hit);
       } else {
         return std::make_tuple(meta, data, ai, s, w, hit);

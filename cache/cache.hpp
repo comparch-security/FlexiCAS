@@ -4,8 +4,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <set>
-#include <map>
+#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 #include "util/random.hpp"
@@ -15,6 +15,8 @@
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
 #include "cache/metadata.hpp"
+
+//#include <iostream>
 
 // base class for a cache array:
 class CacheArrayBase
@@ -154,25 +156,38 @@ class CacheSkewed : public CacheBase
 protected:
   IDX indexer;      // index resolver
   RPC replacer[P];  // replacer
-  DT * data_buffer; // the data copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
-  MT * meta_buffer; // the metadata copy buffer. Special notice, need to correctly handle multi-threading when parallellized.
-  bool data_buffer_busy, meta_buffer_busy;
+  std::unordered_set<CMDataBase *>       data_buffer_pool;
+  std::unordered_map<CMDataBase *, bool> data_buffer_state;
+  std::unordered_set<CMMetadataBase *>       meta_buffer_pool;
+  std::unordered_map<CMMetadataBase *, bool> meta_buffer_state;
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
-    : CacheBase(name), data_buffer(nullptr), meta_buffer(new MT()), data_buffer_busy(false), meta_buffer_busy(false)
+    : CacheBase(name)
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(CacheBase::id);
-    if constexpr (!C_VOID(DT)) data_buffer = new DT();
-    else                       data_buffer = nullptr;
+
+    // for single thread simulator, we assume a maximum of 2 buffers should be enough
+    if constexpr (!C_VOID(DT)) {
+      for(int i=0; i<2; i++) {
+        auto buffer = new DT();
+        data_buffer_pool.insert(buffer);
+        data_buffer_state[buffer] = true;
+      }
+    }
+    for(int i=0; i<2; i++) {
+      auto buffer = new MT();
+      meta_buffer_pool.insert(buffer);
+      meta_buffer_state[buffer] = true;
+    }
   }
 
   virtual ~CacheSkewed() {
     delete CacheMonitorSupport::monitors;
-    if constexpr (!C_VOID(DT)) delete data_buffer;
-    delete meta_buffer;
+    if constexpr (!C_VOID(DT)) for(auto &buf: data_buffer_state) delete buf.first;
+    for(auto &buf: meta_buffer_state) delete buf.first;
   }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
@@ -215,21 +230,43 @@ public:
   }
 
   virtual CMDataBase *data_copy_buffer() {
-    assert(!data_buffer_busy);
-    data_buffer_busy = true;
     if constexpr (C_VOID(DT)) return nullptr;
-    else                      return data_buffer;
+    else {
+      assert(!data_buffer_pool.empty());
+      auto buffer = *(data_buffer_pool.begin());
+      assert(data_buffer_state[buffer]);
+      data_buffer_pool.erase(buffer);
+      data_buffer_state[buffer] = false;
+      return buffer;
+    }
   }
 
-  virtual void data_return_buffer(CMDataBase *buf) { data_buffer_busy = false; }
+  virtual void data_return_buffer(CMDataBase *buf) {
+    if(data_buffer_state.count(buf)) {
+      assert(!data_buffer_state[buf]);
+      data_buffer_state[buf] = true;
+      data_buffer_pool.insert(buf);
+    }
+  }
 
   virtual CMMetadataBase *meta_copy_buffer() {
-    assert(!meta_buffer_busy);
-    meta_buffer_busy = true;
-    return meta_buffer;
+    assert(!meta_buffer_pool.empty());
+    auto buffer = *(meta_buffer_pool.begin());
+    assert(meta_buffer_state[buffer]);
+    meta_buffer_pool.erase(buffer);
+    meta_buffer_state[buffer] = false;
+    //std::cout << std::hex << name << " alloc meta buffer 0x" << buffer << std::endl;
+    return buffer;
   }
 
-  virtual void meta_return_buffer(CMMetadataBase *buf) { meta_buffer_busy = false; }
+  virtual void meta_return_buffer(CMMetadataBase *buf) {
+    if(meta_buffer_state.count(buf)) {
+      assert(!meta_buffer_state[buf]);
+      meta_buffer_state[buf] = true;
+      meta_buffer_pool.insert(buf);
+      //std::cout << std::hex << name << " return meta buffer 0x" << buf << std::endl;
+    }
+  }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
     for(int i=0; i<P; i++) 
