@@ -90,7 +90,7 @@ public:
       if(outer->is_evict(outer_cmd))
         return std::make_pair(true, cmd_for_probe_release());
       else {
-        if(meta->is_shared())
+        if(meta && meta->is_shared())
           return std::make_pair(false, cmd_for_null());
         else if(outer->is_downgrade(outer_cmd))
           return std::make_pair(true, cmd_for_probe_downgrade());

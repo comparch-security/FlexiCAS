@@ -203,10 +203,8 @@ public:
     policy->meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
 
-    if(!hit) {
-      cache->meta_return_buffer(meta);
-      cache->data_return_buffer(data);
-    }
+    cache->meta_return_buffer(meta);
+    cache->data_return_buffer(data);
   }
 
 
@@ -219,7 +217,7 @@ protected:
       std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(probe_writeback) { // always writeback the line as it likely(always??) dirty
         assert(meta->is_dirty());
-        outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
+        outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
       }
     }
 
@@ -248,7 +246,7 @@ protected:
       }
       else if(promote_local) meta->to_modified(-1);
       if(cmd.id != -1 && policy->is_acquire(cmd) && meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
-        outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
+        outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
       return std::make_tuple(meta, data, ai, s, w, hit);
     } else { // miss
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
@@ -259,6 +257,8 @@ protected:
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(mdata) mdata->copy(data);
         cache->hook_write(addr, mai, ms, mw, false, false, mmeta, mdata, delay); // a write occurred during the probe
+        cache->meta_return_buffer(meta);
+        cache->data_return_buffer(data);
         return std::make_tuple(mmeta, mdata, mai, ms, mw, hit);
       } else {
         return std::make_tuple(meta, data, ai, s, w, hit);
@@ -397,7 +397,7 @@ protected:
           return std::make_tuple(meta, data, ai, s, w, hit);
         else { // normal request, move it to an extended way
           if(meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
-            outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
+            outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
           auto [mmeta, mdata, mai, ms, mw] = replace_line_ext(addr, delay);
           mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
           return std::make_tuple(mmeta, data, mai, ms, mw, hit);
@@ -411,7 +411,7 @@ protected:
           std::tie(phit, pwb) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
           if(pwb) { // a write occurred during the probe, always write it back as it likely (always??) dirty
             assert(meta->is_dirty());
-            outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay);
+            outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
           }
         }
         if(!pwb) { // still get it from outer
@@ -449,7 +449,7 @@ protected:
       std::tie(meta, data, ai, s, w, hit) = access_line(addr, cmd, delay);
       if(data_inner) data->copy(data_inner);
       policy->meta_after_release(cmd, meta, meta_inner);
-      if(meta->is_extend()) outer->writeback_req(addr, meta, data, policy->cmd_for_outer_flush(cmd), delay); // writeback if dirty
+      if(meta->is_extend()) outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay); // writeback if dirty
       assert(meta_inner); // assume meta_inner is valid for all writebacks
       cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
       cache->data_return_buffer(data); // return it anyway

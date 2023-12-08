@@ -60,24 +60,24 @@ public:
   bool is_write(coh_cmd_t cmd) const           { return cmd.act == fetch_write_act || cmd.act == evict_act || cmd.act == writeback_act; }
 
   // generate command
-  constexpr coh_cmd_t cmd_for_read()             const { return {-1, acquire_msg, fetch_read_act }; }
-  constexpr coh_cmd_t cmd_for_write()            const { return {-1, acquire_msg, fetch_write_act}; }
-  constexpr coh_cmd_t cmd_for_flush()            const { return {-1, flush_msg,   evict_act      }; }
-  constexpr coh_cmd_t cmd_for_writeback()        const { return {-1, flush_msg,   writeback_act  }; }
-  constexpr coh_cmd_t cmd_for_release()          const { return {-1, release_msg, evict_act      }; }
-  constexpr coh_cmd_t cmd_for_null()             const { return {-1, 0,           0              }; }
-  constexpr coh_cmd_t cmd_for_probe_writeback()  const { return {-1, probe_msg,   writeback_act  }; }
-  constexpr coh_cmd_t cmd_for_probe_release()    const { return {-1, probe_msg,   evict_act      }; }
-  constexpr coh_cmd_t cmd_for_probe_downgrade()  const { return {-1, probe_msg,   downgrade_act  }; }
-  coh_cmd_t cmd_for_probe_writeback(int32_t id)  const { return {id, probe_msg,   writeback_act  }; }
-  coh_cmd_t cmd_for_probe_release(int32_t id)    const { return {id, probe_msg,   evict_act      }; }
-  coh_cmd_t cmd_for_probe_downgrade(int32_t id)  const { return {id, probe_msg,   downgrade_act  }; }
+  constexpr coh_cmd_t cmd_for_read()              const { return {-1, acquire_msg, fetch_read_act }; }
+  constexpr coh_cmd_t cmd_for_write()             const { return {-1, acquire_msg, fetch_write_act}; }
+  constexpr coh_cmd_t cmd_for_flush()             const { return {-1, flush_msg,   evict_act      }; }
+  constexpr coh_cmd_t cmd_for_writeback()         const { return {-1, flush_msg,   writeback_act  }; }
+  constexpr coh_cmd_t cmd_for_release()           const { return {-1, release_msg, evict_act      }; }
+  constexpr coh_cmd_t cmd_for_release_writeback() const { return {-1, release_msg, writeback_act  }; }
+  constexpr coh_cmd_t cmd_for_null()              const { return {-1, 0,           0              }; }
+  constexpr coh_cmd_t cmd_for_probe_writeback()   const { return {-1, probe_msg,   writeback_act  }; }
+  constexpr coh_cmd_t cmd_for_probe_release()     const { return {-1, probe_msg,   evict_act      }; }
+  constexpr coh_cmd_t cmd_for_probe_downgrade()   const { return {-1, probe_msg,   downgrade_act  }; }
+  coh_cmd_t cmd_for_probe_writeback(int32_t id)   const { return {id, probe_msg,   writeback_act  }; }
+  coh_cmd_t cmd_for_probe_release(int32_t id)     const { return {id, probe_msg,   evict_act      }; }
+  coh_cmd_t cmd_for_probe_downgrade(int32_t id)   const { return {id, probe_msg,   downgrade_act  }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
 
-  coh_cmd_t cmd_for_outer_flush(coh_cmd_t cmd) const {
-    if(is_evict(cmd)) return outer->cmd_for_flush();
-    else              return outer->cmd_for_writeback();
+  coh_cmd_t cmd_for_outer_writeback(coh_cmd_t cmd) const {
+    return outer->cmd_for_release_writeback();
   }
 
   // acquire
@@ -157,10 +157,8 @@ public:
   
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
     meta->to_dirty();
-    if(meta_inner) {
-      assert(is_release(cmd) && is_evict(cmd));
+    if(meta_inner && is_evict(cmd))
       meta_inner->to_invalid();
-    }
   }
 
   // flush
