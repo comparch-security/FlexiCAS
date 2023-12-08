@@ -2,18 +2,18 @@
 #include "util/cache_type.hpp"
 #include "util/regression.hpp"
 
-#define PAddrN (1ull << 15)
-#define SAddrN (1ull << 15)
+#define PAddrN 1024
+#define SAddrN 256
 #define NCore 4
 #define TestN ((PAddrN + SAddrN) * NCore * 2)
 
-#define L1IW 6
-#define L1WN 8
+#define L1IW 4
+#define L1WN 4
 
-#define L2IW 9
+#define L2IW 5
 #define L2WN 8
 
-#define L3IW 13
+#define L3IW 7
 #define L3WN 16
 
 int main() {
