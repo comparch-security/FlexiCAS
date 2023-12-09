@@ -81,7 +81,8 @@ $(UTIL_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS)
 REGRESSION_TESTS = \
 	c1-l1 \
 	c2-l2 c2-l2-mesi c2-l2-exc c2-l2-exc-mi c2-l2-exc-mesi \
-	c4-l3 c4-l3-exc c4-l3-exc-mesi c4-l3-intel
+	c4-l3 c4-l3-exc c4-l3-exc-mesi c4-l3-intel \
+	c2-l2-mirage
 
 REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(REGRESSION_TESTS))
 REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))
@@ -96,20 +97,12 @@ $(REGRESSION_TESTS_LOG): %.log:%
 $(REGRESSION_TESTS_RST): %.out: %.log %.expect
 	diff $^ 2>$@
 
-regression-cache: $(REGRESSION_TESTS_RST)
-
-regression-dsl:
-	CONFIG=example $(MAKE)
-	CONFIG=example $(MAKE) clean-example
-	CONFIG=mirage  $(MAKE)
-	CONFIG=mirage  $(MAKE) clean-mirage
-
-regression: regression-cache regression-dsl
+regression: $(REGRESSION_TESTS_RST)
 
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 
-.PHONY: regression-cache regression-dsl
+.PHONY: regression
 
 clean:
 	$(MAKE) clean-$(CONFIG)

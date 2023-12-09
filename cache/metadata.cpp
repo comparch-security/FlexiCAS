@@ -1,4 +1,5 @@
 #include "cache/metadata.hpp"
+#include "cache/mirage.hpp"
 #include <boost/format.hpp>
 
 static boost::format data_fmt("%016x %016x %016x %016x %016x %016x %016x %016x");
@@ -20,4 +21,11 @@ std::string CMMetadataBase::to_string() const {
   }
 
   return str_state + (is_dirty() ? "d" : "c") + (allow_write() ? "W" : "R");
+}
+
+static boost::format mirage_link_fmt("(%04d,%02d)");
+
+std::string MirageMetadataSupport::to_string() const {
+  mirage_link_fmt % ds % dw;
+  return mirage_link_fmt.str();
 }

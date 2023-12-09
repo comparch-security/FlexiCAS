@@ -38,6 +38,7 @@ public:
   // special methods needed for Mirage Cache
   void bind(uint32_t s, uint32_t w) { ds = s; dw = w; }                     // initialize meta pointer
   std::pair<uint32_t, uint32_t> pointer() { return std::make_pair(ds, dw);} // return meta pointer to data meta
+  virtual std::string to_string() const;
 };
 
 // Metadata with match function
@@ -51,6 +52,10 @@ class MirageMetadataMSIBroadcast : public MetadataBroadcast<AW, IW, TOfst, Metad
 public:
   MirageMetadataMSIBroadcast() : MetadataT(), MirageMetadataSupport() {}
   virtual ~MirageMetadataMSIBroadcast() {}
+
+  virtual std::string to_string() const {
+    return CMMetadataBase::to_string() + MirageMetadataSupport::to_string();
+  }
 
   virtual void copy(const CMMetadataBase *m_meta) {
     MetadataT::copy(m_meta);
