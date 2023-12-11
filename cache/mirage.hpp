@@ -38,6 +38,7 @@ public:
   // special methods needed for Mirage Cache
   void bind(uint32_t s, uint32_t w) { ds = s; dw = w; }                     // initialize meta pointer
   std::pair<uint32_t, uint32_t> pointer() { return std::make_pair(ds, dw);} // return meta pointer to data meta
+  virtual std::string to_string() const;
 };
 
 // Metadata with match function
@@ -51,6 +52,10 @@ class MirageMetadataMSIBroadcast : public MetadataBroadcast<AW, IW, TOfst, Metad
 public:
   MirageMetadataMSIBroadcast() : MetadataT(), MirageMetadataSupport() {}
   virtual ~MirageMetadataMSIBroadcast() {}
+
+  virtual std::string to_string() const {
+    return CMMetadataBase::to_string() + MirageMetadataSupport::to_string();
+  }
 
   virtual void copy(const CMMetadataBase *m_meta) {
     MetadataT::copy(m_meta);
@@ -137,7 +142,7 @@ public:
   }
 
   CMMetadataBase *get_meta_meta(const std::tuple<uint32_t, uint32_t, uint32_t>& pointer) {
-    return arrays[std::get<0>(pointer)]->get_meta(std::get<1>(pointer), std::get<2>(pointer));
+    return static_cast<CMMetadataBase *>(CacheBase::access(std::get<0>(pointer), std::get<1>(pointer), std::get<2>(pointer)));
   }
 
   // grammer sugar
@@ -165,6 +170,30 @@ public:
     std::tie(*ai, *s, *w) = candidates[cm_get_random_uint32() % p];
   }
 
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
+    if(ai < P) {
+      auto [ds, dw] = static_cast<MT *>(CacheBase::access(ai, s, w))->pointer();
+      d_replacer.access(ds, dw, false);
+    }
+    CacheT::hook_read(addr, ai, s, w, hit, meta, data, delay);
+  }
+
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
+    if(ai < P) {
+      auto [ds, dw] = static_cast<MT *>(CacheBase::access(ai, s, w))->pointer();
+      d_replacer.access(ds, dw, is_release);
+    }
+    CacheT::hook_write(addr, ai, s, w, hit, is_release, meta, data, delay);
+  }
+
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
+    if(ai < P && hit && evict) {
+      auto [ds, dw] = static_cast<MT *>(CacheBase::access(ai, s, w))->pointer();
+      d_replacer.invalid(ds, dw);
+    }
+    CacheT::hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+  }
+
   void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack){
     if constexpr (EnableRelocation) {
       uint32_t relocation = 0;
@@ -189,7 +218,7 @@ public:
     auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
     auto m_meta = static_cast<MT *>(CacheT::access(m_ai, m_s, m_w));
     auto addr = m_meta->addr(m_s);
-    meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
+    meta->init(addr); meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
     get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
     CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
     CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // hit is true or false? may have impact on delay
@@ -211,7 +240,8 @@ public:
   MirageInnerPortUncached(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
-  replace_line(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
+  replace_line(uint64_t addr, uint64_t *delay) {
+    uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
     auto cache = static_cast<CT *>(InnerCohPortBase::cache);
@@ -243,6 +273,6 @@ protected:
 
 template<typename MT, typename CT>
   requires C_DERIVE2(MT, MetadataBroadcastBase, MirageMetadataSupport) && C_DERIVE(CT, CacheBase)
-using MirageInnerPort = InnerCohPortT<MirageInnerPortUncached<MT, CT> >;
+using MirageInnerCohPort = InnerCohPortT<MirageInnerPortUncached<MT, CT> >;
 
 #endif

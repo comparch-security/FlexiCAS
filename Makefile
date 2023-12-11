@@ -1,5 +1,4 @@
 
-CONFIG ?= example
 MODE ?=
 NCORE ?= `nproc`
 
@@ -24,16 +23,6 @@ else
     DSLCXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
 
-ifneq ("$(wildcard $(CONFIG).def)","")
-    CONFIG_FILE = $(CONFIG).def
-else ifneq ("$(wildcard $(CONFIG))","")
-    CONFIG_FILE = $(CONFIG)
-else ifneq ("$(wildcard config/$(CONFIG).def)","")
-    CONFIG_FILE = config/$(CONFIG).def
-else ifneq ("$(wildcard config/$(CONFIG))","")
-    CONFIG_FILE = config/$(CONFIG)
-endif
-
 UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
 DSL_HEADERS   = $(wildcard dsl/*.hpp)
@@ -41,35 +30,9 @@ DSL_HEADERS   = $(wildcard dsl/*.hpp)
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 CACHE_OBJS    = cache/metadata.o
 UTIL_OBJS     = util/random.o util/query.o util/monitor.o
-DSL_OBJS      = dsl/dsl.o dsl/entity.o dsl/statement.o dsl/type_description.o
-
-all: lib$(CONFIG).a
-.PHONY: all
 
 $(CRYPTO_LIB):
 	$(MAKE) -C cryptopp -j$(NCORE)
-
-lib$(CONFIG).a : $(CONFIG).cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) -c $< -o $(CONFIG).o
-	ar rvs $@ $(CONFIG).o $(CACHE_OBJS) $(UTIL_OBJS)
-
-lib$(CONFIG).so : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -shared -o $@
-
-$(CONFIG).cpp : $(CONFIG_FILE) dsl-decoder
-	./dsl-decoder $(CONFIG_FILE) $(CONFIG)
-
-clean-$(CONFIG):
-	-rm $(CONFIG).cpp $(CONFIG).hpp $(CONFIG).o
-	-rm lib$(CONFIG).a
-
-.PHONY: clean-$(CONFIG)
-
-dsl-decoder : $(DSL_OBJS)
-	$(CXX) $(DSLCXXFLAGS) $^ -o $@
-
-$(DSL_OBJS) : %o:%cpp $(DSL_HEADERS)
-	$(CXX) $(DSLCXXFLAGS) -c $< -o $@
 
 $(CACHE_OBJS) : %o:%cpp $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -81,7 +44,8 @@ $(UTIL_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS)
 REGRESSION_TESTS = \
 	c1-l1 \
 	c2-l2 c2-l2-mesi c2-l2-exc c2-l2-exc-mi c2-l2-exc-mesi \
-	c4-l3 c4-l3-exc c4-l3-exc-mesi c4-l3-intel
+	c4-l3 c4-l3-exc c4-l3-exc-mesi c4-l3-intel \
+	c2-l2-mirage
 
 REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(REGRESSION_TESTS))
 REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))
@@ -96,26 +60,15 @@ $(REGRESSION_TESTS_LOG): %.log:%
 $(REGRESSION_TESTS_RST): %.out: %.log %.expect
 	diff $^ 2>$@
 
-regression-cache: $(REGRESSION_TESTS_RST)
-
-regression-dsl:
-	CONFIG=example $(MAKE)
-	CONFIG=example $(MAKE) clean-example
-	CONFIG=mirage  $(MAKE)
-	CONFIG=mirage  $(MAKE) clean-mirage
-
-regression: regression-cache regression-dsl
+regression: $(REGRESSION_TESTS_RST)
 
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 
-.PHONY: regression-cache regression-dsl
+.PHONY: regression
 
 clean:
-	$(MAKE) clean-$(CONFIG)
 	$(MAKE) clean-regression
-	-rm $(UTIL_OBJS)
-	-rm $(DSL_OBJS)
-	-rm dsl-decoder
+	-rm $(UTIL_OBJS) $(CACHE_OBJS)
 
 .PHONY: clean
