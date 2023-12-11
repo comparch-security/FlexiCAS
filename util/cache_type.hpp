@@ -169,7 +169,7 @@ inline auto cache_gen_llc_mirage(int size, const std::string& name_prefix) {
                       meta_replace_type, data_replace_type,
                       DLY, EnMon, EnableRelocation> cache_base_type;
   typedef MSIPolicy<meta_metadata_type, false, true> policy_type;
-  typedef CoherentCacheNorm<cache_base_type, OuterCohPortUncached, InnerCohPort> cache_type;
+  typedef CoherentCacheNorm<cache_base_type, OuterCohPortUncached, MirageInnerCohPort<meta_metadata_type, cache_base_type> > cache_type;
   return cache_generator<cache_type, policy_type>(size, name_prefix);
 }
 
