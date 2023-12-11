@@ -15,9 +15,8 @@ Information Engineering, Chinese Academy of Sciences.
 * A pure C++ (std c++17) implementation of a modular cache architecture.
 * Modular support for different index function, replacement policy, and slice mapping function.
 * Modular support for complex cache array structure, such as separated metadata and data arrays.
-* Modular support for different coherence protocol, inclusing snooping and directory.
-* Modular support for inclusive/exclusive/non-inclusive cache hierarchy.
-* Support a simply DSL for easy cache definition.
+* Modular support for different coherence protocols (MI/MSI/MESI), inclusing broadcast and directory.
+* Modular support for inclusive/exclusive cache hierarchy.
 * On-demand hooking up with user defined performance monitors.
 * On-demand estimation of cache access delay (behavoral, not cycle accurate).
 
@@ -29,4 +28,4 @@ This is an overhual of a previous in-house implemented simulator, namely [**cach
 
 ## Usage
 
-Right now, see `config/example.def` and try to run `make`.
+Right now, see the regression test cases in `regression/*.cpp` and try to run `make regression`.

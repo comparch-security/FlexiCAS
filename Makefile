@@ -1,5 +1,4 @@
 
-CONFIG ?= example
 MODE ?=
 NCORE ?= `nproc`
 
@@ -24,16 +23,6 @@ else
     DSLCXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
 
-ifneq ("$(wildcard $(CONFIG).def)","")
-    CONFIG_FILE = $(CONFIG).def
-else ifneq ("$(wildcard $(CONFIG))","")
-    CONFIG_FILE = $(CONFIG)
-else ifneq ("$(wildcard config/$(CONFIG).def)","")
-    CONFIG_FILE = config/$(CONFIG).def
-else ifneq ("$(wildcard config/$(CONFIG))","")
-    CONFIG_FILE = config/$(CONFIG)
-endif
-
 UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
 DSL_HEADERS   = $(wildcard dsl/*.hpp)
@@ -41,35 +30,9 @@ DSL_HEADERS   = $(wildcard dsl/*.hpp)
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 CACHE_OBJS    = cache/metadata.o
 UTIL_OBJS     = util/random.o util/query.o util/monitor.o
-DSL_OBJS      = dsl/dsl.o dsl/entity.o dsl/statement.o dsl/type_description.o
-
-all: lib$(CONFIG).a
-.PHONY: all
 
 $(CRYPTO_LIB):
 	$(MAKE) -C cryptopp -j$(NCORE)
-
-lib$(CONFIG).a : $(CONFIG).cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) -c $< -o $(CONFIG).o
-	ar rvs $@ $(CONFIG).o $(CACHE_OBJS) $(UTIL_OBJS)
-
-lib$(CONFIG).so : $(CONFIG).cpp $(UTIL_OBJS) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -shared -o $@
-
-$(CONFIG).cpp : $(CONFIG_FILE) dsl-decoder
-	./dsl-decoder $(CONFIG_FILE) $(CONFIG)
-
-clean-$(CONFIG):
-	-rm $(CONFIG).cpp $(CONFIG).hpp $(CONFIG).o
-	-rm lib$(CONFIG).a
-
-.PHONY: clean-$(CONFIG)
-
-dsl-decoder : $(DSL_OBJS)
-	$(CXX) $(DSLCXXFLAGS) $^ -o $@
-
-$(DSL_OBJS) : %o:%cpp $(DSL_HEADERS)
-	$(CXX) $(DSLCXXFLAGS) -c $< -o $@
 
 $(CACHE_OBJS) : %o:%cpp $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -105,10 +68,7 @@ clean-regression:
 .PHONY: regression
 
 clean:
-	$(MAKE) clean-$(CONFIG)
 	$(MAKE) clean-regression
-	-rm $(UTIL_OBJS)
-	-rm $(DSL_OBJS)
-	-rm dsl-decoder
+	-rm $(UTIL_OBJS) $(CACHE_OBJS)
 
 .PHONY: clean
