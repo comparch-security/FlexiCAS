@@ -538,7 +538,7 @@ public:
     }
 
     if(hit || probe_writeback) {
-      if(writeback = policy->probe_need_writeback(outer_cmd, meta))
+      if((writeback = policy->probe_need_writeback(outer_cmd, meta)))
         if(data_outer) data_outer->copy(data);
     }
 

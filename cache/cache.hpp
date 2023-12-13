@@ -54,8 +54,8 @@ public:
     meta.resize(meta_num);
     for(auto &m:meta) m = new MT();
     if(extra_way)
-      for(auto s=0; s<nset; s++)
-        for(auto w=NW; w<way_num; w++)
+      for(unsigned int s=0; s<nset; s++)
+        for(unsigned int w=NW; w<way_num; w++)
           meta[s*way_num+w]->to_extend();
 
     if constexpr (!C_VOID(DT)) {
@@ -70,7 +70,7 @@ public:
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
-    for(int i=0; i<way_num; i++)
+    for(unsigned int i=0; i<way_num; i++)
       if(meta[s*way_num + i]->match(addr)) {
         *w = i;
         return true;
