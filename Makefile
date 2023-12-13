@@ -65,6 +65,10 @@ regression: $(REGRESSION_TESTS_RST)
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 
+libflexicas.so: spike/spike-cache.cpp spike/flexicas.hpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -shared -o $@
+
+
 .PHONY: regression
 
 clean:
