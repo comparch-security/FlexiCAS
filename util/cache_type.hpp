@@ -21,7 +21,7 @@ inline std::vector<CoherentCacheBase *> cache_generator(int size, const std::str
 
 inline auto get_l1_core_interface(std::vector<CoherentCacheBase *>& array) {
   auto core = std::vector<CoreInterface *>(array.size());
-  for(int i=0; i<array.size(); i++)
+  for(unsigned int i=0; i<array.size(); i++)
     core[i] = static_cast<CoreInterface *>(array[i]->inner);
   return core;
 }
