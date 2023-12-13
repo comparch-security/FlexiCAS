@@ -1,6 +1,8 @@
 #include "cache/memory.hpp"
 #include "util/cache_type.hpp"
 
+#include <iostream>
+
 // intel coffe lake 9Gen: https://en.wikichip.org/wiki/intel/microarchitectures/coffee_lake
 
 #define NC 2
@@ -14,18 +16,10 @@
 #define L2WN 4
 
 // 2M per core
-#define L3IW 11
+#define L3IW (11+1)
 #define L3WN 16
 
-static auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NC, "l1d");
-static auto core_data = get_l1_core_interface(l1d);
-static auto l1i = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, true, void, true>(NC, "l1i");
-static auto core_inst = get_l1_core_interface(l1i);
-static auto l2 = cache_gen_l2_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, MSIPolicy, false, void, true>(NC, "l2");
-static auto l3 = cache_gen_llc_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, void, true>(1, "l3")[0];
-static auto mem = new SimpleMemoryModel<void,void,true>("mem");
-
-static SimpleTracer tracer(true);
+static std::vector<CoreInterface *> core_data, core_inst;
 
 namespace flexicas {
 
@@ -52,6 +46,15 @@ namespace flexicas {
   }
 
   void init() {
+    auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NC, "l1d");
+    core_data = get_l1_core_interface(l1d);
+    auto l1i = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, true, void, true>(NC, "l1i");
+    core_inst = get_l1_core_interface(l1i);
+    auto l2 = cache_gen_l2_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, MSIPolicy, false, void, true>(NC, "l2");
+    auto l3 = cache_gen_llc_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, void, true>(1, "l3")[0];
+    auto mem = new SimpleMemoryModel<void,void,true>("mem");
+    SimpleTracer tracer(true);
+
     for(int i=0; i<NC; i++) {
       l1i[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1i[i]->outer, true));
       l1d[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1d[i]->outer));
@@ -64,6 +67,8 @@ namespace flexicas {
     l3->outer->connect(mem, mem->connect(l3->outer));
     l3->attach_monitor(&tracer);
     mem->attach_monitor(&tracer);
+
+    std::cout << "cache model initialized!" << std::endl;
   }
 
   void read(uint64_t addr, int core, bool ic) {
