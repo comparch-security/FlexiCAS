@@ -130,7 +130,7 @@ public:
       }
 
       // writeback if dirty
-      if(writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta)) {
+      if((writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta))) {
         if(data_outer) data_outer->copy(data);
       }
     }
