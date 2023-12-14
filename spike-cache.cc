@@ -19,7 +19,10 @@
 #define L3IW (11+1)
 #define L3WN 16
 
+//#define EnTrace
+
 static std::vector<CoreInterface *> core_data, core_inst;
+static SimpleTracer tracer(true);
 
 namespace flexicas {
 
@@ -53,25 +56,28 @@ namespace flexicas {
     auto l2 = cache_gen_l2_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, MSIPolicy, false, void, true>(NC, "l2");
     auto l3 = cache_gen_llc_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, void, true>(1, "l3")[0];
     auto mem = new SimpleMemoryModel<void,void,true>("mem");
-    SimpleTracer tracer(true);
 
     for(int i=0; i<NC; i++) {
       l1i[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1i[i]->outer, true));
       l1d[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1d[i]->outer));
+      l2[i]->outer->connect(l3->inner, l3->inner->connect(l2[i]->outer));
+#ifdef EnTrace
       l1i[i]->attach_monitor(&tracer);
       l1d[i]->attach_monitor(&tracer);
-      l2[i]->outer->connect(l3->inner, l3->inner->connect(l2[i]->outer));
       l2[i]->attach_monitor(&tracer);
+#endif
     }
 
     l3->outer->connect(mem, mem->connect(l3->outer));
+#ifdef EnTrace
     l3->attach_monitor(&tracer);
     mem->attach_monitor(&tracer);
+#endif
 
-    std::cout << "cache model initialized!" << std::endl;
   }
 
   void read(uint64_t addr, int core, bool ic) {
+    assert(core < NC);
     if(ic)
       core_inst[core]->read(addr, nullptr);
     else
@@ -79,14 +85,17 @@ namespace flexicas {
   }
 
   void write(uint64_t addr, int core) {
+    assert(core < NC);
     core_data[core]->write(addr, nullptr, nullptr);
   }
 
   void flush(uint64_t addr, int core) {
+    assert(core < NC);
     core_data[core]->flush(addr, nullptr);
   }
 
   void writeback(uint64_t addr, int core) {
+    assert(core < NC);
     core_data[core]->writeback(addr, nullptr);
   }
 }
