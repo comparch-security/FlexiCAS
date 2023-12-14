@@ -42,8 +42,8 @@ public:
       if(!pages.count(ppn)) allocate(ppn);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
       data_inner->write(mem_addr);
-      if(meta_inner) meta_inner->to_modified(-1);
     }
+    if(meta_inner) meta_inner->to_modified(-1);
     hook_read(addr, 0, 0, 0, true, meta_inner, data_inner, delay);
   }
 
