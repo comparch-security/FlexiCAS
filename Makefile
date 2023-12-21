@@ -10,7 +10,7 @@ CXXSTD = --std=c++17 -fconcepts
 #CXXSTD = --std=c++20
 
 ifeq ($(MODE), release)
-    CXXFLAGS = $(CXXSTD) -O2 -DNDEBUG -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O3 -DNDEBUG -I. -fPIC
 else ifeq ($(MODE), debug)
     CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC
 else
@@ -32,7 +32,7 @@ CACHE_OBJS    = cache/metadata.o
 UTIL_OBJS     = util/random.o util/query.o util/monitor.o
 
 $(CRYPTO_LIB):
-	$(MAKE) -C cryptopp -j$(NCORE)
+	CXXFLAGS="-g0" $(MAKE) -C cryptopp -j$(NCORE)
 
 $(CACHE_OBJS) : %o:%cpp $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
