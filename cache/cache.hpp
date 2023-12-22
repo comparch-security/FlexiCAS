@@ -1,6 +1,7 @@
 #ifndef CM_CACHE_CACHE_HPP
 #define CM_CACHE_CACHE_HPP
 
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -19,6 +20,7 @@
 #include "cache/replace.hpp"
 #include "util/log.hpp"
 #include "util/common.hpp"
+#include "util/util.hpp"
 
 
 class CMMetadataBase
@@ -26,9 +28,12 @@ class CMMetadataBase
 public:
   // implement a totally useless base class
   virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
+  virtual bool match_b(uint64_t addr) const { return false; }
   virtual void reset() {}                                   // reset the metadata
   virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
+  virtual void init_buffer(uint64_t addr) = 0;              // initialize the buffer addr
   virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
+  virtual uint64_t addr_buffer() const = 0;                 // get buffer_addr
   virtual void sync(int32_t coh_id) = 0;                    // sync after probe
 
   virtual void to_invalid() = 0;                            // change state to invalid
@@ -39,6 +44,8 @@ public:
   virtual void to_dirty() = 0;                              // change to dirty
   virtual void to_clean() = 0;                              // change to clean
   virtual void to_extend() = 0;                             // change to extend directory meta
+  virtual void to_full_b() = 0;                             // change buffer to full
+  virtual void to_empty_b() = 0;                            // change buffer to empty
   virtual bool is_valid() const { return false; }
   virtual bool is_shared() const { return false; }
   virtual bool is_modified() const { return false; }
@@ -46,6 +53,8 @@ public:
   virtual bool is_exclusive() const { return false; }
   virtual bool is_dirty() const { return false; }
   virtual bool is_extend() const { return false; }
+
+  virtual bool is_full_b() const { return false; }
 
   virtual void copy(const CMMetadataBase *meta) = 0;        // copy the content of meta
 
@@ -102,6 +111,7 @@ public:
   }
 };
 
+
 //////////////// define cache array ////////////////////
 
 // base class for a cache array:
@@ -120,6 +130,10 @@ public:
   virtual std::vector<uint32_t> *get_status() = 0;
   virtual std::mutex* get_mutex() = 0;
   virtual std::condition_variable* get_cv() = 0;
+  virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) = 0;
+  virtual std::set<uint64_t>* get_acquiring_set(uint32_t s) = 0;
+  virtual std::mutex* get_acquiring_mutex(uint32_t s) = 0;
+  virtual std::condition_variable* get_acquiring_cv(uint32_t s) = 0;
 
 };
 
@@ -133,7 +147,12 @@ class CacheArrayNorm : public CacheArrayBase
 protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
+  std::vector<std::mutex *> mutexs; // mutex array for meta
   std::vector<uint32_t> status; // record every set status
+
+  std::vector<std::set<uint64_t> > acquiring_set; // record every set acquiring address to outer cache 
+  std::vector<std::mutex *> acquiring_mutexs; // mutex for protecting acquiring set
+  std::vector<std::condition_variable *> acquiring_cv; // cv for supporting acquiring set work
   std::mutex mtx; // mutex for status
   std::condition_variable cv;
   unsigned int extra_way = 0;
@@ -152,11 +171,25 @@ public:
     }
     status.resize(nset);
     for(int i = 0; i < nset; i++) status[i] = 0;
+    
+    mutexs.resize(meta_num);
+    for(auto &t:mutexs) t = new std::mutex();
+
+    acquiring_set.resize(nset);
+    acquiring_mutexs.resize(nset);
+    acquiring_cv.resize(nset);
+    for(int i = 0; i < nset; i++) {
+      acquiring_mutexs[i] = new std::mutex();
+      acquiring_cv[i] = new std::condition_variable(); 
+    }
   }
 
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
     if constexpr (!std::is_void<DT>::value) for(auto d:data) delete d;
+    for(auto t:mutexs) delete t;
+    for(auto am : acquiring_mutexs) delete am;
+    for(auto ac : acquiring_cv) delete ac;
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
@@ -181,6 +214,17 @@ public:
   virtual std::mutex* get_mutex() { return &mtx; }
   virtual std::condition_variable* get_cv() { return &cv; }
 
+  virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) { return mutexs[s*(NW+extra_way) + w]; }
+
+  virtual std::set<uint64_t>* get_acquiring_set(uint32_t s){
+    return &acquiring_set[s];
+  }
+  virtual std::mutex* get_acquiring_mutex(uint32_t s){
+    return acquiring_mutexs[s];
+  }
+  virtual std::condition_variable* get_acquiring_cv(uint32_t s){
+    return acquiring_cv[s];
+  }
 };
 
 //////////////// define cache ////////////////////
@@ -219,12 +263,12 @@ public:
     return hit(addr, &ai, &s, &w);
   }
 
-  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1) = 0;
+  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1, InnerProbeRecord *record = nullptr) = 0;
   
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
-  virtual void withdraw_replace(uint32_t ai, uint32_t s, uint32_t w) = 0;
+  // virtual void withdraw_replace(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   // hook interface for replacer state update, Monitor and delay estimation
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint64_t *delay, unsigned int genre = 0) = 0;
@@ -254,6 +298,10 @@ public:
   virtual std::condition_variable* get_cv(uint32_t ai) {
     return arrays[ai]->get_cv();
   }
+
+  virtual std::mutex* get_cacheline_mutex(uint32_t ai, uint32_t s, uint32_t w){
+    return arrays[ai]->get_cacheline_mutex(s, w);
+  }
   
   virtual uint32_t get_id() {
     return id;
@@ -262,6 +310,11 @@ public:
   virtual std::string get_name(){
     return name;
   }
+
+  virtual void add_acquiring_addr(uint64_t addr, int32_t ai, uint32_t s) = 0;
+
+  virtual void delete_acquiring_addr(uint64_t addr, int32_t ai, uint32_t s) = 0;
+
 };
 
 // Skewed Cache
@@ -301,7 +354,63 @@ public:
     return false;
   }
 
-  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1){
+  virtual bool probe_waiting(uint64_t addr, int32_t ai, uint32_t s, uint32_t *w){
+    auto aset = arrays[ai]->get_acquiring_set(s);
+    auto amtx = arrays[ai]->get_acquiring_mutex(s);
+    auto acv  = arrays[ai]->get_acquiring_cv(s);
+    std::unique_lock lk(*amtx, std::defer_lock);
+    bool hit = false;
+    SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+    mutex: %p, probe check(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+    get_name().c_str(), ai, s, amtx);
+    WAIT_PACV(acv, lk, addr, aset,"time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    probe check, get cv\n", get_time(), database.get_id(get_thread_id), addr, get_name().c_str(), amtx);
+    for(*w = 0; *w < NW; (*w)++){
+      if(access(ai, s, *w)->match(addr)){
+        hit = true;
+        break;
+      }
+    }
+    UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+    mutex: %p, probe check(unset lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+    get_name().c_str(), ai, s, amtx);
+    acv->notify_all();
+    return hit;
+  }
+
+  virtual void add_acquiring_addr(uint64_t addr, int32_t ai, uint32_t s){
+    auto aset = arrays[ai]->get_acquiring_set(s);
+    auto amtx = arrays[ai]->get_acquiring_mutex(s);
+    auto acv  = arrays[ai]->get_acquiring_cv(s);
+    std::unique_lock lk(*amtx, std::defer_lock);
+    SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+    mutex: %p, add acquiring addr(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+    get_name().c_str(), ai, s, amtx);
+    aset->insert(addr);
+    UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+    mutex: %p, add acquiring addr(unset lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+    get_name().c_str(), ai, s, amtx);
+    acv->notify_all();
+    return ;
+  }
+
+  virtual void delete_acquiring_addr(uint64_t addr, int32_t ai, uint32_t s){
+    auto aset = arrays[ai]->get_acquiring_set(s);
+    auto amtx = arrays[ai]->get_acquiring_mutex(s);
+    auto acv  = arrays[ai]->get_acquiring_cv(s);
+    std::unique_lock lk(*amtx, std::defer_lock);
+    SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+    mutex: %p, delete acquiring addr(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+    get_name().c_str(), ai, s, amtx);
+    aset->erase(addr);
+    UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+    mutex: %p, delete acquiring addr(unset lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+    get_name().c_str(), ai, s, amtx);
+    acv->notify_all();
+    return ;
+  }
+
+  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1, InnerProbeRecord *record = nullptr){
     for(*ai=0; *ai<P; (*ai)++){
       *s = indexer.index(addr, *ai);
       auto status = get_status(*ai);
@@ -309,15 +418,42 @@ public:
       auto cv     = get_cv(*ai);
       std::unique_lock lk(*mtx, std::defer_lock);
       uint32_t ss = *s;
-      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
-      mutex: %p, check hit(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
-      get_name().c_str(), *ai, *s, mtx);
-      WAIT_CV(cv, lk, ss, status, value, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      check hit, get cv\n", get_time(), database.get_id(get_thread_id), addr, get_name().c_str(), mtx);
-      (*status)[*s] |= value;
-      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
-      mutex: %p, check hit(unset lock)\n",get_time(), database.get_id(get_thread_id), addr, \
-      get_name().c_str(), *ai, *s, mtx);
+      if(value == 0x10) { // probe
+        auto aset = arrays[*ai]->get_acquiring_set(*s);
+        auto amtx = arrays[*ai]->get_acquiring_mutex(*s);
+        auto acv  = arrays[*ai]->get_acquiring_cv(*s);
+        SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, probe check acquiring set(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), *ai, *s, amtx);
+        WAIT_PACV(acv, lk, addr, aset,"time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+        probe check check acquiring set, get cv\n", get_time(), database.get_id(get_thread_id), addr, get_name().c_str(), amtx);
+
+        UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, probe check(unset lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), *ai, *s, amtx);
+
+        SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), *ai, *s, mtx);
+        WAIT_CV(cv, lk, ss, status, value, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+        check hit, get cv\n", get_time(), database.get_id(get_thread_id), addr, get_name().c_str(), mtx);
+        (*status)[*s] |= value;
+        UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(unset lock)\n",get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), *ai, *s, mtx);
+        acv->notify_all();
+      }else{
+        SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), *ai, *s, mtx);
+        WAIT_CV_WITH_RECORD(cv, lk, ss, status, value, addr, record, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+        check hit, get cv\n", get_time(), database.get_id(get_thread_id), addr, get_name().c_str(), mtx);
+        if(value == 0x1) add_acquiring_addr(addr, *ai, *s);
+        (*status)[*s] |= value;
+        UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(unset lock)\n",get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), *ai, *s, mtx);
+      }
       for(*w=0; *w<NW; (*w)++){
         if(access(*ai, *s, *w)->match(addr)) return true;
       }
@@ -371,9 +507,9 @@ public:
     return false;
   }
 
-  virtual void withdraw_replace(uint32_t ai, uint32_t s, uint32_t w) {
-    replacer[ai].withdraw_replace(s, w);
-  }
+  // virtual void withdraw_replace(uint32_t ai, uint32_t s, uint32_t w) {
+  //   replacer[ai].withdraw_replace(s, w);
+  // }
 };
 
 // Normal set-associative cache

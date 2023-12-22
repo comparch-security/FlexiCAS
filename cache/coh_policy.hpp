@@ -65,6 +65,12 @@ public:
   // acquire
   virtual std::pair<bool, coh_cmd_t> acquire_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
   virtual std::pair<bool, coh_cmd_t> acquire_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
+  virtual void meta_before_outer(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const{
+    if(meta){
+      meta->init_buffer(addr);
+      meta->to_full_b();
+    }
+  }
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const { // after fetch from outer
     assert(outer->is_acquire(outer_cmd));
     if(meta){ // exclusive snooping cache use nullptr as meta when acquire outer
@@ -124,7 +130,10 @@ public:
   }
 
   virtual void meta_after_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) const {
-    if(meta) meta->to_clean(); // flush may send out writeback request with null meta
+    if(meta) { // flush may send out writeback request with null meta
+      meta->to_clean();
+      meta->to_empty_b();
+    }
   }
   virtual void meta_after_evict(CMMetadataBase *meta) const{
     assert(!meta->is_dirty());

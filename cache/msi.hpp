@@ -1,6 +1,7 @@
 #ifndef CM_CACHE_MSI_HPP
 #define CM_CACHE_MSI_HPP
 
+#include "cache/cache.hpp"
 #include "cache/exclusive.hpp"
 
 // metadata supporting MSI coherency
@@ -10,8 +11,9 @@ protected:
   unsigned int state     : 2; // 0: invalid, 1: shared, 2:modify
   unsigned int dirty     : 1; // 0: clean, 1: dirty
   unsigned int extend    : 1; // 0: cache meta, 1: extend directory meta
+  unsigned int bstate    : 1; // buffer state, 0: empty, 1: full
 public:
-  MetadataMSIBase() : state(0), dirty(0), extend(0) {}
+  MetadataMSIBase() : state(0), dirty(0), extend(0), bstate(0) {}
   virtual ~MetadataMSIBase() {}
 
   virtual void to_invalid() { state = 0; }
@@ -19,12 +21,16 @@ public:
   virtual void to_modified(int32_t coh_id) { state = 2; }
   virtual void to_dirty() { dirty = 1; }
   virtual void to_clean() { dirty = 0; }
+
   virtual void to_extend() {}
+  virtual void to_full_b() { bstate = 1; }
+  virtual void to_empty_b() { bstate = 0; }
   virtual bool is_valid() const { return state; }
   virtual bool is_shared() const { return state == 1; }
   virtual bool is_modified() const {return state == 2; }
   virtual bool is_dirty() const { return dirty; }
   virtual bool is_extend() const { return extend; }
+  virtual bool is_full_b() const { return bstate; }
 
   virtual void copy(const CMMetadataBase *m_meta) {
     auto meta = static_cast<const MetadataMSIBase *>(m_meta);
@@ -82,6 +88,7 @@ class MetadataMSI : public MetadataMSIBase, public ST
 {
 protected:
   uint64_t     tag   : AW-TOfst;
+  uint64_t     baddr;
   constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
 
 public:
@@ -90,7 +97,7 @@ public:
 
   virtual bool match(uint64_t addr) const { return is_valid() && ((addr >> TOfst) & mask) == tag; }
   virtual void reset() { tag = 0; state = 0; dirty = 0; }
-  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; }
+  virtual void init(uint64_t addr) { tag = (addr >> TOfst) & mask; state = 0; dirty = 0; bstate = 0;}
   virtual uint64_t addr(uint32_t s) const {
     uint64_t addr = tag << TOfst;
     if constexpr (IW > 0) {
@@ -105,6 +112,15 @@ public:
     MetadataMSIBase::copy(m_meta);
     auto meta = static_cast<const MetadataMSI *>(m_meta);
     tag = meta->tag;
+  }
+  virtual bool match_b(uint64_t addr) const{
+    return is_full_b() && baddr == addr;
+  }
+  virtual void init_buffer(uint64_t addr){
+    baddr = addr;
+  }
+  virtual uint64_t addr_buffer() const{
+    return baddr;
   }
 };
 

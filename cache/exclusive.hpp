@@ -111,7 +111,7 @@ public:
   virtual ~ExclusiveInnerPortUncached() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, mtx, cv, status,hit] = access_line(addr, data_inner, cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, cmtx, hit] = access_line(addr, data_inner, cmd, delay);
 
     if (data_inner) data_inner->copy(data);
     if(meta){ 
@@ -136,14 +136,16 @@ protected:
     this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay, meta->is_extend());
   }
 
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool>
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool, bool>
   access_line(uint64_t addr, CMDataBase* data_inner, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     std::mutex* mtx;
+    std::mutex* cmtx;
     std::condition_variable* cv;
     std::vector<uint32_t>* status;
+    bool probing = false;
     bool hit = this->cache->hit(addr, &ai, &s, &w);
     if(hit) {
       meta = this->cache->access(ai, s, w);
@@ -154,7 +156,7 @@ protected:
         // fetch to higher cache and invalid here
         evict(meta, data, ai, s, w, delay);
         meta = nullptr;
-        return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit);
+        return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, cmtx, hit);
       }else{ // hit on extend directory meta 
         auto sync = policy->acquire_need_sync(cmd, meta);
         data = data_inner;
@@ -179,7 +181,7 @@ protected:
         outer->acquire_req(addr, meta, data, cmd, delay);
       }
     }
-    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit);
+    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, probing, hit);
   }
   virtual void write_line(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
     uint32_t ai, s, w;
