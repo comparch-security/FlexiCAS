@@ -2,7 +2,11 @@
 #include "util/cache_type.hpp"
 #include "cache/slicehash.hpp"
 
-#include <iostream>
+#include<list>
+#include<mutex>
+#include<thread>
+#include<condition_variable>
+//#include<iostream>
 
 // intel coffe lake 9Gen: https://en.wikichip.org/wiki/intel/microarchitectures/coffee_lake
 
@@ -20,9 +24,92 @@
 
 //#define EnTrace
 
-static std::vector<CoreInterface *> core_data, core_inst;
-static SimpleTracer tracer(true);
-static int NC = 0;
+
+#define CACHE_OP_READ      1
+#define CACHE_OP_WRITE     2
+#define CACHE_OP_FLUSH     3
+#define CACHE_OP_WRITEBACK 4
+
+#define XACT_QUEUE_HIGH    100
+#define XACT_QUEUE_LOW     10
+
+namespace {
+  static std::vector<CoreInterface *> core_data, core_inst;
+  static SimpleTracer tracer(true);
+  static int NC = 0;
+  std::condition_variable xact_non_empty_notify, xact_non_full_notify;
+  std::mutex xact_queue_op_mutex;
+  std::mutex xact_queue_full_mutex;
+  std::mutex xact_queue_empty_mutex;
+
+  struct cache_xact {
+    char op_t;
+    bool ic;
+    int core;
+    uint64_t addr;
+  };
+
+  std::list<cache_xact> xact_queue;
+
+  void xact_queue_add(cache_xact xact) {
+    std::unique_lock queue_full_lock(xact_queue_full_mutex, std::defer_lock);
+    while(true) {
+      xact_queue_op_mutex.lock();
+      if(xact_queue.size() >= XACT_QUEUE_HIGH) {
+        //std::cerr << "FlexiCAS lost sync with Spike with a transaction back log of " << xact_queue.size() << " transactions!" << std::endl;
+        xact_queue_op_mutex.unlock();
+        xact_non_full_notify.wait(queue_full_lock);
+      } else {
+        xact_queue.push_back(xact);
+        xact_non_empty_notify.notify_all();
+        xact_queue_op_mutex.unlock();
+        break;
+      }
+    }
+  }
+
+  void cache_server() {
+    std::unique_lock queue_empty_lock(xact_queue_empty_mutex, std::defer_lock);
+    cache_xact xact;
+    bool busy;
+    while(true) {
+      // get the next xact
+      xact_queue_op_mutex.lock();
+      busy = !xact_queue.empty();
+      if(busy) {
+        xact = xact_queue.front();
+        xact_queue.pop_front();
+        if(xact_queue.size() <= XACT_QUEUE_LOW)
+          xact_non_full_notify.notify_all();
+      }
+      xact_queue_op_mutex.unlock();
+
+      if(busy) {
+        switch(xact.op_t) {
+        case 0: // read
+          if(xact.ic)
+            core_inst[xact.core]->read(xact.addr, nullptr);
+          else
+            core_data[xact.core]->read(xact.addr, nullptr);
+          break;
+        case 1: //write
+          core_data[xact.core]->write(xact.addr, nullptr, nullptr);
+          break;
+        case 2: // flush
+          core_data[xact.core]->flush(xact.addr, nullptr);
+          break;
+        case 3: // writeback
+          core_data[xact.core]->writeback(xact.addr, nullptr);
+          break;
+        default:
+          assert(0 == "unknown op type!");
+        }
+      } else {
+        xact_non_empty_notify.wait(queue_empty_lock);
+      }
+    }
+  }
+}
 
 namespace flexicas {
 
@@ -78,28 +165,28 @@ namespace flexicas {
     mem->attach_monitor(&tracer);
 #endif
 
+    // set up the cache server
+    std::thread t(cache_server);
+    t.detach();
   }
 
   void read(uint64_t addr, int core, bool ic) {
     assert(core < NC);
-    if(ic)
-      core_inst[core]->read(addr, nullptr);
-    else
-      core_data[core]->read(addr, nullptr);
+    xact_queue_add({CACHE_OP_READ, ic, core, addr});
   }
 
   void write(uint64_t addr, int core) {
     assert(core < NC);
-    core_data[core]->write(addr, nullptr, nullptr);
+    xact_queue_add({CACHE_OP_WRITE, false, core, addr});
   }
 
   void flush(uint64_t addr, int core) {
     assert(core < NC);
-    core_data[core]->flush(addr, nullptr);
+    xact_queue_add({CACHE_OP_FLUSH, false, core, addr});
   }
 
   void writeback(uint64_t addr, int core) {
     assert(core < NC);
-    core_data[core]->writeback(addr, nullptr);
+    xact_queue_add({CACHE_OP_WRITEBACK, false, core, addr});
   }
 }
