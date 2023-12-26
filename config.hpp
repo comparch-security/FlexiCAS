@@ -22,13 +22,13 @@
 #define WIDTH 48
 
 // FIRST LEVEL
-#define L1_INDEX 6
-#define L1_WAY   8
+#define L1_INDEX 2
+#define L1_WAY   2
 #define L1_TAG_OFFSET L1_INDEX + OFFSET
 
 // SECOND LEVEL
-#define L2_INDEX 10
-#define L2_WAY   16
+#define L2_INDEX 3
+#define L2_WAY   4
 
 #define LEVEL_TWO_INCLUSIVE
 // #define LEVEL_TWO_EXCLUSIVE
