@@ -2,11 +2,12 @@
 #include "util/cache_type.hpp"
 #include "cache/slicehash.hpp"
 
-#include<list>
-#include<mutex>
-#include<thread>
-#include<condition_variable>
-//#include<iostream>
+#include <list>
+#include <mutex>
+#include <thread>
+#include <condition_variable>
+#include <chrono>
+//#include <iostream>
 
 // intel coffe lake 9Gen: https://en.wikichip.org/wiki/intel/microarchitectures/coffee_lake
 
@@ -41,6 +42,7 @@ namespace {
   std::mutex xact_queue_op_mutex;
   std::mutex xact_queue_full_mutex;
   std::mutex xact_queue_empty_mutex;
+  static bool exit_flag = false;
 
   struct cache_xact {
     char op_t;
@@ -72,7 +74,7 @@ namespace {
     std::unique_lock queue_empty_lock(xact_queue_empty_mutex, std::defer_lock);
     cache_xact xact;
     bool busy;
-    while(true) {
+    while(!exit_flag) {
       // get the next xact
       xact_queue_op_mutex.lock();
       busy = !xact_queue.empty();
@@ -105,7 +107,8 @@ namespace {
           assert(0 == "unknown op type!");
         }
       } else {
-        xact_non_empty_notify.wait(queue_empty_lock);
+        using namespace std::chrono_literals;
+        xact_non_empty_notify.wait_for(queue_empty_lock, 1ms);
       }
     }
   }
@@ -168,6 +171,10 @@ namespace flexicas {
     // set up the cache server
     std::thread t(cache_server);
     t.detach();
+  }
+
+  void exit() {
+    exit_flag = true;
   }
 
   void read(uint64_t addr, int core, bool ic) {
