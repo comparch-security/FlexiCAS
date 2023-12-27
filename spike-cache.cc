@@ -196,4 +196,13 @@ namespace flexicas {
     assert(core < NC);
     xact_queue_add({CACHE_OP_WRITEBACK, false, core, addr});
   }
+
+  void csr_write(uint64_t cmd) {
+    // ToDo: connect this with monitor
+  }
+
+  uint64_t csr_read() {
+    // ToDo: connect this with monitor
+    return 0;
+  }
 }
