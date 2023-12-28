@@ -240,6 +240,28 @@ int main(){
       }
     }
     printf("check succ\n");
+
+
+    // lock_log_fp = fopen("dtrace", "w");
+    // close_log();
+    // for(uint64_t i = 1; i <= 10000; i+=1){
+    //   uint64_t addr = i*64;
+    //   uint64_t delay = 0;
+    //   std::cout << i << std::endl;
+    //   core[0]->write(addr, data[0], &delay);
+    // }
+    
+    // for(uint64_t i = 10000; i>=1 ; i-=1){
+    //   uint64_t addr = i*64;
+    //   uint64_t delay = 0;
+    //   const CMDataBase* read_data = core[0]->read(addr, &delay);
+    //   std::cout << i << std::endl;
+    //   int result = 0;
+    //   for(int j = 0; j < 8; j++){
+    //     result += read_data->read(j);
+    //   }
+    //   assert(result==28);
+    // }
     
     del();
   #endif

@@ -47,6 +47,7 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void acquire_ack_req(uint64_t addr, uint64_t* delay) {}
   virtual bool probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
@@ -62,7 +63,7 @@ protected:
   OuterCohPortBase *outer; // outer port for writeback when replace
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
   CohPolicyBase *policy; // the coherence policy
-  InnerProbeRecord record; // record the address being probed
+  InnerAcquireRecord record; // record the address being probed
 public:
   InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~InnerCohPortBase() { delete policy; }
@@ -70,8 +71,9 @@ public:
   std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c) { coh.push_back(c); return std::make_pair(coh.size()-1, policy);}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void acquire_ack_resp(uint64_t addr, uint64_t *delay) {}
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) = 0;
-  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai = 0, uint32_t s = 0, uint32_t w = 0) { return false; } // may not implement if not supported
+  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return false; } // may not implement if not supported
 
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -85,7 +87,6 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = this->coh_id;
-    // policy->meta_before_outer(outer_cmd, meta, addr);
     coh->acquire_resp(addr, data, outer_cmd, delay);
     std::unique_lock lkm(Mlock, std::defer_lock);
     SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
@@ -103,6 +104,10 @@ public:
     policy->meta_after_writeback(outer_cmd, meta);
     UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     writeback_line(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
+  }
+
+  virtual void acquire_ack_req(uint64_t addr, uint64_t* delay){
+    coh->acquire_ack_resp(addr, delay);
   }
 };
 
@@ -165,8 +170,6 @@ public:
       UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
       probe_resp(h,unset status lock,B)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
       cv->notify_all();
-
-      // cmtx->unlock();
     }
     this->cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, delay);
     return hit;
@@ -182,7 +185,7 @@ public:
   virtual ~InnerCohPortUncached() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, mtx, cv, status, hit, probing] = access_line(addr, data_inner, cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line(addr, data_inner, cmd, delay);
 
     std::unique_lock lkm(Mlock, std::defer_lock);
     SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
@@ -194,18 +197,10 @@ public:
     }
     UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     acquire_resp(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
-    // cmtx->unlock();
 
-    if(!probing){
-      std::unique_lock lk(*mtx, std::defer_lock);
-      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      acquire_resp(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
-      (*status)[s] = (*status)[s] & (~0x01);
-      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      acquire_resp(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
-      cv->notify_all();
-    }
-    this->cache->delete_acquiring_addr(addr, ai, s);
+    outer->acquire_ack_req(addr, delay);
+
+    record.add(addr, addr_info{ai, s, w, mtx, cv, status});
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
@@ -213,6 +208,21 @@ public:
       flush_line(addr, cmd, delay);
     else
       write_line(addr, data_inner, cmd, delay, dirty);
+  }
+
+  virtual void acquire_ack_resp(uint64_t addr, uint64_t* delay){
+    auto info = record.query(addr);
+    auto mtx = info.mtx;
+    auto status = info.status;
+    auto s = info.s;
+    auto cv = info.cv;
+    std::unique_lock lk(*mtx, std::defer_lock);
+    SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    acquire resp ack(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+    (*status)[s] = (*status)[s] & (~0x01);
+    UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    acquire resp ack(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+    cv->notify_all();
   }
 
 protected:
@@ -260,7 +270,7 @@ protected:
     evict_line(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
   }
 
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool, bool>
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool>
   access_line(uint64_t addr, CMDataBase* data_inner, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta;
@@ -269,15 +279,11 @@ protected:
     std::mutex* cmtx;
     std::condition_variable* cv;
     std::vector<uint32_t>* status = nullptr;
-    bool probing = false;
-    bool hit = this->cache->hit_t(addr, &ai, &s, &w, 0x1, &record);
+    bool hit = this->cache->hit_t(addr, &ai, &s, &w, 0x1);
     if(hit) {
       status = this->cache->get_status(ai);
       mtx = this->cache->get_mutex(ai);
       cv = this->cache->get_cv(ai);
-      auto [probing, loc] = record.query(addr);
-      // cmtx = this->cache->get_cacheline_mutex(ai, s, w);
-      // cmtx->lock();
       std::tie(meta, data) = this->cache->access_line(ai, s, w);
       auto sync = policy->acquire_need_sync(cmd, meta);
       if(sync.first) probe_req(addr, meta, data, sync.second, delay); // sync if necessary
@@ -299,17 +305,14 @@ protected:
       this->cache->get_name().c_str(), ai, s, w, mtx);
       WAIT_CV(cv, lk, s, status, wait_value, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
       access_line(uh, get cv)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
-      this->cache->add_acquiring_addr(addr, ai, s);
       (*status)[s] = 0x1;
-      // cmtx = this->cache->get_cacheline_mutex(ai, s, w);
-      // cmtx->lock();
       UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
       access_line(uh,unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
       std::tie(meta, data) = this->cache->access_line(ai, s, w);
       if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
-    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, probing);
+    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit);
   }
 
   virtual void write_line(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
@@ -325,8 +328,6 @@ protected:
       status = this->cache->get_status(ai);
       mtx = this->cache->get_mutex(ai);
       cv = this->cache->get_cv(ai);
-      // cmtx = this->cache->get_cacheline_mutex(ai, s, w);
-      // cmtx->lock();
       std::tie(meta, data) = this->cache->access_line(ai, s, w);
       std::unique_lock lkm(Mlock, std::defer_lock);
       SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
@@ -346,7 +347,6 @@ protected:
       UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
       write_line(unset status lock B)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
       cv->notify_all();
-      // cmtx->unlock();
     }else{
       // printf("thread : %d , name : %s, addr : 0x%-7lx, fail\n", database.get_id(get_thread_id), this->cache->get_name().c_str(), addr);
       // assert(0);
@@ -381,18 +381,14 @@ public:
   InnerCohPortT(CohPolicyBase *policy) : IPUC(policy) {}
   virtual ~InnerCohPortT() {}
 
-  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai = 0, uint32_t s = 0, uint32_t w = 0) {
+  virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
     bool hit = false;
-    this->record.add(addr, addr_loc{ai, s, w});
-    auto cv = this->cache->get_cv(ai);
-    cv->notify_all(); // notify the thread which may be waiting the record add the addr to probe
     for(uint32_t i=0; i<this->coh.size(); i++) {
       auto probe = IPUC::policy->probe_need_probe(cmd, meta, i);
       if(probe.first) 
         if(this->coh[i]->probe_resp(addr, meta, data, probe.second, delay))
           hit = true;
     }
-    this->record.erase(addr);
     return hit;
   }
 };
@@ -411,7 +407,7 @@ public:
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
     addr = normalize(addr);
     auto cmd = policy->cmd_for_read();
-    auto [meta, data, ai, s, w, mtx, cv, status, cmtx, hit] = access_line(addr, nullptr, cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line(addr, nullptr, cmd, delay);
     
     std::unique_lock lkm(Mlock, std::defer_lock);
     SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
@@ -422,7 +418,8 @@ public:
     }
     UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     read(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
-    // cmtx->unlock();
+
+    outer->acquire_ack_req(addr, delay);
 
     std::unique_lock lk(*mtx, std::defer_lock);
     SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
@@ -432,14 +429,13 @@ public:
     read(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
     cv->notify_all();
 
-    this->cache->delete_acquiring_addr(addr, ai, s);
     return data;
   }
 
   virtual void write(uint64_t addr, const CMDataBase *data, uint64_t *delay) {
     addr = normalize(addr);
     auto cmd = policy->cmd_for_write();
-    auto [meta,m_data, ai, s, w, mtx, cv, status, cmtx, hit] = access_line(addr, nullptr, cmd, delay);
+    auto [meta,m_data, ai, s, w, mtx, cv, status, hit] = access_line(addr, nullptr, cmd, delay);
 
     std::unique_lock lkm(Mlock, std::defer_lock);
     SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
@@ -453,7 +449,8 @@ public:
     }
     UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     write(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
-    // cmtx->unlock();
+
+    outer->acquire_ack_req(addr, delay);
     
     std::unique_lock lk(*mtx, std::defer_lock);
     SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
@@ -463,7 +460,6 @@ public:
     write(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
     cv->notify_all();
 
-    this->cache->delete_acquiring_addr(addr, ai, s);
   }
 
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)

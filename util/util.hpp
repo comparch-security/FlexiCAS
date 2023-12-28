@@ -3,24 +3,29 @@
 
 #define get_thread_id std::hash<std::thread::id>{}(std::this_thread::get_id())
 
+#include <condition_variable>
+#include <vector>
 #include <mutex>
 #include <unordered_map>
 
 typedef struct{
-  uint32_t  ai;
-  uint32_t s;
-  uint32_t w;
-}addr_loc;
+  uint32_t ai    ;
+  uint32_t s     ;
+  uint32_t w     ;
+  std::mutex* mtx;
+  std::condition_variable* cv;
+  std::vector<uint32_t>* status;
+}addr_info;
 
 /////////////////////////////////
 // Record inner probing address
-class InnerProbeRecord
+class InnerAcquireRecord
 {
 protected:
   std::mutex  mtx;           // mutex for protecting record
-  std::unordered_map<uint64_t, addr_loc> map;
+  std::unordered_map<uint64_t, addr_info> map;
 public:
-  void add(uint64_t addr, addr_loc loc){
+  void add(uint64_t addr, addr_info loc){
     std::unique_lock lk(mtx, std::defer_lock);
     lk.lock();
     map[addr] = loc;
@@ -32,27 +37,13 @@ public:
     map.erase(addr);
     lk.unlock();
   }
-  std::tuple<bool, addr_loc> query(uint64_t addr){
+  addr_info query(uint64_t addr){
     std::unique_lock lk(mtx, std::defer_lock);
-    bool va; 
-    addr_loc loc;
+    addr_info info;
     lk.lock();
-    if(map.count(addr)){
-      va = true;
-      loc = map[addr];
-    }else{
-      va = false;
-    }
+    info = map[addr];
     lk.unlock();
-    return std::make_pair(va, loc);
-  }
-  bool valid(uint64_t addr){
-    std::unique_lock lk(mtx, std::defer_lock);
-    bool va;
-    lk.lock();
-    va = map.count(addr);
-    lk.unlock();
-    return va;
+    return info;
   }
 };
 

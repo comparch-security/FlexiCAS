@@ -58,6 +58,8 @@ public:
     if constexpr (!std::is_void<DLY>::value) timer->write(addr, 0, 0, 0, 0, delay);
   }
 
+  virtual void acquire_ack_resp(uint64_t addr, uint64_t* delay) {}
+
 private:
   virtual bool probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) { return false; } // hidden
 };
