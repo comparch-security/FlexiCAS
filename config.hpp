@@ -1,9 +1,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 // CONFIG TEST DIFFICULTY
-#define LEVEL_1
+// #define LEVEL_1
 // #define LEVEL_2
 // #define LEVEL_3
-// #define LEVEL_4
+#define LEVEL_4
 // #define LEVEL_5
 
 

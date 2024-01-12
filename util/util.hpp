@@ -1,6 +1,7 @@
 #ifndef CM_UTIL_UTIL_HPP
 #define CM_UTIL_UTIL_HPP
 
+#include <cassert>
 #define get_thread_id std::hash<std::thread::id>{}(std::this_thread::get_id())
 
 #include <condition_variable>
@@ -13,6 +14,7 @@ typedef struct{
   uint32_t s     ;
   uint32_t w     ;
   std::mutex* mtx;
+  std::mutex* cmtx; // cacheline mutex
   std::condition_variable* cv;
   std::vector<uint32_t>* status;
 }addr_info;
@@ -37,13 +39,19 @@ public:
     map.erase(addr);
     lk.unlock();
   }
-  addr_info query(uint64_t addr){
+  std::pair<bool, addr_info> query(uint64_t addr){
     std::unique_lock lk(mtx, std::defer_lock);
     addr_info info;
+    bool count;
     lk.lock();
-    info = map[addr];
+    if(map.count(addr)){
+      count = true;
+      info = map[addr];
+    }else{
+      count = false;
+    }
     lk.unlock();
-    return info;
+    return std::make_pair(count, info);
   }
 };
 

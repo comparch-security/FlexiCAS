@@ -105,7 +105,7 @@ typedef CoherentCacheNorm<l2_type, l2_outer_type, l2_inner_type> l2_cache_type;
       typedef IndexSkewed<LLC_INDEX,OFFSET,LLC_SKEW> llc_indexer_type;
       typedef CacheSkewed<LLC_INDEX,LLC_WAY,LLC_SKEW,llc_metadata_type,data_type,llc_indexer_type,llc_replacer_type,llc_delay_type,true> llc_type;
     #else
-      typedef MetadataMSI<WIDTH,LLC_INDEX,OFFSET,MetadataMSISupport> llc_metadata_type;
+      typedef MetadataMSI<WIDTH,LLC_INDEX,LLC_TAG_OFFSET,MetadataMSISupport> llc_metadata_type;
       typedef IndexNorm<LLC_INDEX,OFFSET> llc_indexer_type;
       typedef CacheNorm<LLC_INDEX,LLC_WAY,llc_metadata_type,data_type,llc_indexer_type,llc_replacer_type,llc_delay_type,true> llc_type;
     #endif

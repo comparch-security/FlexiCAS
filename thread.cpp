@@ -3,6 +3,7 @@
 #include "util/log.hpp"
 #include "util/common.hpp"
 #include "util/random.hpp"
+#include "util/util.hpp"
 #include <cassert>
 #include <condition_variable>
 #include <cstddef>
@@ -81,6 +82,14 @@ void init(){
     // l1[14]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[14]->outer));
     // l1[15]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[15]->outer));
     l2[0]->outer->connect(mem[0], mem[0]->connect(l2[0]->outer));
+  #else
+    l1[0]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[0]->outer));
+    l1[1]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[1]->outer));
+    l1[2]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[2]->outer));
+    l1[3]->outer->connect(l2[0]->inner, l2[0]->inner->connect(l1[3]->outer));
+    l2[0]->outer->connect(llc[0]->inner, llc[0]->inner->connect(l2[0]->outer));
+    llc[0]->outer->connect(mem[0], mem[0]->connect(l2[0]->outer));
+
   #endif
 }
 
@@ -104,19 +113,40 @@ void threadRW(int operation){
   uint64_t addr = src1 + src2;
   data_type thread_data;
   uint64_t dd[8];
-  database.insert_addr(addr, dd, database.get_sync());
-  thread_data.write(dd);
-  core[database.get_id(get_thread_id)]->write(addr, &thread_data, &delay);
+
+  switch (operation) {
+    case 0:          // read
+      core[database.get_id(get_thread_id)]->read(addr, &delay);
+      break;
+    case 1:         // write
+      database.insert_addr(addr, dd, database.get_sync());
+      thread_data.write(dd);
+      core[database.get_id(get_thread_id)]->write(addr, &thread_data, &delay);
+      break;
+    case 2:         // flush
+      core[database.get_id(get_thread_id)]->flush(addr, &delay);
+      break;
+  }
 }
 
-void threadRW_same_addr(uint64_t addr){
+void threadOp(int operation, uint64_t addr){
   database.insert_id(get_thread_id);
   uint64_t delay = 0;
   data_type thread_data;
   uint64_t dd[8];
-  database.insert_addr(addr, dd, database.get_sync());
-  thread_data.write(dd);
-  core[database.get_id(get_thread_id)]->write(addr, &thread_data, &delay);
+  switch (operation) {
+    case 0:          // read
+      core[database.get_id(get_thread_id)]->read(addr, &delay);
+      break;
+    case 1:         // write
+      database.insert_addr(addr, dd, database.get_sync());
+      thread_data.write(dd);
+      core[database.get_id(get_thread_id)]->write(addr, &thread_data, &delay);
+      break;
+    case 2:         // flush
+      core[database.get_id(get_thread_id)]->flush(addr, &delay);
+      break;
+  }
 }
  
 void producer_thread(){
@@ -178,91 +208,93 @@ void worker_thread(int id){
 
 
 int main(){
+  // for time test 
+  // auto start = std::chrono::high_resolution_clock::now();
+  // std::thread producer(producer_thread);
+  // std::vector<std::thread> thread_array(threads_num);
+  // for(int i = 0; i < threads_num; i++){
+  //   thread_array[i] = std::thread(worker_thread, i);
+  // }
+
+  // producer.join();
+  // for(int i = 0; i < threads_num; i++){
+  //   thread_array[i].join();
+  // }
+  // auto end = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double> duration = end - start;
+
+  // std::cout << "thread num  : " << threads_num << std::endl;
+  // std::cout << "access addr : " << addr_num << std::endl;
+  // std::cout << "cost time   : " << duration.count() << " s " << std::endl;
   init();
-  #ifdef LEVEL_1
-    lock_log_fp = fopen("dtrace", "w");
-    // for time test 
-    // auto start = std::chrono::high_resolution_clock::now();
-    // std::thread producer(producer_thread);
-    // std::vector<std::thread> thread_array(threads_num);
-    // for(int i = 0; i < threads_num; i++){
-    //   thread_array[i] = std::thread(worker_thread, i);
-    // }
+  lock_log_fp = fopen("dtrace", "w");
+  cm_set_random_seed(std::time(nullptr));
 
-    // producer.join();
-    // for(int i = 0; i < threads_num; i++){
-    //   thread_array[i].join();
-    // }
-    // auto end = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> duration = end - start;
+  for(int i = 0; i < 12800/threads_num; i++){
+    uint64_t addr1 = cm_get_random_uint64() & 0xFFFFC0;
 
-    // std::cout << "thread num  : " << threads_num << std::endl;
-    // std::cout << "access addr : " << addr_num << std::endl;
-    // std::cout << "cost time   : " << duration.count() << " s " << std::endl;
+    std::thread threadA(threadOp, cm_get_random_uint32()%3, addr1);
+    std::thread threadB(threadOp, cm_get_random_uint32()%3, addr1);
+    std::thread threadC(threadRW, cm_get_random_uint32()%3);
+    std::thread threadD(threadRW, cm_get_random_uint32()%3);
 
-    for(int i = 0; i < 12800/threads_num; i++){
-      std::thread threadA(threadRW, 0);
-      std::thread threadB(threadRW, 0);
-      std::thread threadC(threadRW, 0);
-      std::thread threadD(threadRW, 0);
+    threadA.join();
+    threadB.join();
+    threadC.join();
+    threadD.join();
 
-      threadA.join();
-      threadB.join();
-      threadC.join();
-      threadD.join();
+    database.clear();
+    database.add_sync();
 
-      database.clear();
-      database.add_sync();
+    printf("sync %d\n", i);
+    lock_log_write("sync %d\n", i);
+  }
 
-      printf("sync %d\n", i);
-      lock_log_write("sync %d\n", i);
+  close_log();
+  uint64_t delay;
+  for(auto addr : database.addr_set){
+    uint64_t res = 0;
+    auto data = core[0]->read(addr, &delay);
+    for(int i = 0; i < 8; i++) {
+      res += data->read(i);
     }
-
-    close_log();
-    uint64_t delay;
-    for(auto addr : database.addr_set){
-      uint64_t res = 0;
-      auto data = core[0]->read(addr, &delay);
-      for(int i = 0; i < 8; i++) {
-        res += data->read(i);
-      }
-      bool flag = false;
-      for(auto r : database.addr_map[addr].l){
-        if(res == r){
-          // printf("addr 0x%lx pass\n", addr);
-          flag = true;
-          break;
-        }
-      }
-      if(!flag){
-        printf("addr is 0x%lx, read res is 0x%lx\n", addr, res);
-        assert(0);
+    bool flag = false;
+    for(auto r : database.addr_map[addr].l){
+      if(res == r){
+        // printf("addr 0x%lx pass\n", addr);
+        flag = true;
+        break;
       }
     }
-    printf("check succ\n");
+    if(!flag){
+      printf("addr is 0x%lx, read res is 0x%lx\n", addr, res);
+      assert(0);
+    }
+  }
+  printf("check succ\n");
 
 
-    // lock_log_fp = fopen("dtrace", "w");
-    // close_log();
-    // for(uint64_t i = 1; i <= 10000; i+=1){
-    //   uint64_t addr = i*64;
-    //   uint64_t delay = 0;
-    //   std::cout << i << std::endl;
-    //   core[0]->write(addr, data[0], &delay);
-    // }
+  // lock_log_fp = fopen("dtrace", "w");
+  // close_log();
+  // for(uint64_t i = 1; i <= 10000; i+=1){
+  //   uint64_t addr = i*64;
+  //   uint64_t delay = 0;
+  //   std::cout << i << std::endl;
+  //   core[0]->write(addr, data[0], &delay);
+  // }
     
-    // for(uint64_t i = 10000; i>=1 ; i-=1){
-    //   uint64_t addr = i*64;
-    //   uint64_t delay = 0;
-    //   const CMDataBase* read_data = core[0]->read(addr, &delay);
-    //   std::cout << i << std::endl;
-    //   int result = 0;
-    //   for(int j = 0; j < 8; j++){
-    //     result += read_data->read(j);
-    //   }
-    //   assert(result==28);
-    // }
-    
-    del();
-  #endif
+  // for(uint64_t i = 10000; i>=1 ; i-=1){
+  //   uint64_t addr = i*64;
+  //   uint64_t delay = 0;
+  //   const CMDataBase* read_data = core[0]->read(addr, &delay);
+  //   std::cout << i << std::endl;
+  //   int result = 0;
+  //   for(int j = 0; j < 8; j++){
+  //     result += read_data->read(j);
+  //   }
+  //   assert(result==28);
+  // }  
+  del();
 }
+
+// 0x13682c0

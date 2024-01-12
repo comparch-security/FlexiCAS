@@ -28,12 +28,9 @@ class CMMetadataBase
 public:
   // implement a totally useless base class
   virtual bool match(uint64_t addr) const { return false; } // wether an address match with this block
-  virtual bool match_b(uint64_t addr) const { return false; }
   virtual void reset() {}                                   // reset the metadata
   virtual void init(uint64_t addr) = 0;                     // initialize the meta for addr
-  virtual void init_buffer(uint64_t addr) = 0;              // initialize the buffer addr
   virtual uint64_t addr(uint32_t s) const = 0;              // assemble the block address from the metadata
-  virtual uint64_t addr_buffer() const = 0;                 // get buffer_addr
   virtual void sync(int32_t coh_id) = 0;                    // sync after probe
 
   virtual void to_invalid() = 0;                            // change state to invalid
@@ -44,8 +41,6 @@ public:
   virtual void to_dirty() = 0;                              // change to dirty
   virtual void to_clean() = 0;                              // change to clean
   virtual void to_extend() = 0;                             // change to extend directory meta
-  virtual void to_full_b() = 0;                             // change buffer to full
-  virtual void to_empty_b() = 0;                            // change buffer to empty
   virtual bool is_valid() const { return false; }
   virtual bool is_shared() const { return false; }
   virtual bool is_modified() const { return false; }
@@ -53,8 +48,6 @@ public:
   virtual bool is_exclusive() const { return false; }
   virtual bool is_dirty() const { return false; }
   virtual bool is_extend() const { return false; }
-
-  virtual bool is_full_b() const { return false; }
 
   virtual void copy(const CMMetadataBase *meta) = 0;        // copy the content of meta
 
@@ -129,6 +122,7 @@ public:
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
   virtual std::vector<uint32_t> *get_status() = 0;
   virtual std::mutex* get_mutex() = 0;
+  virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) = 0;
   virtual std::condition_variable* get_cv() = 0;
 
 };
@@ -145,6 +139,7 @@ protected:
   std::vector<DT *> data;   // data array, could be null
   std::vector<uint32_t> status; // record every set status
   std::mutex mtx; // mutex for status
+  std::vector<std::mutex *> mutexs; // mutex array for meta
   std::condition_variable cv;
   unsigned int extra_way = 0;
 
@@ -162,10 +157,14 @@ public:
     }
     status.resize(nset);
     for(int i = 0; i < nset; i++) status[i] = 0;
+
+    mutexs.resize(meta_num);
+    for(auto &t:mutexs) t = new std::mutex();
   }
 
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
+    for(auto t:mutexs) delete t;
     if constexpr (!std::is_void<DT>::value) for(auto d:data) delete d;
   }
 
@@ -186,6 +185,8 @@ public:
     } else
       return data[s*NW + w];
   }
+
+  virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) { return mutexs[s*(NW+extra_way) + w]; }
 
   virtual std::vector<uint32_t> *get_status(){ return &status; }
   virtual std::mutex* get_mutex() { return &mtx; }
@@ -228,7 +229,7 @@ public:
     return hit(addr, &ai, &s, &w);
   }
 
-  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1) = 0;
+  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1, bool replace = false) = 0;
   
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
@@ -262,6 +263,10 @@ public:
   }
   virtual std::condition_variable* get_cv(uint32_t ai) {
     return arrays[ai]->get_cv();
+  }
+
+  virtual std::mutex* get_cacheline_mutex(uint32_t ai, uint32_t s, uint32_t w){
+    return arrays[ai]->get_cacheline_mutex(s, w);
   }
   
   virtual uint32_t get_id() {
@@ -311,7 +316,8 @@ public:
     return false;
   }
   
-  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1){
+  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1, bool replace_t = false){
+    bool hit = false;
     for(*ai=0; *ai<P; (*ai)++){
       *s = indexer.index(addr, *ai);
       auto status = get_status(*ai);
@@ -319,7 +325,6 @@ public:
       auto cv     = get_cv(*ai);
       std::unique_lock lk(*mtx, std::defer_lock);
       uint32_t ss = *s;
-      
       SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
       mutex: %p, check hit(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
       get_name().c_str(), *ai, *s, mtx);
@@ -329,20 +334,35 @@ public:
       UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
       mutex: %p, check hit(unset lock)\n",get_time(), database.get_id(get_thread_id), addr, \
       get_name().c_str(), *ai, *s, mtx);
-      
       for(*w=0; *w<NW; (*w)++){
-        if(access(*ai, *s, *w)->match(addr)) return true;
+        if(access(*ai, *s, *w)->match(addr)){ 
+          hit = true; 
+          break;
+        }
       }
-      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
-      mutex: %p, check hit(set lock), miss on ai\n", get_time(), database.get_id(get_thread_id), addr, \
-      get_name().c_str(), *ai, *s, mtx);
-      (*status)[*s] &= ~(value);
-      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
-      mutex: %p, check hit(unset lock), miss on ai\n",get_time(), database.get_id(get_thread_id), addr, \
-      get_name().c_str(), *ai, *s, mtx);
-      cv->notify_all();
+      if(hit) break;
     }
-    return false;
+    if(replace_t && !hit){
+      replace(addr, ai, s, w);
+    }
+    for(int i = 0; i < P; i++){
+      if(i != *ai){
+        int s = indexer.index(addr, i);
+        auto status = get_status(i);
+        auto mtx    = get_mutex(i);
+        auto cv     = get_cv(i);
+        std::unique_lock lk(*mtx, std::defer_lock);
+        SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(set lock), miss on ai\n", get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), i, s, mtx);
+        (*status)[s] &= ~(value);
+        UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(unset lock), miss on ai\n",get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), i, s, mtx);
+        cv->notify_all();
+      }
+    }
+    return hit;
   }
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {

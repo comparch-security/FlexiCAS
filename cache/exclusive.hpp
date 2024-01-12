@@ -111,7 +111,7 @@ public:
   virtual ~ExclusiveInnerPortUncached() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line(addr, data_inner, cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line(addr, data_inner, cmd, delay);
 
     if (data_inner) data_inner->copy(data);
     if(meta){ 
@@ -128,7 +128,7 @@ protected:
     auto addr = meta->addr(s);
     if(meta->is_extend()){ // evict extend directory meta
       auto sync = policy->writeback_need_sync(meta);
-      if(sync.first) probe_req(addr, meta, data, sync.second, delay);
+      if(sync.first) probe_req(addr, meta, data, sync.second, delay, ai, s, w);
     }
     auto writeback = policy->writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay);
@@ -136,12 +136,13 @@ protected:
     this->cache->hook_manage(addr, ai, s, w, true, true, writeback.first, delay, meta->is_extend());
   }
 
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool>
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool, std::mutex*>
   access_line(uint64_t addr, CMDataBase* data_inner, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     std::mutex* mtx;
+    std::mutex* cmtx;
     std::condition_variable* cv;
     std::vector<uint32_t>* status;
     bool hit = this->cache->hit(addr, &ai, &s, &w);
@@ -150,22 +151,22 @@ protected:
       if(!meta->is_extend()){ // hit on cache
         data = this->cache->get_data(ai, s, w);
         auto promote = policy->acquire_need_promote(cmd, meta);
-        if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay); hit = 0; } // promote permission if needed
+        if(promote.first) { outer->acquire_req(addr, meta, data, promote.second, delay, ai, s, w); hit = 0; } // promote permission if needed
         // fetch to higher cache and invalid here
         evict(meta, data, ai, s, w, delay);
         meta = nullptr;
-        return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit);
+        return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
       }else{ // hit on extend directory meta 
         auto sync = policy->acquire_need_sync(cmd, meta);
         data = data_inner;
-        if(sync.first) probe_req(addr, meta, data, sync.second, delay);
+        if(sync.first) probe_req(addr, meta, data, sync.second, delay, ai, s, w);
       }
     }else{
       // if use snooping coherence protocol, we also need probe other inner cache here
       bool probe_hit = false;
       data = data_inner;
-      auto sync = policy->acquire_need_sync(cmd, meta);
-      if(sync.first) probe_hit = probe_req(addr, meta, data, sync.second, delay);
+      auto sync = policy->acquire_need_sync(cmd, meta); 
+      if(sync.first) probe_hit = probe_req(addr, meta, data, sync.second, delay, ai, s, w);
       if(!probe_hit){
         bool replace = this->cache->replace(addr, &ai, &s, &w, 1);
         if(replace){
@@ -176,10 +177,10 @@ protected:
             evict(meta, data, ai, s, w, delay);
           }
         }
-        outer->acquire_req(addr, meta, data, cmd, delay);
+        outer->acquire_req(addr, meta, data, cmd, delay, ai, s, w);
       }
     }
-    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit);
+    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
   }
   virtual void write_line(uint64_t addr, CMDataBase *data_inner, coh_cmd_t cmd, uint64_t *delay, bool dirty = true) {
     uint32_t ai, s, w;
@@ -205,7 +206,7 @@ protected:
       dynamic_cast<ExclusivePolicySupportBase *>(policy)->meta_after_release(cmd, mmeta, meta, addr, dirty);
       // invalid other inner cache who holds the addr
       auto sync = dynamic_cast<ExclusivePolicySupportBase *>(policy)->release_need_probe(cmd, mmeta);
-      if(sync.first) probe_req(addr, mmeta, data, sync.second, delay);
+      if(sync.first) probe_req(addr, mmeta, data, sync.second, delay, ai, s, w);
       this->cache->hook_write(addr, ai, s, w, hit, delay);      
     }
   }
@@ -228,12 +229,12 @@ protected:
           this->cache->hook_manage(addr, ai, s, w, true, policy->is_evict(cmd), writeback.first, delay);
         }else{
           // hit on extend meta  
-          probe_req(addr, meta, data, flush.second, delay);
+          probe_req(addr, meta, data, flush.second, delay, ai, s, w);
           // probe data don't writeback(if dirty) to exclusive cache, then we just need invalid the extend meta
          this->cache->hook_manage(addr, ai, s, w, true, policy->is_evict(cmd), false, delay, 1);
         }
       }else{
-        probe_req(addr, meta, data, flush.second, delay);
+        probe_req(addr, meta, data, flush.second, delay, ai, s, w);
       }
       policy->meta_after_flush(cmd, meta);
     } else outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_outer_flush(cmd), delay);
