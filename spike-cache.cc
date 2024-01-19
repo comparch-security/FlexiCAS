@@ -43,6 +43,7 @@ namespace {
   std::mutex xact_queue_full_mutex;
   std::mutex xact_queue_empty_mutex;
   static bool exit_flag = false;
+  static std::string pfc_log_prefix;
 
   struct cache_xact {
     char op_t;
@@ -138,8 +139,9 @@ namespace flexicas {
     }
   }
 
-  void init(int ncore) {
+  void init(int ncore, const char *prefix) {
     NC = ncore;
+    if(prefix) pfc_log_prefix = std::string(prefix); // not currently used by the simple tracer but other advanced tracer may need print out logs
     auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NC, "l1d");
     core_data = get_l1_core_interface(l1d);
     auto l1i = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, true, void, true>(NC, "l1i");
