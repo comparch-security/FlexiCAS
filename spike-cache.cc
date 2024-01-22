@@ -36,6 +36,7 @@
 
 namespace {
   static std::vector<CoreInterface *> core_data, core_inst;
+  static std::vector<uint64_t> core_cycle; // record the cycle time in each core
   static SimpleTracer tracer(true);
   static int NC = 0;
   std::condition_variable xact_non_empty_notify, xact_non_full_notify;
@@ -141,6 +142,7 @@ namespace flexicas {
 
   void init(int ncore, const char *prefix) {
     NC = ncore;
+    core_cycle.resize(NC, 0);
     if(prefix) pfc_log_prefix = std::string(prefix); // not currently used by the simple tracer but other advanced tracer may need print out logs
     auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NC, "l1d");
     core_data = get_l1_core_interface(l1d);
@@ -199,12 +201,16 @@ namespace flexicas {
     xact_queue_add({CACHE_OP_WRITEBACK, false, core, addr});
   }
 
-  void csr_write(uint64_t cmd) {
+  void csr_write(uint64_t cmd, int core) {
     // ToDo: connect this with monitor
   }
 
-  uint64_t csr_read() {
+  uint64_t csr_read(int core) {
     // ToDo: connect this with monitor
     return 0;
+  }
+
+  void bump_cycle(int step, int core) {
+    core_cycle[core] += step;
   }
 }
