@@ -1,5 +1,6 @@
 #include "util/query.hpp"
 #include "cache/cache.hpp"
+#include <boost/format.hpp>
 
 std::string LocIdx::to_string() const{
   auto fmt = boost::format("partition: %1%, idx: %2%, way: ") % ai % idx;
@@ -26,4 +27,12 @@ std::string LocInfo::to_string() const{
     else { rv += "."; break; }
   }
   return rv;
+}
+
+void LocInfo::fill() {
+  cache->query_fill_loc(this, addr);
+}
+
+bool LocInfo::hit() {
+  return cache->hit(addr);
 }
