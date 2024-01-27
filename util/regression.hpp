@@ -6,18 +6,20 @@
 #include <tuple>
 #include <cmath>
 #include <unordered_map>
+#include <iostream>
 #include "util/random.hpp"
 #include "util/concept_macro.hpp"
 #include "cache/metadata.hpp"
 
 static const uint64_t addr_mask = 0x0ffffffffffc0ull;
 
-// NC:     number of core
-// EnIC:   whether to have an instruction cache
-// PAddrN: number of private addresses per core
-// SAddrN: number of shared address between cores
-// DT:     data type
-template<int NC, bool EnIC, unsigned int PAddrN, unsigned int SAddrN, typename DT>
+// NC:        number of core
+// EnIC:      whether to have an instruction cache
+// TestFlush: whether to generate data flush operations
+// PAddrN:    number of private addresses per core
+// SAddrN:    number of shared address between cores
+// DT:        data type
+template<int NC, bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
 class RegressionGen
 {
   int64_t gi;
@@ -68,18 +70,20 @@ public:
       PAddrN*core + locality_scale(hasher(gi++), PAddrN, 0.2) ;
     uint64_t addr = addr_pool[index];
     DT *data = &(data_pool[index]);
-    bool rw = 0 == (hasher(gi++) & 0x11); // 25% write
-    if(!wflag[index]) rw = true; // always write first
+    auto ran_num = hasher(gi++);
+    bool rw = 0 == (ran_num & 0x11); // 25% write
+    int flush = TestFlush && (0 == (ran_num & 0x17)) ? 3 : 0; // 25% of write is flush
+    if(!wflag[index]) {rw = true; flush = 0;} // always write first
     bool is_inst = iflag[index];
     bool ic;
-    int flush;
 
     if(is_inst && rw) { // write an instruction
       ic = false;       // write by a data cache and flush before write
       flush = shared ? 2 : 1;
     } else {
       ic = is_inst ? 0 != (hasher(gi++) & 0x111) : false;
-      flush = 0;
+      if(is_inst) flush = 0;
+      if(flush) rw = 0;
     }
 
     if(rw) {
@@ -101,9 +105,16 @@ public:
     for(int i=0; i<TestN; i++) {
       auto [addr, wdata, rw, nc, ic, flush] = gen();
       if(flush) {
-        if(flush > 1) for( auto ci:core_inst) ci->flush(addr, nullptr); // shared instruction, flush all cores
-        else          core_inst[nc]->flush(addr, nullptr);
-        core_data[nc]->write(addr, wdata, nullptr);
+        if(flush == 3) {
+          core_data[nc]->flush(addr, nullptr);
+          std::cout << "core " << nc << " flush 0x" << std::hex << addr << std::endl;
+        } else if(flush == 2)
+          for( auto ci:core_inst) ci->flush(addr, nullptr); // shared instruction, flush all cores
+        else
+          core_inst[nc]->flush(addr, nullptr);
+
+        if(rw)
+          core_data[nc]->write(addr, wdata, nullptr);
       } else if(rw) {
         core_data[nc]->write(addr, wdata, nullptr);
       } else {
