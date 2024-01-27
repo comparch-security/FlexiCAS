@@ -105,16 +105,11 @@ public:
     for(int i=0; i<TestN; i++) {
       auto [addr, wdata, rw, nc, ic, flush] = gen();
       if(flush) {
-        if(flush == 3) {
-          core_data[nc]->flush(addr, nullptr);
-          std::cout << "core " << nc << " flush 0x" << std::hex << addr << std::endl;
-        } else if(flush == 2)
-          for( auto ci:core_inst) ci->flush(addr, nullptr); // shared instruction, flush all cores
-        else
-          core_inst[nc]->flush(addr, nullptr);
+        if(flush == 3)       core_data[nc]->flush(addr, nullptr);
+        else if(flush == 2)  for( auto ci:core_inst) ci->flush(addr, nullptr); // shared instruction, flush all cores
+        else                 core_inst[nc]->flush(addr, nullptr);
 
-        if(rw)
-          core_data[nc]->write(addr, wdata, nullptr);
+        if(rw)               core_data[nc]->write(addr, wdata, nullptr);
       } else if(rw) {
         core_data[nc]->write(addr, wdata, nullptr);
       } else {

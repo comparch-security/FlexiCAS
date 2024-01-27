@@ -309,7 +309,11 @@ protected:
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
-    if(!flush) return;
+    if(!flush) {
+      // do not handle flush at this level, and send it to the outer cache
+      outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay);
+      return;
+    }
 
     if(!hit) {
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
@@ -485,7 +489,14 @@ protected:
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
-    if(!flush || !hit) return;
+    if(!flush) {
+      // do not handle flush at this level, and send it to the outer cache
+      outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay);
+      return;
+    }
+
+    if(!hit) return;
+
     if(meta->is_extend()) data = cache->data_copy_buffer();
 
     if(probe) {

@@ -235,12 +235,19 @@ protected:
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
-    if(!flush) return;
+    if(!flush) {
+      // do not handle flush at this level, and send it to the outer cache
+      outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay);
+      return;
+    }
+
+    if(!hit) return;
 
     if(probe) {
       auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
       if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
     }
+
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
