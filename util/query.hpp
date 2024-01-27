@@ -1,10 +1,9 @@
 #ifndef UTIL_QUERY_HPP_
 #define UTIL_QUERY_HPP_
 
-#include <unordered_set>
+#include <unordered_map>
 #include <utility>
 #include <string>
-#include <boost/format.hpp>
 
 class CacheBase;
 
@@ -42,14 +41,17 @@ public:
 
 // the possible location of an address in a cache
 class LocInfo {
+  bool filled;
+  uint64_t addr;
 public:
   uint32_t cache_id;
   CacheBase* cache;
-//   CoherentCacheBase* wrapper;
   std::unordered_map<LocIdx, LocRange> locs;
   LocInfo() : cache_id(0) {}
-  LocInfo(uint32_t cache_id, CacheBase* cache) : cache_id(cache_id), cache(cache) {}
+  LocInfo(uint32_t cache_id, CacheBase* cache, uint64_t addr) : filled(false), addr(addr), cache_id(cache_id), cache(cache) {}
   void insert(LocIdx idx, LocRange r) { locs[idx] = r; }
+  void fill();
+  bool hit();
   std::string to_string() const;
 };
 #endif
