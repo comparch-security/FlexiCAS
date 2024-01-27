@@ -16,6 +16,6 @@ int main() {
   l1d->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
 
-  RegressionGen<1, false, AddrN, 0, Data64B> tgen;
+  RegressionGen<1, false, false, AddrN, 0, Data64B> tgen;
   return tgen.run(TestN, core, core);
 }

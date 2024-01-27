@@ -40,6 +40,6 @@ int main() {
   l3->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
 
-  RegressionGen<NCore, true, PAddrN, SAddrN, Data64B> tgen;
+  RegressionGen<NCore, true, true, PAddrN, SAddrN, Data64B> tgen;
   return tgen.run(TestN, core_inst, core_data);
 }

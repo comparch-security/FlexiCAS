@@ -74,9 +74,11 @@ public:
   }
 
   virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const {
-    if (isLLC || (uncached && meta)) {
-      if(is_evict(cmd)) return std::make_tuple(true, true, cmd_for_probe_release());
-      else              return std::make_tuple(true, true, cmd_for_probe_writeback());
+    if (isLLC || uncached) {
+      if(meta){
+        if(is_evict(cmd)) return std::make_tuple(true, true, cmd_for_probe_release());
+        else              return std::make_tuple(true, true, cmd_for_probe_writeback());
+      } else              return std::make_tuple(true, false, cmd_for_null());
     } else
       return std::make_tuple(false, false, cmd_for_null());
   }
