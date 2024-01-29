@@ -9,6 +9,7 @@
 #include <thread>
 #include <condition_variable>
 #include <chrono>
+#include <atomic>
 //#include <iostream>
 
 // intel coffe lake 9Gen: https://en.wikichip.org/wiki/intel/microarchitectures/coffee_lake
@@ -45,6 +46,7 @@ namespace {
   static bool exit_flag = false;
   static std::string pfc_log_prefix;
   static uint64_t pfc_value = 0;
+  static std::atomic_bool cache_idle = false;
 
   struct cache_xact {
     char op_t;
@@ -110,13 +112,21 @@ namespace {
         }
       } else {
         using namespace std::chrono_literals;
+        cache_idle = true;
         xact_non_empty_notify.wait_for(queue_empty_lock, 1ms);
+        cache_idle = false;
       }
     }
+  }
+
+  void cache_sync() {
+    using namespace std::chrono_literals;
+    while(!cache_idle) std::this_thread::sleep_for(1ms);
   }
 }
 
 namespace flexicas {
+  typedef std::function<uint64_t(uint64_t)> tlb_translate_func;
 
   int  ncore() { return NC; }
 
@@ -206,6 +216,16 @@ namespace flexicas {
 
     if(cmd == FLEXICAS_PFC_STOP) {
       tracer->stop();
+      return;
+    }
+
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_QUERY) {
+      std::list<LocInfo> locs;
+      uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
+      uint64_t paddr = translator(addr);
+      cache_sync(); // wait until all pending transactions are finished
+      core_data[core]->query_loc(paddr, &locs);
+      pfc_value = locs.back().hit();
       return;
     }
 
