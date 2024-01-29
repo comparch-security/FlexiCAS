@@ -229,6 +229,12 @@ namespace flexicas {
       return;
     }
 
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_FLUSH) {
+      uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
+      uint64_t paddr = translator(addr);
+      flush(paddr, core);
+      return;
+    }
   }
 
   uint64_t csr_read(int core) {
