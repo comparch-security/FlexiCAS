@@ -1,6 +1,8 @@
 #include "cache/memory.hpp"
 #include "util/cache_type.hpp"
 #include "cache/slicehash.hpp"
+#include "util/query.hpp"
+#include "flexicas-pfc.h"
 
 #include <list>
 #include <mutex>
@@ -23,9 +25,6 @@
 #define L3IW (11+1)
 #define L3WN 16
 
-//#define EnTrace
-
-
 #define CACHE_OP_READ      0
 #define CACHE_OP_WRITE     1
 #define CACHE_OP_FLUSH     2
@@ -37,7 +36,7 @@
 namespace {
   static std::vector<CoreInterface *> core_data, core_inst;
   static std::vector<uint64_t> core_cycle; // record the cycle time in each core
-  static SimpleTracer tracer(true);
+  static MonitorBase *tracer;
   static int NC = 0;
   std::condition_variable xact_non_empty_notify, xact_non_full_notify;
   std::mutex xact_queue_op_mutex;
@@ -45,6 +44,7 @@ namespace {
   std::mutex xact_queue_empty_mutex;
   static bool exit_flag = false;
   static std::string pfc_log_prefix;
+  static uint64_t pfc_value = 0;
 
   struct cache_xact {
     char op_t;
@@ -152,6 +152,7 @@ namespace flexicas {
     auto l3 = cache_gen_llc_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, void, true>(NC, "l3");
     auto dispatcher = new SliceDispatcher<SliceHashNorm<> >("disp", NC);
     auto mem = new SimpleMemoryModel<void,void,true>("mem");
+    tracer = new SimpleTracer(true);
 
     for(int i=0; i<NC; i++) {
       l1i[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1i[i]->outer, true));
@@ -160,17 +161,13 @@ namespace flexicas {
       l2[i]->outer->connect(dispatcher, l3[0]->inner->connect(l2[i]->outer));
       if(i>0) for(int j=0; j<NC; j++) l3[i]->inner->connect(l2[j]->outer);
       l3[i]->outer->connect(mem, mem->connect(l3[i]->outer));
-#ifdef EnTrace
-      l1i[i]->attach_monitor(&tracer);
-      l1d[i]->attach_monitor(&tracer);
-      l2[i]->attach_monitor(&tracer);
-      l3[i]->attach_monitor(&tracer);
-#endif
+      l1i[i]->attach_monitor(tracer);
+      l1d[i]->attach_monitor(tracer);
+      l2[i]->attach_monitor(tracer);
+      l3[i]->attach_monitor(tracer);
     }
 
-#ifdef EnTrace
-    mem->attach_monitor(&tracer);
-#endif
+    mem->attach_monitor(tracer);
 
     // set up the cache server
     std::thread t(cache_server);
@@ -201,13 +198,22 @@ namespace flexicas {
     xact_queue_add({CACHE_OP_WRITEBACK, false, core, addr});
   }
 
-  void csr_write(uint64_t cmd, int core) {
-    // ToDo: connect this with monitor
+  void csr_write(uint64_t cmd, int core, tlb_translate_func translator) {
+    if(cmd == FLEXICAS_PFC_START) {
+      tracer->start();
+      return;
+    }
+
+    if(cmd == FLEXICAS_PFC_STOP) {
+      tracer->stop();
+      return;
+    }
+
   }
 
   uint64_t csr_read(int core) {
     // ToDo: connect this with monitor
-    return 0;
+    return pfc_value;
   }
 
   void bump_cycle(int step, int core) {

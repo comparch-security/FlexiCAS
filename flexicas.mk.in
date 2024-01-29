@@ -2,8 +2,11 @@ flexicas_subproject_deps = \
 
 flexicas_install_shared_lib = yes
 
+flexicas_install_hdrs = \
+	flexicas-pfc.h \
+
 flexicas_srcs = \
-		spike-cache.cc
+	spike-cache.cc \
 
 flexicas_precompiled = \
-		../flexicas/libflexicas.a
+	../flexicas/libflexicas.a \
