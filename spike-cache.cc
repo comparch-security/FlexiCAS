@@ -26,10 +26,10 @@
 //#define EnTrace
 
 
-#define CACHE_OP_READ      1
-#define CACHE_OP_WRITE     2
-#define CACHE_OP_FLUSH     3
-#define CACHE_OP_WRITEBACK 4
+#define CACHE_OP_READ      0
+#define CACHE_OP_WRITE     1
+#define CACHE_OP_FLUSH     2
+#define CACHE_OP_WRITEBACK 3
 
 #define XACT_QUEUE_HIGH    100
 #define XACT_QUEUE_LOW     10
@@ -90,19 +90,19 @@ namespace {
 
       if(busy) {
         switch(xact.op_t) {
-        case 0: // read
+        case CACHE_OP_READ: // read
           if(xact.ic)
             core_inst[xact.core]->read(xact.addr, nullptr);
           else
             core_data[xact.core]->read(xact.addr, nullptr);
           break;
-        case 1: //write
+        case CACHE_OP_WRITE: //write
           core_data[xact.core]->write(xact.addr, nullptr, nullptr);
           break;
-        case 2: // flush
+        case CACHE_OP_FLUSH: // flush
           core_data[xact.core]->flush(xact.addr, nullptr);
           break;
-        case 3: // writeback
+        case CACHE_OP_WRITEBACK: // writeback
           core_data[xact.core]->writeback(xact.addr, nullptr);
           break;
         default:
