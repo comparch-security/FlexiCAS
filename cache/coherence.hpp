@@ -284,12 +284,11 @@ typedef InnerCohPortT<InnerCohPortUncached> InnerCohPort;
 
 // interface with the processing core is a special InnerCohPort
 class CoreInterface : public InnerCohPortUncached {
-protected:
-  uint64_t normalize(uint64_t addr) const { return addr & ~0x3full ;}
-
 public:
   CoreInterface(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
   virtual ~CoreInterface() {}
+
+  uint64_t normalize(uint64_t addr) const { return addr & ~0x3full; }
 
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
     addr = normalize(addr);
