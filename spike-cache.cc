@@ -26,10 +26,11 @@
 #define L3IW (11+1)
 #define L3WN 16
 
-#define CACHE_OP_READ      0
-#define CACHE_OP_WRITE     1
-#define CACHE_OP_FLUSH     2
-#define CACHE_OP_WRITEBACK 3
+#define CACHE_OP_READ        0
+#define CACHE_OP_WRITE       1
+#define CACHE_OP_FLUSH       2
+#define CACHE_OP_WRITEBACK   3
+#define CACHE_OP_FLUSH_CACHE 4
 
 #define XACT_QUEUE_HIGH    100
 #define XACT_QUEUE_LOW     10
@@ -106,6 +107,10 @@ namespace {
           break;
         case CACHE_OP_WRITEBACK: // writeback
           core_data[xact.core]->writeback(xact.addr, nullptr);
+          break;
+        case CACHE_OP_FLUSH_CACHE: // flush the whole cache
+          assert(xact.ic); // only happens to IC
+          core_inst[xact.core]->flush_cache(nullptr);
           break;
         default:
           assert(0 == "unknown op type!");
@@ -201,6 +206,10 @@ namespace flexicas {
   void flush(uint64_t addr, int core) {
     assert(core < NC);
     xact_queue_add({CACHE_OP_FLUSH, false, core, addr});
+  }
+
+  void flush_icache(int core) {
+    xact_queue_add({CACHE_OP_FLUSH_CACHE, true, core, 0});
   }
 
   void writeback(uint64_t addr, int core) {
