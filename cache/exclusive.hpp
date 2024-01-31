@@ -197,7 +197,7 @@ public:
   virtual ~ExclusiveInnerCohPortUncachedBroadcast() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line(addr, cmd, delay);
 
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(cmd, meta, meta_inner);
@@ -222,7 +222,7 @@ protected:
     }
 
     if(!probe_writeback) // need to fetch it from outer
-      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
+      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay, 0, 0, 0);
 
     if(probe_hit && !policy->is_write(cmd)) // manually maintain the coherence if there are other inner copies, must be share
       meta->get_outer_meta()->to_shared(-1);
@@ -230,24 +230,27 @@ protected:
     return probe_hit;
   }
 
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool, std::mutex*>
   access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-
+    std::mutex* mtx;
+    std::mutex* cmtx;
+    std::condition_variable* cv;
+    std::vector<uint32_t>* status;
     bool hit = cache->hit(addr, &ai, &s, &w);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
       if(promote) { // promote permission if needed
-        outer->acquire_req(addr, meta, data, promote_cmd, delay);
+        outer->acquire_req(addr, meta, data, promote_cmd, delay, ai, s, w);
         hit = false;
       }
       else if(promote_local) meta->to_modified(-1);
       if(cmd.id != -1 && policy->is_acquire(cmd) && meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
         outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
-      return std::make_tuple(meta, data, ai, s, w, hit);
+      return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
     } else { // miss
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
       data = cache->data_copy_buffer();
@@ -259,9 +262,9 @@ protected:
         cache->hook_write(addr, mai, ms, mw, false, false, mmeta, mdata, delay); // a write occurred during the probe
         cache->meta_return_buffer(meta);
         cache->data_return_buffer(data);
-        return std::make_tuple(mmeta, mdata, mai, ms, mw, hit);
+        return std::make_tuple(mmeta, mdata, mai, ms, mw, mtx, cv, status, hit, cmtx);
       } else {
-        return std::make_tuple(meta, data, ai, s, w, hit);
+        return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
       }
     }
   }
@@ -359,7 +362,7 @@ public:
   virtual ~ExclusiveInnerCohPortUncachedDirectory() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line(addr, outer_cmd, delay);
 
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(outer_cmd, meta, meta_inner);
@@ -381,30 +384,33 @@ protected:
     return std::make_tuple(meta, nullptr, ai, s, w);
   }
 
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool, std::mutex*>
   access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-
+    std::mutex* mtx;
+    std::mutex* cmtx;
+    std::condition_variable* cv;
+    std::vector<uint32_t>* status;
     bool hit = cache->hit(addr, &ai, &s, &w);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       if(!meta->is_extend()) { // hit on normal way
         auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
         if(promote) { // promote permission if needed
-          outer->acquire_req(addr, meta, data, promote_cmd, delay);
+          outer->acquire_req(addr, meta, data, promote_cmd, delay, ai, s, w);
           hit = false;
         }
         else if(promote_local) meta->to_modified(-1);
         if(cmd.id == -1) // request from an uncached inner
-          return std::make_tuple(meta, data, ai, s, w, hit);
+          return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
         else { // normal request, move it to an extended way
           if(meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
             outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
           auto [mmeta, mdata, mai, ms, mw] = replace_line_ext(addr, delay);
           mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
-          return std::make_tuple(mmeta, data, mai, ms, mw, hit);
+          return std::make_tuple(mmeta, data, mai, ms, mw, mtx, cv, status, hit, cmtx);
         }
       } else { // hit on extended way
         bool phit = false;
@@ -419,17 +425,17 @@ protected:
           }
         }
         if(!pwb) { // still get it from outer
-          outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay);
+          outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay, ai, s, w);
           hit = false;
         } else {
           auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
           if(promote) { // get from inner but lack of permission
-            outer->acquire_req(addr, meta, data, promote_cmd, delay);
+            outer->acquire_req(addr, meta, data, promote_cmd, delay, ai, s, w);
             hit = false;
           }
           else if(promote_local) meta->to_modified(-1);
         }
-        return std::make_tuple(meta, data, ai, s, w, hit);
+        return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
       }
     } else { // miss
       if(cmd.id == -1) // request from an uncached inner, fetch to a normal way
@@ -438,8 +444,8 @@ protected:
         std::tie(meta, data, ai, s, w) = replace_line_ext(addr, delay);
         data = cache->data_copy_buffer();
       }
-      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
-      return std::make_tuple(meta, data, ai, s, w, hit);
+      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay, ai, s, w); // fetch the missing block
+      return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
     }
   }
 
@@ -448,9 +454,12 @@ protected:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     bool hit;
-
+    std::mutex* mtx;
+    std::mutex* cmtx;
+    std::condition_variable* cv;
+    std::vector<uint32_t>* status;
     if(cmd.id == -1) { // request from an uncached inner
-      std::tie(meta, data, ai, s, w, hit) = access_line(addr, cmd, delay);
+      std::tie(meta, data, ai, s, w, mtx, cv, status, hit, cmtx) = access_line(addr, cmd, delay);
       if(data_inner) data->copy(data_inner);
       policy->meta_after_release(cmd, meta, meta_inner);
       if(meta->is_extend()) outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay); // writeback if dirty

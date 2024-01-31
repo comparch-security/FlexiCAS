@@ -2,6 +2,7 @@
 #define CM_CACHE_MSI_HPP
 
 #include "cache/mi.hpp"
+#include "util/util.hpp"
 
 // metadata supporting MSI coherency
 template <typename BT>

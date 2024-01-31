@@ -1,5 +1,5 @@
 
-MODE ?=
+MODE ?= debug
 NCORE ?= `nproc`
 
 MAKE = make
@@ -29,7 +29,7 @@ DSL_HEADERS   = $(wildcard dsl/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 CACHE_OBJS    = cache/metadata.o
-UTIL_OBJS     = util/random.o util/query.o util/monitor.o
+UTIL_OBJS     = util/random.o util/query.o util/monitor.o util/log.o util/common.o
 
 $(CRYPTO_LIB):
 	CXXFLAGS="-g0" $(MAKE) -C cryptopp -j$(NCORE)
@@ -65,10 +65,14 @@ regression: $(REGRESSION_TESTS_RST)
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 
+thread: thread.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+
 .PHONY: regression
 
 clean:
 	$(MAKE) clean-regression
 	-rm $(UTIL_OBJS) $(CACHE_OBJS)
+	-rm thread
 
 .PHONY: clean

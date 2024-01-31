@@ -7,14 +7,20 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 
-#include "util/random.hpp"
+#include "util/log.hpp"
+#include "util/common.hpp"
 #include "util/monitor.hpp"
 #include "util/concept_macro.hpp"
 #include "util/query.hpp"
+#include "util/util.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
 #include "cache/metadata.hpp"
+
 
 //#include <iostream>
 
@@ -31,6 +37,10 @@ public:
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
+  virtual std::vector<uint32_t> *get_status() = 0;
+  virtual std::mutex* get_mutex() = 0;
+  virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) = 0;
+  virtual std::condition_variable* get_cv() = 0;
 };
 
 // normal set associative cache array
@@ -42,6 +52,10 @@ class CacheArrayNorm : public CacheArrayBase
 protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
+  std::vector<uint32_t> status; // record every set status
+  std::mutex mtx; // mutex for status
+  std::vector<std::mutex *> mutexs; // mutex array for meta
+  std::condition_variable cv;
   const unsigned int way_num;
 
 public:
@@ -62,10 +76,16 @@ public:
       data.resize(data_num);
       for(auto &d:data) d = new DT();
     }
+    status.resize(nset);
+    for(int i = 0; i < nset; i++) status[i] = 0;
+
+    mutexs.resize(meta_num);
+    for(auto &t:mutexs) t = new std::mutex();
   }
 
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
+    for(auto t: mutexs) delete t;
     if constexpr (!C_VOID(DT)) for(auto d:data) delete d;
   }
 
@@ -83,6 +103,12 @@ public:
     if constexpr (C_VOID(DT)) return nullptr;
     else                      return data[s*NW + w];
   }
+
+  virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) { return mutexs[s*(way_num) + w]; }
+
+  virtual std::vector<uint32_t> *get_status(){ return &status; }
+  virtual std::mutex* get_mutex() { return &mtx; }
+  virtual std::condition_variable* get_cv() { return &cv; }
 };
 
 //////////////// define cache ////////////////////
@@ -118,6 +144,8 @@ public:
     return hit(addr, &ai, &s, &w);
   }
 
+  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1, bool replace = false) = 0;
+
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 
   virtual CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) {
@@ -142,6 +170,20 @@ public:
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
   virtual LocInfo query_loc(uint64_t addr) { return LocInfo(id, this, addr); }
   virtual void query_fill_loc(LocInfo *loc, uint64_t addr) = 0;
+
+  virtual std::vector<uint32_t> *get_status(uint32_t ai){
+    return arrays[ai]->get_status();
+  }
+  virtual std::mutex* get_mutex(uint32_t ai){
+    return arrays[ai]->get_mutex();
+  }
+  virtual std::condition_variable* get_cv(uint32_t ai) {
+    return arrays[ai]->get_cv();
+  }
+
+  virtual std::mutex* get_cacheline_mutex(uint32_t ai, uint32_t s, uint32_t w){
+    return arrays[ai]->get_cacheline_mutex(s, w);
+  }
 };
 
 // Skewed Cache
@@ -281,6 +323,56 @@ public:
       loc->insert(LocIdx(i, indexer.index(addr, i)), LocRange(0, NW-1));
     }
   }
+
+  virtual bool hit_t(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint32_t value = 0x1, bool replace_t = false){
+    bool hit = false;
+    for(*ai=0; *ai<P; (*ai)++){
+      *s = indexer.index(addr, *ai);
+      auto status = get_status(*ai);
+      auto mtx    = get_mutex(*ai);
+      auto cv     = get_cv(*ai);
+      std::unique_lock lk(*mtx, std::defer_lock);
+      uint32_t ss = *s;
+      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+      mutex: %p, check hit(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
+      get_name().c_str(), *ai, *s, mtx);
+      WAIT_CV(cv, lk, ss, status, value, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+      check hit, get cv\n", get_time(), database.get_id(get_thread_id), addr, get_name().c_str(), mtx);
+      (*status)[*s] |= value;
+      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+      mutex: %p, check hit(unset lock)\n",get_time(), database.get_id(get_thread_id), addr, \
+      get_name().c_str(), *ai, *s, mtx);
+      for(*w=0; *w<NW; (*w)++){
+        if(access(*ai, *s, *w)->match(addr)){ 
+          hit = true; 
+          break;
+        }
+      }
+      if(hit) break;
+    }
+    if(replace_t && !hit){
+      replace(addr, ai, s, w);
+    }
+    for(int i = 0; i < P; i++){
+      if(i != *ai){
+        int s = indexer.index(addr, i);
+        auto status = get_status(i);
+        auto mtx    = get_mutex(i);
+        auto cv     = get_cv(i);
+        std::unique_lock lk(*mtx, std::defer_lock);
+        SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(set lock), miss on ai\n", get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), i, s, mtx);
+        (*status)[s] &= ~(value);
+        UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(unset lock), miss on ai\n",get_time(), database.get_id(get_thread_id), addr, \
+        get_name().c_str(), i, s, mtx);
+        cv->notify_all();
+      }
+    }
+    return hit;
+  }
+
 };
 
 // Normal set-associative cache
