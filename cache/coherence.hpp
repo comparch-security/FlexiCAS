@@ -318,6 +318,18 @@ public:
     assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
   }
 
+  // flush the whole cache
+  virtual void flush_cache(uint64_t *delay) {
+    auto [npar, nset, nway] = cache->size();
+    for(int ipar=0; ipar<npar; ipar++)
+      for(int iset=0; iset < nset; iset++)
+        for(int iway=0; iway < nway; iway++) {
+          auto [meta, data] = cache->access_line(ipar, iset, iway);
+          if(meta->is_valid())
+            flush_line(meta->addr(iset), policy->cmd_for_flush(), delay);
+        }
+  }
+
   virtual void query_loc(uint64_t addr, std::list<LocInfo> *locs){
     addr = normalize(addr);
     outer->query_loc_req(addr, locs);
