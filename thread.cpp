@@ -57,10 +57,10 @@ int main() {
 
   for(int i=0; i < 12800/threads_num; i++){
 
-    std::thread threadA(threadRW, 1);
-    std::thread threadB(threadRW, 1);
-    std::thread threadC(threadRW, 1);
-    std::thread threadD(threadRW, 1);
+    std::thread threadA(threadRW, cm_get_random_uint32()%3);
+    std::thread threadB(threadRW, cm_get_random_uint32()%3);
+    std::thread threadC(threadRW, cm_get_random_uint32()%3);
+    std::thread threadD(threadRW, cm_get_random_uint32()%3);
 
     threadA.join();
     threadB.join();

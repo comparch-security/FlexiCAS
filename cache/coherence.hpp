@@ -383,7 +383,6 @@ protected:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     std::mutex* mtx;
-    std::mutex* cmtx;
     std::condition_variable* cv;
     std::vector<uint32_t>* status;
     bool hit = this->cache->hit_t(addr, &ai, &s, &w, 0x100);
@@ -418,17 +417,36 @@ protected:
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    std::mutex* mtx;
+    std::condition_variable* cv;
+    std::vector<uint32_t>* status;
+    bool hit = cache->hit_t(addr, &ai, &s, &w, 0x1);
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
     if(!flush) {
+      if(hit){
+        status = this->cache->get_status(ai);
+        mtx = this->cache->get_mutex(ai);
+        cv = this->cache->get_cv(ai);
+        std::unique_lock lk(*mtx, std::defer_lock);
+        SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+        flush_line(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+        (*status)[s] = (*status)[s] & (~0x1);
+        UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+        flush_line(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+        cv->notify_all();
+      }
       // do not handle flush at this level, and send it to the outer cache
       outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay);
       return;
     }
 
     if(!hit) return;
+
+    status = this->cache->get_status(ai);
+    mtx = this->cache->get_mutex(ai);
+    cv = this->cache->get_cv(ai);
 
     if(probe) {
       auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
@@ -438,8 +456,21 @@ protected:
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
+    std::unique_lock lkm(Mlock, std::defer_lock);
+    SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    flush_line(set Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);        
     policy->meta_after_flush(cmd, meta);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, meta, data, delay);
+    UNSET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    flush_line(unset Mlock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), &Mlock);
+
+    std::unique_lock lk(*mtx, std::defer_lock);
+    SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    flush_line(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+    (*status)[s] = (*status)[s] & (~0x1);
+    UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+    flush_line(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+    cv->notify_all();
   }
 
 };
