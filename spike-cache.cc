@@ -48,6 +48,8 @@ namespace {
   static std::string pfc_log_prefix;
   static uint64_t pfc_value = 0;
   static std::atomic_bool cache_idle = false;
+  static std::list<LocInfo> query_locs;
+  static uint64_t           query_target;
 
   struct cache_xact {
     char op_t;
@@ -229,12 +231,12 @@ namespace flexicas {
     }
 
     if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_QUERY) {
-      std::list<LocInfo> locs;
       uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
       uint64_t paddr = translator(addr);
       cache_sync(); // wait until all pending transactions are finished
-      core_data[core]->query_loc(paddr, &locs);
-      pfc_value = locs.back().hit();
+      query_locs.clear();
+      core_data[core]->query_loc(paddr, &query_locs);
+      pfc_value = query_locs.back().hit();
       return;
     }
 
@@ -244,6 +246,25 @@ namespace flexicas {
       flush(paddr, core);
       return;
     }
+
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CONGRU_TARGET) {
+      uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
+      uint64_t paddr = translator(addr);
+      cache_sync(); // wait until all pending transactions are finished
+      query_locs.clear();
+      core_data[core]->query_loc(paddr, &query_locs);
+      query_target = paddr;
+      return;
+    }
+
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CONGRU_QUERY) {
+      uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
+      uint64_t paddr = translator(addr);
+      cache_sync(); // wait until all pending transactions are finished
+      pfc_value = query_locs.back().cache->query_coloc(query_target, paddr);
+      return;
+    }
+
   }
 
   uint64_t csr_read(int core) {
