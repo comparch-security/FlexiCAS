@@ -165,7 +165,7 @@ public:
       std::tie(meta, data) = cache->access_line(ai, s, w); // need c++17 for auto type infer
 
       // check again
-      if(!meta->is_valid()){
+      if(!meta->is_valid() || meta->addr(s) != addr){
         UNSET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d , w:%d \
         mutex: %p, probe resp, unset cacheline lock\n", get_time(), database.get_id(get_thread_id), addr, \
         cache->get_name().c_str(), ai, s, w, cmtx);

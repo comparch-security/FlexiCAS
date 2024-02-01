@@ -3,6 +3,7 @@
 
 #include "cache/mi.hpp"
 #include "util/util.hpp"
+#include <cstdio>
 
 // metadata supporting MSI coherency
 template <typename BT>
