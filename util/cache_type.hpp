@@ -63,7 +63,7 @@ inline auto cache_type_compile(int size, const std::string& name_prefix) {
   typedef typename std::conditional<isDir, MetadataMSIDirectory<48, IW, IW+6>, MetadataMSIBroadcast<48, IW, IW+6> >::type msi_metadata_type;
   typedef typename std::conditional<isExc,
                                     ExclusiveMSIPolicy<msi_metadata_type, isDir, isLLC>,
-                                    MSIPolicy<msi_metadata_type, false, isLLC>
+                                    MSIPolicy<msi_metadata_type, isL1, isLLC>
                                     >::type msi_policy_type;
 
   // MI
