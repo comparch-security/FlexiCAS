@@ -32,7 +32,3 @@ std::string LocInfo::to_string() const{
 void LocInfo::fill() {
   cache->query_fill_loc(this, addr);
 }
-
-bool LocInfo::hit() {
-  return cache->hit(addr);
-}

@@ -51,7 +51,6 @@ public:
   LocInfo(uint32_t cache_id, CacheBase* cache, uint64_t addr) : filled(false), addr(addr), cache_id(cache_id), cache(cache) {}
   void insert(LocIdx idx, LocRange r) { locs[idx] = r; }
   void fill();
-  bool hit();
   std::string to_string() const;
 };
 #endif
