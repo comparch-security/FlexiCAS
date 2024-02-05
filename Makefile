@@ -17,12 +17,6 @@ else
     CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
 
-ifeq ($(MODE), debug)
-    DSLCXXFLAGS = $(CXXSTD) -O1 -g -I. -fPIC
-else
-    DSLCXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
-endif
-
 UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
 
