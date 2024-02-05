@@ -48,8 +48,6 @@ namespace {
   static std::string pfc_log_prefix;
   static uint64_t pfc_value = 0;
   static std::atomic_bool cache_idle = false;
-  static std::list<LocInfo> query_locs;
-  static uint64_t           query_target;
 
   struct cache_xact {
     char op_t;
@@ -129,6 +127,16 @@ namespace {
   void cache_sync() {
     using namespace std::chrono_literals;
     while(!cache_idle) std::this_thread::sleep_for(1ms);
+  }
+
+  static std::list<LocInfo> query_locs;
+  static CacheBase* coloc_query_cache;
+  static uint64_t   coloc_query_target;
+
+  CacheBase* query_cache(uint64_t paddr, int core) {
+    query_locs.clear();
+    core_data[core]->query_loc(paddr, &query_locs);
+    return query_locs.back().cache;
   }
 }
 
@@ -233,10 +241,8 @@ namespace flexicas {
     if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_QUERY) {
       uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
       uint64_t paddr = translator(addr);
-      cache_sync(); // wait until all pending transactions are finished
-      query_locs.clear();
-      core_data[core]->query_loc(paddr, &query_locs);
-      pfc_value = query_locs.back().hit();
+      cache_sync();
+      pfc_value = query_cache(paddr, core)->hit(paddr);
       return;
     }
 
@@ -244,24 +250,24 @@ namespace flexicas {
       uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
       uint64_t paddr = translator(addr);
       flush(paddr, core);
+      cache_sync();
       return;
     }
 
     if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CONGRU_TARGET) {
       uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
       uint64_t paddr = translator(addr);
-      cache_sync(); // wait until all pending transactions are finished
-      query_locs.clear();
-      core_data[core]->query_loc(paddr, &query_locs);
-      query_target = paddr;
+      cache_sync();
+      coloc_query_cache = query_cache(paddr, core);
+      coloc_query_target = paddr;
       return;
     }
 
     if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CONGRU_QUERY) {
       uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
       uint64_t paddr = translator(addr);
-      cache_sync(); // wait until all pending transactions are finished
-      pfc_value = query_locs.back().cache->query_coloc(query_target, paddr);
+      cache_sync();
+      pfc_value = coloc_query_cache->query_coloc(coloc_query_target, paddr);
       return;
     }
 
