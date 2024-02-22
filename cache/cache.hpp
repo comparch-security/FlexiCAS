@@ -40,6 +40,7 @@ public:
   virtual std::vector<uint32_t> *get_status() = 0;
   virtual std::mutex* get_mutex() = 0;
   virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) = 0;
+  virtual std::mutex* get_write_mutex(uint32_t s) = 0;
   virtual std::condition_variable* get_cv() = 0;
 };
 
@@ -55,6 +56,8 @@ protected:
   std::vector<uint32_t> status; // record every set status
   std::mutex mtx; // mutex for status
   std::vector<std::mutex *> mutexs; // mutex array for meta
+  std::mutex wmtx; // mutex for cache write 
+  std::vector<std::mutex *> wmutexs; // write set mutex  
   std::condition_variable cv;
   const unsigned int way_num;
 
@@ -81,6 +84,9 @@ public:
 
     mutexs.resize(meta_num);
     for(auto &t:mutexs) t = new std::mutex();
+
+    wmutexs.resize(nset);
+    for(auto &w : wmutexs) w = new std::mutex();
   }
 
   virtual ~CacheArrayNorm() {
@@ -109,6 +115,7 @@ public:
   virtual std::vector<uint32_t> *get_status(){ return &status; }
   virtual std::mutex* get_mutex() { return &mtx; }
   virtual std::condition_variable* get_cv() { return &cv; }
+  virtual std::mutex* get_write_mutex(uint32_t s) { return &wmtx; }
 };
 
 //////////////// define cache ////////////////////
@@ -161,6 +168,7 @@ public:
   virtual CMMetadataBase *meta_copy_buffer() = 0;           // allocate a copy buffer, needed by exclusive cache with extended meta
   virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
 
+  virtual std::tuple<int, int, int> size() const = 0;           // return the size parameters of the cache
   uint32_t get_id() const { return id; }
   const std::string& get_name() const { return name;} 
 
@@ -183,6 +191,10 @@ public:
 
   virtual std::mutex* get_cacheline_mutex(uint32_t ai, uint32_t s, uint32_t w){
     return arrays[ai]->get_cacheline_mutex(s, w);
+  }
+
+  virtual std::mutex* get_write_mutex(uint32_t ai, uint32_t s){
+    return arrays[ai]->get_write_mutex(s);
   }
 };
 
@@ -232,6 +244,8 @@ public:
     if constexpr (!C_VOID(DT)) for(auto &buf: data_buffer_state) delete buf.first;
     for(auto &buf: meta_buffer_state) delete buf.first;
   }
+
+  virtual std::tuple<int, int, int> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {

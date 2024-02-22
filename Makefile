@@ -25,11 +25,14 @@ endif
 
 UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
-DSL_HEADERS   = $(wildcard dsl/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 CACHE_OBJS    = cache/metadata.o
 UTIL_OBJS     = util/random.o util/query.o util/monitor.o util/log.o util/common.o
+
+all: libflexicas.a
+
+.PONY: all
 
 $(CRYPTO_LIB):
 	CXXFLAGS="-g0" $(MAKE) -C cryptopp -j$(NCORE)
@@ -67,6 +70,8 @@ clean-regression:
 
 thread: thread.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
+	ar rvs $@ $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 
 .PHONY: regression
 
