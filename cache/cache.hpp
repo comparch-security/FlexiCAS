@@ -80,7 +80,7 @@ public:
       for(auto &d:data) d = new DT();
     }
     status.resize(nset);
-    for(int i = 0; i < nset; i++) status[i] = 0;
+    for(uint32_t i = 0; i < nset; i++) status[i] = 0;
 
     mutexs.resize(meta_num);
     for(auto &t:mutexs) t = new std::mutex();
@@ -367,7 +367,7 @@ public:
     if(replace_t && !hit){
       replace(addr, ai, s, w);
     }
-    for(int i = 0; i < P; i++){
+    for(uint32_t i = 0; i < P; i++){
       if(i != *ai){
         int s = indexer.index(addr, i);
         auto status = get_status(i);
