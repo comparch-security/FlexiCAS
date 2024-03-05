@@ -12,7 +12,7 @@ CXXSTD = --std=c++17 -fconcepts
 ifeq ($(MODE), release)
     CXXFLAGS = $(CXXSTD) -O3 -DNDEBUG -I. -fPIC
 else ifeq ($(MODE), debug)
-    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O0 -I. -fPIC
 else
     CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
@@ -68,8 +68,8 @@ regression: $(REGRESSION_TESTS_RST)
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 
-thread: thread.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+thread: parall_test.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ 
 libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 	ar rvs $@ $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 

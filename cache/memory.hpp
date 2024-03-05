@@ -17,13 +17,24 @@ protected:
   const uint32_t id;                    // a unique id to identify this memory
   const std::string name;
   std::unordered_map<uint64_t, char *> pages;
+  std::unordered_map<uint64_t, std::mutex* > mutexs;
   DLY *timer;      // delay estimator
   std::mutex mtx;
 
   void allocate(uint64_t ppn) {
+    std::unique_lock lk(mtx);
     char *page = static_cast<char *>(mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0));
     assert(page != MAP_FAILED);
     pages[ppn] = page;
+    mutexs[ppn] = new std::mutex();
+    lk.unlock();
+  }
+
+  bool count(uint64_t ppn){
+    std::unique_lock lk(mtx);
+    bool count = pages.count(ppn);
+    lk.unlock();
+    return count;
   }
   
 public:
@@ -37,14 +48,15 @@ public:
   virtual ~SimpleMemoryModel() {
     delete CacheMonitorSupport::monitors;
     delete InnerCohPortBase::policy;
+    for(auto x : mutexs) delete x.second;
   }
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     if constexpr (!C_VOID(DT)) {
-      std::unique_lock lk(mtx);
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
-      if(!pages.count(ppn)) allocate(ppn);
+      if(!count(ppn)) allocate(ppn);
+      std::unique_lock lk(*mutexs[ppn]);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
       data_inner->write(mem_addr);
       lk.unlock();
@@ -55,10 +67,10 @@ public:
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     if constexpr (!C_VOID(DT)) {
-      std::unique_lock lk(mtx);
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
-      assert(pages.count(ppn));
+      assert(count(ppn));
+      std::unique_lock lk(*mutexs[ppn]);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
       for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
       lk.unlock();
