@@ -17,13 +17,15 @@ class ReplaceFuncBase
 {
 protected:
   const uint32_t nset;
-  std::mutex mtx;
+  std::vector<std::mutex*> mtxs;
 public:
-  ReplaceFuncBase(uint32_t nset) : nset(nset) {};
+  ReplaceFuncBase(uint32_t nset) : nset(nset) { for (uint32_t i=0; i<nset; i++) mtxs.emplace_back(new std::mutex());};
   virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0) = 0; // return the number of free places
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) = 0;
   virtual void invalid(uint32_t s, uint32_t w) = 0;
-  virtual ~ReplaceFuncBase() {}
+  virtual ~ReplaceFuncBase() {
+    for(auto m : mtxs) delete m;
+  }
 };
 
 /////////////////////////////////
@@ -46,7 +48,7 @@ public:
   virtual ~ReplaceFIFO() {}
   virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0){
     if constexpr (EF){
-      std::unique_lock lk(mtx);
+      std::unique_lock lk(*mtxs[s]);
       if(!free_map[s].empty()){
         *w = *(free_map[s].begin());
         free_map[s].erase(*w);
@@ -66,7 +68,7 @@ public:
   }
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
-    std::unique_lock lk(mtx);
+    std::unique_lock lk(*mtxs[s]);
     assert(!free_map[s].count(w)); 
     assert(using_map[s].count(w));
     if(using_map[s].count(w)){
@@ -91,7 +93,7 @@ protected:
   using ReplaceFIFO<IW,NW>::free_map;
   using ReplaceFIFO<IW,NW>::used_map;
   using ReplaceFIFO<IW,NW>::using_map;
-  using ReplaceFIFO<IW,NW>::mtx;
+  using ReplaceFIFO<IW,NW>::mtxs;
 
 public:
   ReplaceLRU() : ReplaceFIFO<IW,NW,EF>() {}
@@ -99,7 +101,7 @@ public:
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
     if constexpr (EF) {
-      std::unique_lock lk(mtx);
+      std::unique_lock lk(*mtxs[s]);
       assert(!free_map[s].count(w)); 
       if(using_map[s].count(w)){
         using_map[s].erase(w);

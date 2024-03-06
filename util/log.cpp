@@ -1,12 +1,12 @@
 #include "util/log.hpp"
-#include <time.h>
+#include <chrono>
+#include <ctime>
 
 bool loge = true;
 
 long long get_time(){
-  struct timespec currentTime;
-  clock_gettime(CLOCK_REALTIME, &currentTime);
-  return currentTime.tv_nsec;
+  auto now = std::chrono::system_clock::now();
+  return now.time_since_epoch().count();
 }
 
 bool log_enable(){

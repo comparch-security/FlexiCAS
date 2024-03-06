@@ -14,7 +14,7 @@
 #include <thread>
 
 #define NCore 4
-#define AddrN 128000
+#define AddrN 12800
 
 #define NCoreM 4
 
@@ -219,7 +219,7 @@ int main() {
   } 
   l2->outer->connect(mem, mem->connect(l2->outer));
   lock_log_fp = fopen("dtrace", "w");
-  close_log();
+  // close_log();
   init(true);
 
   std::atomic<int> counter(0);
