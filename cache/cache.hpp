@@ -56,6 +56,7 @@ protected:
   std::vector<uint32_t> status; // record every set status
   std::mutex mtx; // mutex for status
   std::vector<std::mutex *> mutexs; // mutex array for meta
+  std::mutex wmtx; // mutex for cache write 
   std::vector<std::mutex *> wmutexs; // write set mutex  
   std::condition_variable cv;
   const unsigned int way_num;
@@ -91,7 +92,6 @@ public:
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
     for(auto t: mutexs) delete t;
-    for(auto w : wmutexs) delete w;
     if constexpr (!C_VOID(DT)) for(auto d:data) delete d;
   }
 
@@ -115,7 +115,7 @@ public:
   virtual std::vector<uint32_t> *get_status(){ return &status; }
   virtual std::mutex* get_mutex() { return &mtx; }
   virtual std::condition_variable* get_cv() { return &cv; }
-  virtual std::mutex* get_write_mutex(uint32_t s) { return wmutexs[s];}
+  virtual std::mutex* get_write_mutex(uint32_t s) { return &wmtx; }
 };
 
 //////////////// define cache ////////////////////
@@ -374,15 +374,15 @@ public:
         auto mtx    = get_mutex(i);
         auto cv     = get_cv(i);
         std::unique_lock lk(*mtx, std::defer_lock);
-      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
-      mutex: %p, check hit(set lock), miss on ai\n", get_time(), database.get_id(get_thread_id), addr, \
+        SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(set lock), miss on ai\n", get_time(), database.get_id(get_thread_id), addr, \
         get_name().c_str(), i, s, mtx);
         (*status)[s] &= ~(value);
-      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
-      mutex: %p, check hit(unset lock), miss on ai\n",get_time(), database.get_id(get_thread_id), addr, \
+        UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
+        mutex: %p, check hit(unset lock), miss on ai\n",get_time(), database.get_id(get_thread_id), addr, \
         get_name().c_str(), i, s, mtx);
-      cv->notify_all();
-    }
+        cv->notify_all();
+      }
     }
     return hit;
   }

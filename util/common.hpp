@@ -8,6 +8,9 @@
 #include <cstdint>
 #include <mutex>
 #include <set>
+#include <vector>
+#include <string>
+#include <deque>
 
 
 typedef struct{
@@ -22,7 +25,13 @@ protected:
   uint32_t count = 0;
   std::mutex id_mtx, addr_mtx;
   uint32_t sync = 0;
+  std::vector<std::deque<std::string> > str_database;
 public:
+
+  ThreadDataBase() { 
+    str_database.resize(16);
+  }
+
   std::set<uint64_t> addr_set;
   std::unordered_map<uint64_t, addr_p_data > addr_map;
 
@@ -66,6 +75,14 @@ public:
 
   uint32_t get_sync(){
     return sync;
+  }
+
+  void add_message(uint32_t thread_hash, std::string message){
+    str_database[get_id(thread_hash)].push_back(message);
+  }
+
+  void clean_message(uint32_t thread_hash){
+    str_database[get_id(thread_hash)].clear();
   }
 };
 
