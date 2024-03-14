@@ -136,7 +136,7 @@ public:
       if(0 == genre) CacheSkewedT::replace(addr, ai, s, w, 0);
       else {
         if constexpr (P==1) *ai = 0;
-        else                *ai = (cm_get_random_uint32() % P);
+        else                *ai = ((*CacheSkewedT::loc_random)() % P);
         *s = CacheSkewedT::indexer.index(addr, *ai);
         ext_replacer[*ai].replace(*s, w);
         *w += NW;
