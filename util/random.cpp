@@ -45,11 +45,11 @@ uint32_t cm_get_random_uint32() { return g_gen32(); }
 // allocate localized random number generator, normally for the multi-thread use case
 #ifdef NDEBUG
   // release mode
-  RandomGen<uint32_t> *alloc_rand32() { return new RandomGenMT<uint32_t, (1ull<<31)>(rd()); }
-  RandomGen<uint64_t> *alloc_rand64() { return new RandomGenMT<uint64_t, (1ull<<63)>(rd()); }
+  RandomGen<uint32_t> *cm_alloc_rand32() { return new RandomGenMT<uint32_t, (1ull<<31)>(rd()); }
+  RandomGen<uint64_t> *cm_alloc_rand64() { return new RandomGenMT<uint64_t, (1ull<<63)>(rd()); }
 #else
-  RandomGen<uint32_t> *alloc_rand32() { return new RandomGenDeault<uint32_t, (1ull<<31)>(); }
-  RandomGen<uint64_t> *alloc_rand64() { return new RandomGenDeault<uint64_t, (1ull<<63)>(); }
+  RandomGen<uint32_t> *cm_alloc_rand32() { return new RandomGenDeault<uint32_t, (1ull<<31)>(); }
+  RandomGen<uint64_t> *cm_alloc_rand64() { return new RandomGenDeault<uint64_t, (1ull<<63)>(); }
 #endif
 
 std::unordered_map<uint32_t, std::string> UniqueID::ids;
