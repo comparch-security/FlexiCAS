@@ -5,6 +5,7 @@
 #include "flexicas-pfc.h"
 
 #include <list>
+#include <deque>
 #include <mutex>
 #include <thread>
 #include <condition_variable>
@@ -56,7 +57,7 @@ namespace {
     uint64_t addr;
   };
 
-  std::list<cache_xact> xact_queue;
+  std::deque<cache_xact> xact_queue;
 
   void xact_queue_add(cache_xact xact) {
     std::unique_lock queue_full_lock(xact_queue_full_mutex, std::defer_lock);
