@@ -16,8 +16,8 @@ extern unsigned int cm_get_true_random();
 extern void cm_set_random_seed(uint64_t seed);
 extern uint64_t cm_get_random_uint64();
 extern uint32_t cm_get_random_uint32();
-extern RandomGen<uint32_t> *alloc_rand32(); // generate a local random generator for a thread
-extern RandomGen<uint64_t> *alloc_rand64();
+extern RandomGen<uint32_t> *cm_alloc_rand32(); // generate a local random generator for a thread
+extern RandomGen<uint64_t> *cm_alloc_rand64();
 
 #include "cryptopp/cryptlib.h"
 #include "cryptopp/tiger.h"
