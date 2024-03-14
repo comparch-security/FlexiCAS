@@ -167,7 +167,7 @@ public:
       if(free_num >= max_free)
         candidates[p++] = std::make_tuple(i, m_s, m_w);
     }
-    std::tie(*ai, *s, *w) = candidates[cm_get_random_uint32() % p];
+    std::tie(*ai, *s, *w) = candidates[(*CacheT::loc_random)() % p];
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
