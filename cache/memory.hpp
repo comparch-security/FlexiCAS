@@ -22,19 +22,21 @@ protected:
   std::mutex mtx;
 
   void allocate(uint64_t ppn) {
-    std::unique_lock lk(mtx);
     char *page = static_cast<char *>(mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0));
     assert(page != MAP_FAILED);
     pages[ppn] = page;
     mutexs[ppn] = new std::mutex();
-    lk.unlock();
   }
 
-  bool count(uint64_t ppn){
+
+  char* get_base_address(uint64_t ppn, bool assert){
+    char* base;
     std::unique_lock lk(mtx);
-    bool count = pages.count(ppn);
+    if(assert) assert(pages.count(ppn));
+    if(!pages.count(ppn)) allocate(ppn);
+    base = pages[ppn];
     lk.unlock();
-    return count;
+    return base;
   }
   
 public:
@@ -55,9 +57,9 @@ public:
     if constexpr (!C_VOID(DT)) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
-      if(!count(ppn)) allocate(ppn);
+      auto base = get_base_address(ppn, false);
       std::unique_lock lk(*mutexs[ppn]);
-      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
+      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(base + offset);
       data_inner->write(mem_addr);
       lk.unlock();
     }
@@ -69,9 +71,9 @@ public:
     if constexpr (!C_VOID(DT)) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
-      assert(count(ppn));
+      auto base = get_base_address(ppn, true);
       std::unique_lock lk(*mutexs[ppn]);
-      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
+      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(base + offset);
       for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
       lk.unlock();
     }

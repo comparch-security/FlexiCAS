@@ -6,13 +6,13 @@ MAKE = make
 CXX = g++
 
 # c++17 + concept by default, c++20 would work as well
-CXXSTD = --std=c++17 -fconcepts
+CXXSTD = --std=c++17 -fconcepts 
 #CXXSTD = --std=c++20
 
 ifeq ($(MODE), release)
     CXXFLAGS = $(CXXSTD) -O3 -DNDEBUG -I. -fPIC
 else ifeq ($(MODE), debug)
-    CXXFLAGS = $(CXXSTD) -O0 -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC
 else
     CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
@@ -68,16 +68,26 @@ regression: $(REGRESSION_TESTS_RST)
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 
-thread: parall_test.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ 
 libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 	ar rvs $@ $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
+
+TEST_HEADERS = $(wildcard test/*.hpp)
+
+TEST_OBJS = test/plana.o test/planb.o test/planc.o
+
+$(TEST_OBJS) : %o:%cpp $(CACHE_HEADERS) $(TEST_HEADERS)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+th: thread.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS) 
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ 
+parallel: test/parallel_test.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(TEST_OBJS) $(CACHE_HEADERS) 
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(TEST_OBJS) -o $@ 
 
 .PHONY: regression
 
 clean:
 	$(MAKE) clean-regression
-	-rm $(UTIL_OBJS) $(CACHE_OBJS)
+	-rm $(UTIL_OBJS) $(CACHE_OBJS) $(TEST_OBJS) parallel
 	-rm thread
 
 .PHONY: clean

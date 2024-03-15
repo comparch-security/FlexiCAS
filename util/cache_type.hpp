@@ -13,9 +13,11 @@
 
 template<typename CT, typename CPT>
 inline std::vector<CoherentCacheBase *> cache_generator(int size, const std::string& name_prefix) {
-  auto policy = new CPT();
   auto array = std::vector<CoherentCacheBase *>(size);
-  for(int i=0; i<size; i++) array[i] = new CT(policy, name_prefix + (size > 1 ? "-"+std::to_string(i) : ""));
+  for(int i=0; i<size; i++) {
+    auto policy = new CPT(); 
+    array[i] = new CT(policy, name_prefix + (size > 1 ? "-"+std::to_string(i) : "")); 
+  }
   return array;
 }
 

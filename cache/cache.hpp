@@ -38,10 +38,10 @@ public:
   virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
   virtual std::vector<uint32_t> *get_status() = 0;
-  virtual std::mutex* get_mutex() = 0;
+  virtual std::mutex* get_mutex(uint32_t s) = 0;
   virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) = 0;
   virtual std::mutex* get_write_mutex(uint32_t s) = 0;
-  virtual std::condition_variable* get_cv() = 0;
+  virtual std::condition_variable* get_cv(uint32_t s) = 0;
 };
 
 // normal set associative cache array
@@ -54,11 +54,10 @@ protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
   std::vector<uint32_t> status; // record every set status
-  std::mutex mtx; // mutex for status
-  std::vector<std::mutex *> mutexs; // mutex array for meta
-  std::mutex wmtx; // mutex for cache write 
+  std::vector<std::mutex *> status_mtxs; // mutex for status
+  std::vector<std::mutex *> mutexs;  // mutex array for meta
   std::vector<std::mutex *> wmutexs; // write set mutex  
-  std::condition_variable cv;
+  std::vector<std::condition_variable *> cvs;
   const unsigned int way_num;
 
 public:
@@ -87,11 +86,20 @@ public:
 
     wmutexs.resize(nset);
     for(auto &w : wmutexs) w = new std::mutex();
+
+    status_mtxs.resize(nset);
+    for(auto &s : status_mtxs) s = new std::mutex();
+
+    cvs.resize(nset);
+    for(auto &c : cvs) c = new std::condition_variable();
   }
 
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
     for(auto t: mutexs) delete t;
+    for(auto w : wmutexs) delete w;
+    for(auto s : status_mtxs) delete s;
+    for(auto c : cvs) delete c;
     if constexpr (!C_VOID(DT)) for(auto d:data) delete d;
   }
 
@@ -113,9 +121,9 @@ public:
   virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) { return mutexs[s*(way_num) + w]; }
 
   virtual std::vector<uint32_t> *get_status(){ return &status; }
-  virtual std::mutex* get_mutex() { return &mtx; }
-  virtual std::condition_variable* get_cv() { return &cv; }
-  virtual std::mutex* get_write_mutex(uint32_t s) { return &wmtx; }
+  virtual std::mutex* get_mutex(uint32_t s) { return status_mtxs[s]; }
+  virtual std::condition_variable* get_cv(uint32_t s) { return cvs[s]; }
+  virtual std::mutex* get_write_mutex(uint32_t s) { return wmutexs[s];}
 };
 
 //////////////// define cache ////////////////////
@@ -182,11 +190,11 @@ public:
   virtual std::vector<uint32_t> *get_status(uint32_t ai){
     return arrays[ai]->get_status();
   }
-  virtual std::mutex* get_mutex(uint32_t ai){
-    return arrays[ai]->get_mutex();
+  virtual std::mutex* get_mutex(uint32_t ai, uint32_t s){
+    return arrays[ai]->get_mutex(s);
   }
-  virtual std::condition_variable* get_cv(uint32_t ai) {
-    return arrays[ai]->get_cv();
+  virtual std::condition_variable* get_cv(uint32_t ai, uint32_t s) {
+    return arrays[ai]->get_cv(s);
   }
 
   virtual std::mutex* get_cacheline_mutex(uint32_t ai, uint32_t s, uint32_t w){
@@ -343,8 +351,8 @@ public:
     for(*ai=0; *ai<P; (*ai)++){
       *s = indexer.index(addr, *ai);
       auto status = get_status(*ai);
-      auto mtx    = get_mutex(*ai);
-      auto cv     = get_cv(*ai);
+      auto mtx    = get_mutex(*ai, *s);
+      auto cv     = get_cv(*ai, *s);
       std::unique_lock lk(*mtx, std::defer_lock);
       uint32_t ss = *s;
       SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
@@ -371,8 +379,8 @@ public:
       if(i != *ai){
         int s = indexer.index(addr, i);
         auto status = get_status(i);
-        auto mtx    = get_mutex(i);
-        auto cv     = get_cv(i);
+        auto mtx    = get_mutex(i, s);
+        auto cv     = get_cv(i, s);
         std::unique_lock lk(*mtx, std::defer_lock);
         SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
         mutex: %p, check hit(set lock), miss on ai\n", get_time(), database.get_id(get_thread_id), addr, \

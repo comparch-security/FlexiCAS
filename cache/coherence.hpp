@@ -6,8 +6,11 @@
 #include "cache/slicehash.hpp"
 #include "util/common.hpp"
 #include "util/util.hpp"
+#include <boost/format.hpp>
 #include <cassert>
 #include <tuple>
+
+static boost::format access_format("addr: 0x%16x, ai:%2d, set:%2d, way:%2d");
 
 class OuterCohPortBase;
 class InnerCohPortBase;
@@ -155,8 +158,8 @@ public:
     CMDataBase *data = nullptr;
     if(hit) {
       auto status = cache->get_status(ai);
-      auto mtx = cache->get_mutex(ai);
-      auto cv = cache->get_cv(ai);
+      auto mtx = cache->get_mutex(ai, s);
+      auto cv = cache->get_cv(ai, s);
       auto cmtx = cache->get_cacheline_mutex(ai, s, w);
       auto wmtx = cache->get_write_mutex(ai, s);
 
@@ -285,8 +288,8 @@ protected:
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first){
       auto status = this->cache->get_status(ai);
-      auto mtx = this->cache->get_mutex(ai);
-      auto cv = this->cache->get_cv(ai);
+      auto mtx = this->cache->get_mutex(ai, s);
+      auto cv = this->cache->get_cv(ai, s);
       uint32_t wait_value = 0x100;
       std::unique_lock lk(*mtx, std::defer_lock);
       SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
@@ -344,11 +347,10 @@ protected:
     bool hit = cache->hit_t(addr, &ai, &s, &w, 0x1, true);
     if(hit) {
       status = this->cache->get_status(ai);
-      mtx = this->cache->get_mutex(ai);
-      cv = this->cache->get_cv(ai);
+      mtx = this->cache->get_mutex(ai, s);
+      cv = this->cache->get_cv(ai, s);
       cmtx = this->cache->get_cacheline_mutex(ai, s, w);
       std::tie(meta, data) = cache->access_line(ai, s, w);
-
       SET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d w : %d\
       mutex: %p, access line,set cache line mtx(hit)\n", get_time(), database.get_id(get_thread_id), addr, \
       this->cache->get_name().c_str(), ai, s, w, cmtx);
@@ -371,8 +373,8 @@ protected:
       }
     } else { // miss
       status = this->cache->get_status(ai);
-      mtx = this->cache->get_mutex(ai);
-      cv = this->cache->get_cv(ai);
+      mtx = this->cache->get_mutex(ai, s);
+      cv = this->cache->get_cv(ai, s);
       cmtx = this->cache->get_cacheline_mutex(ai, s, w);
       std::tie(meta, data) = this->cache->access_line(ai, s, w);
       SET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d w : %d\
@@ -395,9 +397,9 @@ protected:
     bool hit = this->cache->hit_t(addr, &ai, &s, &w, 0x100);
     if(hit){
       status = this->cache->get_status(ai);
-      mtx = this->cache->get_mutex(ai);
+      mtx = this->cache->get_mutex(ai, s);
       wmtx = this->cache->get_write_mutex(ai, s);
-      cv = this->cache->get_cv(ai);
+      cv = this->cache->get_cv(ai, s);
       std::tie(meta, data) = this->cache->access_line(ai, s, w);
       std::unique_lock lkm(*wmtx, std::defer_lock);
       SET_LOCK(lkm, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
@@ -436,8 +438,8 @@ protected:
     if(!flush) {
       if(hit){
         status = this->cache->get_status(ai);
-        mtx = this->cache->get_mutex(ai);
-        cv = this->cache->get_cv(ai);
+        mtx = this->cache->get_mutex(ai, s);
+        cv = this->cache->get_cv(ai, s);
         std::unique_lock lk(*mtx, std::defer_lock);
         SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
         flush_line(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
@@ -454,8 +456,8 @@ protected:
     if(!hit) return;
 
     status = this->cache->get_status(ai);
-    mtx = this->cache->get_mutex(ai);
-    cv = this->cache->get_cv(ai);
+    mtx = this->cache->get_mutex(ai, s);
+    cv = this->cache->get_cv(ai, s);
     wmtx = this->cache->get_write_mutex(ai, s);
     if(probe) {
       auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
@@ -536,6 +538,7 @@ public:
     UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     read(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
     cv->notify_all();
+
     return data;
   }
 
@@ -570,6 +573,7 @@ public:
     UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
     write(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
     cv->notify_all();
+
   }
 
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
