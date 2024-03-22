@@ -40,7 +40,6 @@ public:
   virtual std::vector<uint32_t> *get_status() = 0;
   virtual std::mutex* get_mutex(uint32_t s) = 0;
   virtual std::mutex* get_cacheline_mutex(uint32_t s, uint32_t w) = 0;
-  virtual std::mutex* get_write_mutex(uint32_t s) = 0;
   virtual std::condition_variable* get_cv(uint32_t s) = 0;
 };
 
@@ -56,7 +55,6 @@ protected:
   std::vector<uint32_t> status; // record every set status
   std::vector<std::mutex *> status_mtxs; // mutex for status
   std::vector<std::mutex *> mutexs;  // mutex array for meta
-  std::vector<std::mutex *> wmutexs; // write set mutex  
   std::vector<std::condition_variable *> cvs;
   const unsigned int way_num;
 
@@ -84,9 +82,6 @@ public:
     mutexs.resize(meta_num);
     for(auto &t:mutexs) t = new std::mutex();
 
-    wmutexs.resize(nset);
-    for(auto &w : wmutexs) w = new std::mutex();
-
     status_mtxs.resize(nset);
     for(auto &s : status_mtxs) s = new std::mutex();
 
@@ -97,7 +92,6 @@ public:
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
     for(auto t: mutexs) delete t;
-    for(auto w : wmutexs) delete w;
     for(auto s : status_mtxs) delete s;
     for(auto c : cvs) delete c;
     if constexpr (!C_VOID(DT)) for(auto d:data) delete d;
@@ -123,7 +117,6 @@ public:
   virtual std::vector<uint32_t> *get_status(){ return &status; }
   virtual std::mutex* get_mutex(uint32_t s) { return status_mtxs[s]; }
   virtual std::condition_variable* get_cv(uint32_t s) { return cvs[s]; }
-  virtual std::mutex* get_write_mutex(uint32_t s) { return wmutexs[s];}
 };
 
 //////////////// define cache ////////////////////
@@ -201,9 +194,6 @@ public:
     return arrays[ai]->get_cacheline_mutex(s, w);
   }
 
-  virtual std::mutex* get_write_mutex(uint32_t ai, uint32_t s){
-    return arrays[ai]->get_write_mutex(s);
-  }
 };
 
 // Skewed Cache

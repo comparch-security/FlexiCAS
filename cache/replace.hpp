@@ -55,7 +55,9 @@ public:
         using_map[s][*w] = false;
       }
       else{
+#ifndef NDEBUG 
         assert(used_map[s].size() >= 1);
+#endif
         *w = used_map[s].front();
         used_map[s].remove(*w);
         using_map[s][*w] = true;
@@ -69,8 +71,10 @@ public:
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
     std::unique_lock lk(*mtxs[s]);
+#ifndef NDEBUG 
     assert(!free_map[s].count(w)); 
     assert(using_map[s].count(w));
+#endif
     if(using_map[s].count(w)){
       using_map[s].erase(w);
       used_map[s].push_back(w);
@@ -102,12 +106,16 @@ public:
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
     if constexpr (EF) {
       std::unique_lock lk(*mtxs[s]);
+#ifndef NDEBUG 
       assert(!free_map[s].count(w)); 
+#endif
       if(using_map[s].count(w)){
         using_map[s].erase(w);
         used_map[s].push_back(w);
       }else{
+#ifndef NDEBUG 
         assert(std::find(used_map[s].begin(), used_map[s].end(), w) != used_map[s].end());
+#endif
         used_map[s].remove(w);
         used_map[s].push_back(w);
       }

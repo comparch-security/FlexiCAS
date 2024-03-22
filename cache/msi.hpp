@@ -70,7 +70,9 @@ public:
     meta->init(addr);
     if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
     else {
+#ifndef NDEBUG 
       assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
+#endif
       meta->to_modified(-1);
     }
   }
@@ -81,7 +83,9 @@ public:
       meta->to_shared(id);
       meta_inner->to_shared(-1);
     } else {
+#ifndef NDEBUG 
       assert(is_fetch_write(cmd));
+#endif
       meta->to_modified(id);
       meta_inner->to_modified(-1);
     }

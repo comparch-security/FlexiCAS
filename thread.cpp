@@ -146,30 +146,30 @@ int main() {
     // l2[i]->outer->connect(llc->inner, llc->inner->connect(l2[i]->outer));
   }
   l2->outer->connect(mem, mem->connect(l2->outer));
-  // llc->outer->connect(mem, mem->connect(llc->outer));
+  llc->outer->connect(mem, mem->connect(llc->outer));
   // mem->attach_monitor(&tracer);
 
   lock_log_fp = fopen("dtrace", "w");
   close_log();
 
-  // for time test 
-  auto start = std::chrono::high_resolution_clock::now();
-  std::thread producer(producer_thread);
-  std::vector<std::thread> thread_array(NCore);
-  for(int i = 0; i < NCore; i++){
-    thread_array[i] = std::thread(worker_thread, i);
-  }
+  // // for time test 
+  // auto start = std::chrono::high_resolution_clock::now();
+  // std::thread producer(producer_thread);
+  // std::vector<std::thread> thread_array(NCore);
+  // for(int i = 0; i < NCore; i++){
+  //   thread_array[i] = std::thread(worker_thread, i);
+  // }
 
-  producer.join();
-  for(int i = 0; i < NCore; i++){
-    thread_array[i].join();
-  }
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> duration = end - start;
+  // producer.join();
+  // for(int i = 0; i < NCore; i++){
+  //   thread_array[i].join();
+  // }
+  // auto end = std::chrono::high_resolution_clock::now();
+  // std::chrono::duration<double> duration = end - start;
 
-  std::cout << "thread num  : " << NCore << std::endl;
-  std::cout << "access addr : " << addr_num << std::endl;
-  std::cout << "cost time   : " << duration.count() << " s " << std::endl;
+  // std::cout << "thread num  : " << NCore << std::endl;
+  // std::cout << "access addr : " << addr_num << std::endl;
+  // std::cout << "cost time   : " << duration.count() << " s " << std::endl;
 
   // for(int i=0; i < addr_num/NCore; i++){
   //   uint64_t addr1 = cm_get_random_uint64() & 0xFFFFC0;

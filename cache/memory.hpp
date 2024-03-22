@@ -23,7 +23,9 @@ protected:
 
   void allocate(uint64_t ppn) {
     char *page = static_cast<char *>(mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0));
+#ifndef NDEBUG    
     assert(page != MAP_FAILED);
+#endif
     pages[ppn] = page;
     mutexs[ppn] = new std::mutex();
   }
@@ -31,11 +33,13 @@ protected:
 
   char* get_base_address(uint64_t ppn, bool assert){
     char* base;
-    std::unique_lock lk(mtx);
+    mtx.lock();
+#ifndef NDEBUG  
     if(assert) assert(pages.count(ppn));
+#endif
     if(!pages.count(ppn)) allocate(ppn);
     base = pages[ppn];
-    lk.unlock();
+    mtx.unlock();
     return base;
   }
   
@@ -49,7 +53,6 @@ public:
 
   virtual ~SimpleMemoryModel() {
     delete CacheMonitorSupport::monitors;
-    delete InnerCohPortBase::policy;
     for(auto x : mutexs) delete x.second;
   }
 

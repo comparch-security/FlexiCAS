@@ -73,6 +73,7 @@ public:
   coh_cmd_t cmd_for_probe_writeback(int32_t id)   const { return {id, probe_msg,   writeback_act  }; }
   coh_cmd_t cmd_for_probe_release(int32_t id)     const { return {id, probe_msg,   evict_act      }; }
   coh_cmd_t cmd_for_probe_downgrade(int32_t id)   const { return {id, probe_msg,   downgrade_act  }; }
+  coh_cmd_t cmd_for_acuqire_ack(int32_t id)       const { return {id, 0,           0              }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
 
@@ -94,7 +95,9 @@ public:
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const = 0;
 
   std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const {
+#ifndef NDEBUG
     assert(is_probe(cmd));
+#endif
     if(meta) {
       if((is_evict(cmd) && meta->evict_need_probe(target_inner_id, cmd.id)) || meta->writeback_need_probe(target_inner_id, cmd.id) ) {
         cmd.id = -1;
@@ -109,7 +112,9 @@ public:
   }
 
   bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
+#ifndef NDEBUG
     assert(outer->is_probe(outer_cmd));
+#endif
     return meta->is_dirty();
   }
 
@@ -117,7 +122,9 @@ public:
     if(meta_outer) { // clean sharer if evict or miss
       if(writeback) {
         if(!meta_outer->is_valid()) {
+#ifndef NDEBUG
           assert(meta);
+#endif
           meta_outer->to_shared(-1);
           meta_outer->get_outer_meta()->copy(meta->get_outer_meta());
         }
@@ -146,7 +153,9 @@ public:
   }
 
   void meta_after_evict(CMMetadataBase *meta) const{
+#ifndef NDEBUG
     assert(!meta->is_dirty());
+#endif
     meta->to_invalid();
   }
 

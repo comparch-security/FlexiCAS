@@ -12,7 +12,7 @@ CXXSTD = --std=c++17 -fconcepts
 ifeq ($(MODE), release)
     CXXFLAGS = $(CXXSTD) -O3 -DNDEBUG -I. -fPIC
 else ifeq ($(MODE), debug)
-    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O0 -DNDEBUG -I. -fPIC
 else
     CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 endif
@@ -82,6 +82,8 @@ th: thread.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
 	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ 
 parallel: test/parallel_test.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(TEST_OBJS) $(CACHE_HEADERS) 
 	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(TEST_OBJS) -o $@ 
+cor: test/correct_test.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ 
 
 .PHONY: regression
 

@@ -131,7 +131,7 @@ static void cache_server(int core, std::atomic<int>& counter){
 
 
 void PlanB(bool flush_cache, bool remap){
-  init(true);
+  init(false);
 
   int i = 0;
   double all_time = 0;

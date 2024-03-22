@@ -19,40 +19,71 @@ typedef struct{
   std::vector<uint32_t>* status;
 }addr_info;
 
+typedef struct{
+  bool valid;
+  addr_info loc;
+}info;
+
 /////////////////////////////////
 // Record inner probing address
 class InnerAcquireRecord
 {
 protected:
-  std::mutex  mtx;           // mutex for protecting record
-  std::unordered_map<uint64_t, addr_info> map;
+  std::vector<std::mutex *>  mtx;           // mutex for protecting record
+  std::vector<std::unordered_map<uint64_t, addr_info> > map;
 public:
-  void add(uint64_t addr, addr_info loc){
-    std::unique_lock lk(mtx, std::defer_lock);
+  void add(int id, uint64_t addr, addr_info loc){
+    std::unique_lock lk(*mtx[id], std::defer_lock);
     lk.lock();
-    map[addr] = loc;
+    map[id][addr] = loc;
     lk.unlock();
   }
-  void erase(uint64_t addr){
-    std::unique_lock lk(mtx, std::defer_lock);
+  void erase(int id, uint64_t addr){
+    std::unique_lock lk(*mtx[id], std::defer_lock);
     lk.lock();
-    map.erase(addr);
+    map[id].erase(addr);
     lk.unlock();
   }
-  std::pair<bool, addr_info> query(uint64_t addr){
-    std::unique_lock lk(mtx, std::defer_lock);
+  std::pair<bool, addr_info> query(int id, uint64_t addr){
     addr_info info;
     bool count;
+    std::unique_lock lk(*mtx[id], std::defer_lock);
     lk.lock();
-    if(map.count(addr)){
+    if(map[id].count(addr)){
       count = true;
-      info = map[addr];
+      info = map[id][addr];
     }else{
       count = false;
     }
     lk.unlock();
     return std::make_pair(count, info);
   }
+  void add_size(){
+    map.resize(map.size()+1);
+    std::mutex* m = new std::mutex();
+    mtx.push_back(m);
+  }
+
+  ~InnerAcquireRecord(){
+    for(auto m : mtx) delete m;
+  }
+// protected:
+//   std::mutex mtx;  
+//   std::vector<info> array;
+// public:
+//   void add(int id, uint64_t addr, addr_info loc){
+//     array[id] = info{true, loc};
+//   }
+//   void erase(int id, uint64_t addr){
+//     array[id].valid = false;
+//   }
+//   std::pair<bool, addr_info> query(int id, uint64_t addr){
+//     return std::make_pair(array[id].valid, array[id].loc);
+//   }
+//   void add_size(){
+//     array.resize(array.size()+1);
+//   }
+
 };
 
 #endif

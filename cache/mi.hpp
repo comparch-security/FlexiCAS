@@ -47,7 +47,9 @@ public:
 
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
     meta->init(addr);
+#ifndef NDEBUG     
     assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
+#endif
     meta->to_modified(-1);
   }
 
@@ -58,7 +60,9 @@ public:
 
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
     if constexpr (!isL1) {
+#ifndef NDEBUG 
       assert(outer->is_probe(outer_cmd));
+#endif
       if(outer->is_evict(outer_cmd) || outer->is_downgrade(outer_cmd))
         return std::make_pair(true, cmd_for_probe_release());
       else

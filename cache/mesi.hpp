@@ -42,7 +42,9 @@ public:
       } else
         meta_inner->to_shared(-1);
     } else {
+#ifndef NDEBUG  
       assert(is_fetch_write(cmd));
+#endif
       meta->to_modified(id);
       meta_inner->to_modified(-1);
     }

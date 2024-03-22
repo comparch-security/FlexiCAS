@@ -14,7 +14,7 @@
 #include <thread>
 
 
-#define NCore 2
+#define NCore 4
 #define AddrN 128000
 
 #define NCoreM 4
@@ -25,7 +25,10 @@
 #define L2IW 5
 #define L2WN 8
 
-#define REPE 10
+#define L3IW 5
+#define L3WN 16
+
+#define REPE 20
 
 #define XACT_QUEUE_HIGH    100
 #define XACT_QUEUE_LOW     10
@@ -47,4 +50,4 @@ extern std::vector<bool>        iflag;       // belong to instruction
 extern int64_t gi;
 extern CMHasher hasher;
 extern std::vector<CoreInterface *> core_data, core_inst;
-extern SimpleMemoryModel<data_type,void,true>* mem;
+extern SimpleMemoryModel<data_type,void,false>* mem;
