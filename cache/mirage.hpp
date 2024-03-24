@@ -70,8 +70,6 @@ template<typename MT, typename CT>
 class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
 {
   typedef MSIPolicy<MT, false, true> PolicyT;
-protected:
-  using PolicyT::outer;
 public:
   MirageMSIPolicy() : MSIPolicy<MT, false, true>() {}
   virtual ~MirageMSIPolicy() {}
@@ -237,7 +235,7 @@ template<typename MT, typename CT>
 class MirageInnerPortUncached : public InnerCohPortUncached
 {
 public:
-  MirageInnerPortUncached(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
+  MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached(policy) {}
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
   replace_line(uint64_t addr, uint64_t *delay) {

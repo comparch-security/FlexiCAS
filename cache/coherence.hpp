@@ -5,6 +5,7 @@
 #include "cache/coh_policy.hpp"
 #include "cache/slicehash.hpp"
 #include <tuple>
+#include <memory>
 
 class OuterCohPortBase;
 class InnerCohPortBase;
@@ -16,6 +17,8 @@ class CoherentCacheBase;
 typedef OuterCohPortBase CohClientBase;
 typedef InnerCohPortBase CohMasterBase;
 
+typedef std::shared_ptr<CohPolicyBase> policy_ptr;
+
 /////////////////////////////////
 // Base interface for outer ports
 
@@ -26,13 +29,13 @@ protected:
   InnerCohPortBase *inner; // inner port for probe when sync
   CohMasterBase *coh;      // hook up with the coherence hub
   int32_t coh_id;          // the identifier used in locating this cache client by the coherence master
-  CohPolicyBase *policy;   // the coherence policy
+  policy_ptr policy;       // the coherence policy
 
 public:
-  OuterCohPortBase(CohPolicyBase *policy) : policy(policy) {}
+  OuterCohPortBase(policy_ptr policy) : policy(policy) {}
   virtual ~OuterCohPortBase() {}
 
-  void connect(CohMasterBase *h, std::pair<int32_t, CohPolicyBase *> info) { coh = h; coh_id = info.first; policy->connect(info.second); }
+  void connect(CohMasterBase *h, std::pair<int32_t, policy_ptr> info) { coh = h; coh_id = info.first; policy->connect(info.second.get()); }
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
@@ -52,12 +55,11 @@ protected:
   CacheBase *cache; // reverse pointer for the cache parent
   OuterCohPortBase *outer; // outer port for writeback when replace
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
-  CohPolicyBase *policy; // the coherence policy
+  policy_ptr policy; // the coherence policy
 public:
-  InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
-  virtual ~InnerCohPortBase() { delete policy; }
+  InnerCohPortBase(policy_ptr policy) : policy(policy) {}
 
-  std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c, bool uncached = false) {
+  std::pair<uint32_t, policy_ptr> connect(CohClientBase *c, bool uncached = false) {
     if(uncached) {
       return std::make_pair(-1, policy);
     } else {
@@ -79,7 +81,7 @@ public:
 class OuterCohPortUncached : public OuterCohPortBase
 {
 public:
-  OuterCohPortUncached(CohPolicyBase *policy) : OuterCohPortBase(policy) {}
+  OuterCohPortUncached(policy_ptr policy) : OuterCohPortBase(policy) {}
   virtual ~OuterCohPortUncached() {}
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
@@ -110,7 +112,7 @@ protected:
   using OuterCohPortBase::inner;
   using OPUC::writeback_req;
 public:
-  OuterCohPortT(CohPolicyBase *policy) : OPUC(policy) {}
+  OuterCohPortT(policy_ptr policy) : OPUC(policy) {}
   virtual ~OuterCohPortT() {}
 
   virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
@@ -145,7 +147,7 @@ typedef OuterCohPortT<OuterCohPortUncached> OuterCohPort;
 class InnerCohPortUncached : public InnerCohPortBase
 {
 public:
-  InnerCohPortUncached(CohPolicyBase *policy) : InnerCohPortBase(policy) {}
+  InnerCohPortUncached(policy_ptr policy) : InnerCohPortBase(policy) {}
   virtual ~InnerCohPortUncached() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -263,7 +265,7 @@ class InnerCohPortT : public IPUC
 protected:
   using IPUC::coh;
 public:
-  InnerCohPortT(CohPolicyBase *policy) : IPUC(policy) {}
+  InnerCohPortT(policy_ptr policy) : IPUC(policy) {}
   virtual ~InnerCohPortT() {}
 
   virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
@@ -285,7 +287,7 @@ typedef InnerCohPortT<InnerCohPortUncached> InnerCohPort;
 // interface with the processing core is a special InnerCohPort
 class CoreInterface : public InnerCohPortUncached {
 public:
-  CoreInterface(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
+  CoreInterface(policy_ptr policy) : InnerCohPortUncached(policy) {}
   virtual ~CoreInterface() {}
 
   uint64_t normalize(uint64_t addr) const { return addr & ~0x3full; }
@@ -357,7 +359,7 @@ public:
   OuterCohPortBase *outer; // coherence outer port, nullptr if last level
   InnerCohPortBase *inner; // coherence inner port, always has inner
 
-  CoherentCacheBase(CacheBase *cache, OuterCohPortBase *outer, InnerCohPortBase *inner, CohPolicyBase *policy, std::string name)
+  CoherentCacheBase(CacheBase *cache, OuterCohPortBase *outer, InnerCohPortBase *inner, policy_ptr policy, std::string name)
     : name(name), cache(cache), outer(outer), inner(inner)
   {
     // deferred assignment for the reverse pointer to cache
@@ -385,7 +387,7 @@ template<typename CacheT, typename OuterT = OuterCohPort, typename InnerT = Inne
 class CoherentCacheNorm : public CoherentCacheBase
 {
 public:
-  CoherentCacheNorm(CohPolicyBase *policy, std::string name = "") : CoherentCacheBase(new CacheT(name), new OuterT(policy), new InnerT(policy), policy, name) {}
+  CoherentCacheNorm(policy_ptr policy, std::string name = "") : CoherentCacheBase(new CacheT(name), new OuterT(policy), new InnerT(policy), policy, name) {}
   virtual ~CoherentCacheNorm() {}
 };
 

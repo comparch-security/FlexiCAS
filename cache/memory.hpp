@@ -26,13 +26,12 @@ public:
   SimpleMemoryModel(const std::string &n)
     : InnerCohPortUncached(nullptr), id(UniqueID::new_id(n)), name(n)
   {
-    InnerCohPortBase::policy = new MIPolicy<MetadataMI,false,false>();
+    InnerCohPortBase::policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(id);
   }
 
   virtual ~SimpleMemoryModel() {
     delete CacheMonitorSupport::monitors;
-    delete InnerCohPortBase::policy;
   }
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
