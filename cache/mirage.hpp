@@ -70,8 +70,6 @@ template<typename MT, typename CT>
 class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
 {
   typedef MSIPolicy<MT, false, true> PolicyT;
-protected:
-  using PolicyT::outer;
 public:
   MirageMSIPolicy() : MSIPolicy<MT, false, true>() {}
   virtual ~MirageMSIPolicy() {}

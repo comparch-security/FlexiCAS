@@ -7,7 +7,6 @@
 template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
 {
-  typedef MSIPolicy<MT, false, isLLC> PolicyT;
 protected:
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
@@ -83,7 +82,6 @@ public:
 template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase) && EnDir
 class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
 {
-  typedef ExclusiveMSIPolicy<MT, true, isLLC> PolicyT;
 protected:
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
