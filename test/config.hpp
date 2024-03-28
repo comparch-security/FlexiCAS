@@ -37,12 +37,18 @@
 #define CACHE_OP_WRITE       1
 #define CACHE_OP_FLUSH       2
 
-typedef Data64B data_type;
+#define USE_DATA
+
+#ifdef USE_DATA
+typedef Data64B data_type; 
+#else
+typedef void data_type;
+#endif
 
 extern FILE *lock_log_fp;
 extern std::vector<std::unique_ptr<std::mutex>> xact_queue_op_mutex_array, xact_queue_full_mutex_array, xact_queue_empty_mutex_array;
 extern std::vector<std::unique_ptr<std::condition_variable>> xact_non_empty_notify_array, xact_non_full_notify_array;
-extern std::vector<std::deque<cache_xact<data_type>>> xact_queue;
+extern std::vector<std::deque<cache_xact>> xact_queue;
 extern std::vector<uint64_t>    addr_pool; 
 extern std::unordered_map<uint64_t, int> addr_map;
 extern std::vector<DTContainer<NCore,data_type>* >  data_pool;   

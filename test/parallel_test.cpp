@@ -7,13 +7,12 @@
 #include <condition_variable>
 #include <thread>
 
-typedef Data64B data_type;
 
 FILE *lock_log_fp;
 
 std::vector<std::unique_ptr<std::mutex>> xact_queue_op_mutex_array, xact_queue_full_mutex_array, xact_queue_empty_mutex_array;
 std::vector<std::unique_ptr<std::condition_variable>> xact_non_empty_notify_array, xact_non_full_notify_array;
-std::vector<std::deque<cache_xact<data_type>>> xact_queue(NCore);
+std::vector<std::deque<cache_xact>> xact_queue(NCore);
 std::vector<uint64_t>    addr_pool; 
 std::unordered_map<uint64_t, int> addr_map;
 std::vector<DTContainer<NCore,data_type>* >  data_pool;   
@@ -27,6 +26,7 @@ extern void PlanA(bool flush_cache, bool remap);
 extern void PlanB(bool flush_cache, bool remap);
 extern void PlanC(bool flush_cache, bool remap);
 
+// #define THREE_LEVEL_CACHE
 
 void del(){
   for(auto a : data_pool) delete a;
@@ -41,7 +41,7 @@ int main() {
   core_inst = get_l1_core_interface(l1i);
   auto l2 = cache_gen_l2_inc<L2IW, L2WN, data_type, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, void, false>(1, "l2")[0];
   auto llc = cache_gen_llc_inc<L3IW, L3WN, data_type, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, void, false>(1, "llc")[0];
-  mem = new SimpleMemoryModel<data_type,void,true>("mem");
+  mem = new SimpleMemoryModel<data_type,void,false>("mem");
   for(int i=0; i<NCore; i++){
     l1i[i]->outer->connect(l2->inner, l2->inner->connect(l1i[i]->outer, true));
     l1d[i]->outer->connect(l2->inner, l2->inner->connect(l1d[i]->outer));
@@ -65,13 +65,20 @@ int main() {
   lock_log_fp = fopen("dtrace", "w");
   close_log();
 
-  PlanB(false, false);
+  PlanB(true, true);
 
   std::cout << "L1 IW:" << L1IW << " , L1 WN:" << L1WN << std::endl; 
   std::cout << "L2 IW:" << L2IW << " , L2 WN:" << L2WN << std::endl;
 #ifdef THREE_LEVEL_CACHE 
   std::cout << "L3 IW:" << L3IW << " , L3 WN:" << L3WN << std::endl;
 #endif 
+
+#ifdef USE_DATA
+  std::cout << "using data" << std::endl;
+#else
+  std::cout << "only meta" << std::endl;
+#endif 
+
 
   del();
   for(auto l : l1d){

@@ -12,7 +12,6 @@
 
 static const uint64_t addr_mask = 0x0ffffffffffc0ull;
 
-template<typename DT>
 class cache_xact 
 {
 public:
@@ -20,7 +19,7 @@ public:
   bool ic;
   int core;
   uint64_t addr;
-  DT data;
+  Data64B data;
 };
 
 template <int NC, typename DT>
@@ -28,17 +27,23 @@ class DTContainer
 {
 protected:
   uint64_t addr;
-  std::queue<DT> data;
+  std::queue<DT*> data;
   std::mutex mtx;
 public:
   void init(uint64_t waddr) { addr = waddr;}
   void write(DT* wdata){
-    DT tdata;
-    tdata.copy(wdata);
-    mtx.lock();
-    data.push(tdata);
-    if(data.size() > NC) data.pop();
-    mtx.unlock();
+    if constexpr (!C_VOID(DT)){
+      DT* tdata = new DT();
+      tdata->copy(wdata);
+      mtx.lock();
+      data.push(tdata);
+      if(data.size() > NC) {
+        auto d = data.front();
+        delete d;
+        data.pop();
+      }
+      mtx.unlock();
+    }
   }
 };
 

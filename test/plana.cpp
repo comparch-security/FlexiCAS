@@ -3,14 +3,11 @@
 static void init(bool EnIC){
   addr_pool.resize(AddrN);
   iflag.resize(AddrN);
-  data_pool.resize(AddrN);
   for(int i=0; i<AddrN; i++){
     auto addr = hasher(gi++) & addr_mask;
     while(addr_map.count(addr)) addr = hasher(gi++) & addr_mask;
     addr_pool[i] = addr;
     addr_map[addr] = i;
-    data_pool[i] = new DTContainer<NCore, data_type>();
-    data_pool[i]->init(addr);
     if(EnIC)
       iflag[i] = (0 == hasher(gi++) & 0x111); // 12.5% is instruction
     else
@@ -25,7 +22,6 @@ static void remap_pool(bool EnIC){
     auto addr = hasher(gi++) & addr_mask;
     while(addr_map.count(addr)) addr = hasher(gi++) & addr_mask;
     addr_pool[i] = addr;
-    data_pool[i]->init(addr);
     if(EnIC)
       iflag[i] = (0 == hasher(gi++) & 0x111); // 12.5% is instruction
     else
@@ -35,15 +31,13 @@ static void remap_pool(bool EnIC){
 
 static void xact_queue_add(int core, std::atomic<int>& counter) {
   int num = 0;
-  cache_xact<data_type> act;
+  cache_xact act;
   act.core = core;
   CMHasher thasher(999+core);
   uint32_t tgi = cm_get_random_uint32(); 
   while(num < (AddrN/NCore)){
     unsigned int index = thasher(tgi++) % AddrN;
     uint64_t addr = addr_pool[index];
-    auto d = data_pool[index];
-    data_type dt;
     int ran_num = thasher(tgi++);
     bool rw = (0 == (ran_num & 0x11)); // 25% write
     bool flush = (0 == (ran_num & 0x17)) ? 1 : 0; // 25% of write is flush
@@ -57,11 +51,13 @@ static void xact_queue_add(int core, std::atomic<int>& counter) {
       if(is_inst) flush = 0; // read instruction
       if(flush)   rw = 0; 
     }
-    if (!C_VOID(data_type) && rw){
-      dt.write(0, num, 0xffffffffffffffffull);
-      d->write(&dt);
-      act.data.copy(&dt);
-    }
+#ifdef USE_DATA
+      if(rw){
+        data_type dt;
+        dt.write(0, num, 0xffffffffffffffffull);
+        act.data.copy(&dt);
+      }
+#endif
     act.addr = addr;
     act.ic = ic;
     act.op_t = flush ? CACHE_OP_FLUSH : (rw ? CACHE_OP_WRITE : CACHE_OP_READ);
@@ -74,7 +70,7 @@ static void xact_queue_add(int core, std::atomic<int>& counter) {
 static void cache_server(int core, std::atomic<int>& counter){
   database.insert_id(get_thread_id);
   int num = 0;
-  cache_xact<data_type> xact;
+  cache_xact xact;
   while(num < (AddrN/NCore)){
     bool busy = !(xact_queue[core].empty());
     if(busy){
@@ -91,7 +87,11 @@ static void cache_server(int core, std::atomic<int>& counter){
           core_data[core]->read(xact.addr, nullptr);
         break;
       case CACHE_OP_WRITE:
-        core_data[core]->write(xact.addr, &(xact.data), nullptr);
+#ifdef USE_DATA
+        core_data[core]->write(xact.addr, &xact.data, nullptr);
+#else
+        core_data[core]->write(xact.addr, nullptr, nullptr);
+#endif
         break;
       case CACHE_OP_FLUSH:
         core_data[core]->flush(xact.addr, nullptr);
@@ -106,7 +106,7 @@ static void cache_server(int core, std::atomic<int>& counter){
 
 
 void PlanA(bool flush_cache, bool remap){
-  init(false);
+  init(true);
 
   int i = 0;
   double all_time = 0;
