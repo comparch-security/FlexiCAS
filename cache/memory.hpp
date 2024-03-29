@@ -61,10 +61,8 @@ public:
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       auto base = get_base_address(ppn, false);
-      std::unique_lock lk(*mutexs[ppn]);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(base + offset);
       data_inner->write(mem_addr);
-      lk.unlock();
     }
     if(meta_inner) meta_inner->to_modified(-1);
     hook_read(addr, 0, 0, 0, true, meta_inner, data_inner, delay);
@@ -75,10 +73,8 @@ public:
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       auto base = get_base_address(ppn, true);
-      std::unique_lock lk(*mutexs[ppn]);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(base + offset);
       for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
-      lk.unlock();
     }
     hook_write(addr, 0, 0, 0, true, true, meta_inner, data_inner, delay);
   }

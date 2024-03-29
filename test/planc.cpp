@@ -15,7 +15,7 @@ static void init(bool EnIC){
     addr_pool[i] = addr;
     addr_map[addr] = i;
     if(EnIC)
-      iflag[i] = (0 == hasher(gi++) & 0x111); // 12.5% is instruction
+      iflag[i] = (0 == (hasher(gi++) & 0x111)); // 12.5% is instruction
     else
       iflag[i] = false;
   }
@@ -29,7 +29,7 @@ static void remap_pool(bool EnIC){
     while(addr_map.count(addr)) addr = hasher(gi++) & addr_mask;
     addr_pool[i] = addr;
     if(EnIC)
-      iflag[i] = (0 == hasher(gi++) & 0x111); // 12.5% is instruction
+      iflag[i] = (0 == (hasher(gi++) & 0x111)); // 12.5% is instruction
     else
       iflag[i] = false;
   }
@@ -56,16 +56,13 @@ static void xact_queue_add(std::atomic<int>& counter) {
         // flush = 1;
       } else{
         ic = is_inst ;
-        if(is_inst) flush = 0; // read instruction
         if(flush)   rw = 0; 
       }
-#ifdef USE_DATA
-      if(rw){
+      if (!C_VOID(data_type) && rw){
         data_type dt;
         dt.write(0, i, 0xffffffffffffffffull);
         act.data.copy(&dt);
       }
-#endif
       act.addr = addr;
       act.ic = ic;
       act.op_t = flush ? CACHE_OP_FLUSH : (rw ? CACHE_OP_WRITE : CACHE_OP_READ);
@@ -105,13 +102,13 @@ static void cache_server(int core, std::atomic<int>& counter){
         core_data[core]->read(xact.addr, nullptr);
       break;
     case CACHE_OP_WRITE:
-#ifdef USE_DATA
-        core_data[core]->write(xact.addr, &xact.data, nullptr);
-#else
-        core_data[core]->write(xact.addr, nullptr, nullptr);
-#endif
+      core_data[core]->write(xact.addr, &(xact.data), nullptr);
+      break;
     case CACHE_OP_FLUSH:
-      core_data[core]->flush(xact.addr, nullptr);
+      if(xact.ic)
+        core_inst[core]->flush(xact.addr, nullptr);
+      else
+        core_data[core]->flush(xact.addr, nullptr);
       break;
     default:
       printf("op_t is %d\n", xact.op_t);

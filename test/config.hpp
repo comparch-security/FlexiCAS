@@ -51,7 +51,7 @@ extern std::vector<std::unique_ptr<std::condition_variable>> xact_non_empty_noti
 extern std::vector<std::deque<cache_xact>> xact_queue;
 extern std::vector<uint64_t>    addr_pool; 
 extern std::unordered_map<uint64_t, int> addr_map;
-extern std::vector<DTContainer<NCore,data_type>* >  data_pool;   
+// extern std::vector<DTContainer<NCore,data_type>* >  data_pool;   
 extern std::vector<bool>        iflag;       // belong to instruction
 extern int64_t gi;
 extern CMHasher hasher;

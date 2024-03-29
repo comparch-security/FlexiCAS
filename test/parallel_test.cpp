@@ -15,7 +15,6 @@ std::vector<std::unique_ptr<std::condition_variable>> xact_non_empty_notify_arra
 std::vector<std::deque<cache_xact>> xact_queue(NCore);
 std::vector<uint64_t>    addr_pool; 
 std::unordered_map<uint64_t, int> addr_map;
-std::vector<DTContainer<NCore,data_type>* >  data_pool;   
 std::vector<bool>        iflag;       // belong to instruction
 int64_t gi;
 CMHasher hasher(1203);
@@ -26,11 +25,8 @@ extern void PlanA(bool flush_cache, bool remap);
 extern void PlanB(bool flush_cache, bool remap);
 extern void PlanC(bool flush_cache, bool remap);
 
-// #define THREE_LEVEL_CACHE
+#define THREE_LEVEL_CACHE
 
-void del(){
-  for(auto a : data_pool) delete a;
-}
 
 int main() {
   // isLLC, uncache, EnMon
@@ -71,16 +67,14 @@ int main() {
   std::cout << "L2 IW:" << L2IW << " , L2 WN:" << L2WN << std::endl;
 #ifdef THREE_LEVEL_CACHE 
   std::cout << "L3 IW:" << L3IW << " , L3 WN:" << L3WN << std::endl;
-#endif 
+#endif
 
 #ifdef USE_DATA
   std::cout << "using data" << std::endl;
 #else
   std::cout << "only meta" << std::endl;
-#endif 
+#endif
 
-
-  del();
   for(auto l : l1d){
     delete l;
   }

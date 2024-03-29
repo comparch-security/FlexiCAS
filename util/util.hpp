@@ -68,20 +68,31 @@ public:
     for(auto m : mtx) delete m;
   }
 // protected:
-//   std::mutex mtx;  
 //   std::vector<info> array;
+//   std::vector<uint32_t> count; // record how many higher-level inners each inner has
+//   uint32_t idx = 0;
+//   uint32_t sum = 0;
 // public:
-//   void add(int id, uint64_t addr, addr_info loc){
-//     array[id] = info{true, loc};
+//   void add(int32_t inner_inner_id, int32_t inner_id, uint64_t addr, addr_info loc){
+//     inner_inner_id = (inner_inner_id == -1) ? 0 : inner_inner_id;
+//     lock_log_write_limit("time : %lld, thread : %d, addr: 0x%-7lx, add inner_inner_id: %d, inner_id: %d\n", get_time(), database.get_id(get_thread_id), addr, inner_inner_id, inner_id);
+//     array[count[inner_id]+inner_inner_id] = info{true, loc};
 //   }
-//   void erase(int id, uint64_t addr){
-//     array[id].valid = false;
+//   void erase(int32_t inner_inner_id, int32_t inner_id, uint64_t addr){
+//     inner_inner_id = (inner_inner_id == -1) ? 0 : inner_inner_id;
+//     lock_log_write_limit("time : %lld, thread : %d,  addr: 0x%-7lx, erase inner_inner_id: %d, inner_id: %d\n", get_time(), database.get_id(get_thread_id),  addr, inner_inner_id, inner_id);
+//     array[count[inner_id]+inner_inner_id].valid = false;
 //   }
-//   std::pair<bool, addr_info> query(int id, uint64_t addr){
-//     return std::make_pair(array[id].valid, array[id].loc);
+//   std::pair<bool, addr_info> query(int32_t inner_inner_id, int32_t inner_id, uint64_t addr){
+//     inner_inner_id = (inner_inner_id == -1) ? 0 : inner_inner_id;
+//     lock_log_write_limit("time : %lld, thread : %d, addr: 0x%-7lx, query inner_inner_id: %d, inner_id: %d\n", get_time(), database.get_id(get_thread_id), addr, inner_inner_id, inner_id);
+//     return std::make_pair(array[count[inner_id]+inner_inner_id].valid, array[count[inner_id]+inner_inner_id].loc);
 //   }
-//   void add_size(){
-//     array.resize(array.size()+1);
+//   void add_size(uint32_t size){
+//     array.resize(array.size()+ ((size == 0) ? 1 : size));
+//     count.resize(count.size()+1);
+//     count[idx++] = sum;
+//     sum += (size == 0 ? 1 : size); 
 //   }
 
 };

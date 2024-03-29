@@ -21,7 +21,7 @@ static void init(bool EnIC){
     addr_pool[i] = addr;
     addr_map[addr] = i;
     if(EnIC)
-      iflag[i] = (0 == hasher(gi++) & 0x111); // 12.5% is instruction
+      iflag[i] = (0 == (hasher(gi++) & 0x111)); // 12.5% is instruction
     else
       iflag[i] = false;
   }
@@ -35,7 +35,7 @@ static void remap_pool(bool EnIC){
     while(addr_map.count(addr)) addr = hasher(gi++) & addr_mask;
     addr_pool[i] = addr;
     if(EnIC)
-      iflag[i] = (0 == hasher(gi++) & 0x111); // 12.5% is instruction
+      iflag[i] = (0 == (hasher(gi++) & 0x111)); // 12.5% is instruction
     else
       iflag[i] = false;
   }
@@ -63,18 +63,16 @@ static void xact_queue_add(int core, std::atomic<int>& counter) {
       bool ic;
       if(is_inst && rw){
         ic = false;
-        // flush = 1;
       } else{
         ic = is_inst ;
-        if(is_inst) flush = 0; // read instruction
         if(flush)   rw = 0; 
       }
 #ifdef USE_DATA
-      if(rw){
-        data_type dt;
-        dt.write(0, num, 0xffffffffffffffffull);
-        act.data.copy(&dt);
-      }
+    if (rw){
+      data_type dt;
+      dt.write(0, num, 0xffffffffffffffffull);
+      act.data.copy(&dt);
+    }
 #endif
       act.addr = addr;
       act.ic = ic;
@@ -113,12 +111,16 @@ static void cache_server(int core, std::atomic<int>& counter){
         break;
       case CACHE_OP_WRITE:
 #ifdef USE_DATA
-        core_data[core]->write(xact.addr, &xact.data, nullptr);
+        core_data[core]->write(xact.addr, &(xact.data), nullptr);
 #else
         core_data[core]->write(xact.addr, nullptr, nullptr);
 #endif
+        break;
       case CACHE_OP_FLUSH:
-        core_data[core]->flush(xact.addr, nullptr);
+        if(xact.ic)
+          core_inst[core]->flush(xact.addr, nullptr);
+        else
+          core_data[core]->flush(xact.addr, nullptr);
         break;
       default:
         assert(0 == "unknown op type");
@@ -166,7 +168,10 @@ void PlanB(bool flush_cache, bool remap){
     }
     i++;
     all_time += durationB.count();
-    if(flush_cache) core_data[0]->flush_cache(nullptr);
+    if(flush_cache) {
+      for(auto c : core_inst) c->flush_cache(nullptr);
+      core_data[0]->flush_cache(nullptr);
+    }
     if(remap) remap_pool(true);
   }
   std::cout << "average time : " << (all_time / REPE) << "s" << std::endl;
