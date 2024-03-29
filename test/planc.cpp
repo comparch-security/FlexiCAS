@@ -59,9 +59,11 @@ static void xact_queue_add(std::atomic<int>& counter) {
         if(flush)   rw = 0; 
       }
       if (!C_VOID(data_type) && rw){
+#ifdef USE_DATA
         data_type dt;
         dt.write(0, i, 0xffffffffffffffffull);
         act.data.copy(&dt);
+#endif
       }
       act.addr = addr;
       act.ic = ic;

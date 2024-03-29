@@ -73,7 +73,7 @@ public:
   coh_cmd_t cmd_for_probe_writeback(int32_t id)   const { return {id, probe_msg,   writeback_act  }; }
   coh_cmd_t cmd_for_probe_release(int32_t id)     const { return {id, probe_msg,   evict_act      }; }
   coh_cmd_t cmd_for_probe_downgrade(int32_t id)   const { return {id, probe_msg,   downgrade_act  }; }
-  coh_cmd_t cmd_for_acuqire_ack(int32_t id)       const { return {id, 0,           0              }; }
+  coh_cmd_t cmd_for_acquire_ack(int32_t id)       const { return {id, 0,           0              }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
 
@@ -93,6 +93,8 @@ public:
 
   // probe
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const = 0;
+
+  virtual bool acquire_unset_lock(coh_cmd_t cmd) const = 0;
 
   std::pair<bool, coh_cmd_t> probe_need_probe(coh_cmd_t cmd, const CMMetadataBase *meta, int32_t target_inner_id) const {
 #ifndef NDEBUG
@@ -181,6 +183,8 @@ public:
     // here we suppose inner meta is clean and inner cache is asking outer cache if it need to be released
     return std::make_pair(false, cmd_for_null());
   }
+
+  virtual int32_t get_ack_id(int32_t inner_id, int32_t ack_id) const = 0;
 
 };
 

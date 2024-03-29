@@ -14,7 +14,7 @@
 #include <thread>
 
 
-#define NCore 4
+#define NCore 1
 #define AddrN 128000
 
 #define NCoreM 4

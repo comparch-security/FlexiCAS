@@ -33,22 +33,25 @@ protected:
   InnerCohPortBase *inner; // inner port for probe when sync
   CohMasterBase *coh;      // hook up with the coherence hub
   int32_t coh_id;          // the identifier used in locating this cache client by the coherence master
+  int32_t ack_id;          // ack id
   CohPolicyBase *policy;   // the coherence policy
 
 public:
   OuterCohPortBase(CohPolicyBase *policy) : policy(policy) {}
   virtual ~OuterCohPortBase() {}
 
-  void connect(CohMasterBase *h, std::pair<int32_t, CohPolicyBase *> info) { coh = h; coh_id = info.first; policy->connect(info.second); }
+  void connect(CohMasterBase *h, std::tuple<int32_t, int32_t, CohPolicyBase *> info) { coh = h; ack_id = std::get<0>(info); coh_id = std::get<1>(info); policy->connect(std::get<2>(info)); }
 
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai, uint32_t s, uint32_t w, int32_t inner_id = 0) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai = 0, uint32_t s = 0) = 0;
-  virtual void acquire_ack_req(uint64_t addr, uint64_t* delay) {}
+  virtual void acquire_ack_req(uint64_t addr, uint64_t* delay, int32_t inner_inner_id = 0) {}
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); } // may not implement if not supported
 
   bool is_uncached() const { return coh_id == -1; }
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) = 0;
+
   friend CoherentCacheBase; // deferred assignment for cache
+  friend InnerCohPortBase;
 };
 
 /////////////////////////////////
@@ -62,25 +65,28 @@ protected:
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
   CohPolicyBase *policy; // the coherence policy
   InnerAcquireRecord record; // record the address info being acquired
+  uint32_t ack_num;
 public:
-  InnerCohPortBase(CohPolicyBase *policy) : policy(policy) {}
+  InnerCohPortBase(CohPolicyBase *policy) : policy(policy), ack_num(0) {}
   virtual ~InnerCohPortBase() { delete policy; }
 
-  std::pair<uint32_t, CohPolicyBase *> connect(CohClientBase *c, bool uncached = false) {
+  std::tuple<int32_t, int32_t, CohPolicyBase *> connect(CohClientBase *c, bool uncached = false) {
+    record.add_size(c->inner->inner_size(), uncached);
     if(uncached) {
-      return std::make_pair(-1, policy);
+      return std::make_tuple(ack_num++, -1, policy);
     } else {
-      record.add_size();
       coh.push_back(c);
-      return std::make_pair(coh.size()-1, policy);
+      return std::make_tuple(ack_num++, coh.size()-1, policy);
     }
   }
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay, int32_t inner_inner_id = -1) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); } // may not implement if not supported
-  virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t, uint64_t *delay) {}
+  virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t cmd, uint64_t *delay, int32_t inner_inner_id) {}
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
+
+  uint32_t inner_size() { return ack_num;}
   
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -92,14 +98,14 @@ public:
   OuterCohPortUncached(CohPolicyBase *policy) : OuterCohPortBase(policy) {}
   virtual ~OuterCohPortUncached() {}
 
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay, uint32_t ai, uint32_t s, uint32_t w) {
+  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay, uint32_t ai, uint32_t s, uint32_t w, int32_t inner_id = -1) {
     outer_cmd.id = coh_id;
     auto cmtx = this->cache->get_cacheline_mutex(ai, s, w);
     UNSET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d , w:%d \
     mutex: %p, acquire to outer cache, unset cacheline lock\n", get_time(), database.get_id(get_thread_id), addr, \
     this->cache->get_name().c_str(), ai, s, w, cmtx);
 
-    coh->acquire_resp(addr, data, meta->get_outer_meta(), outer_cmd, delay);
+    coh->acquire_resp(addr, data, meta->get_outer_meta(), outer_cmd, delay, policy->get_ack_id(inner_id, ack_id));
 
     SET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d , w:%d \
     mutex: %p, acquire to outer cache end, set cacheline lock\n", get_time(), database.get_id(get_thread_id), addr, \
@@ -120,8 +126,8 @@ public:
     coh->query_loc_resp(addr, locs);
   }
 
-  virtual void acquire_ack_req(uint64_t addr, uint64_t* delay){
-    if(!is_uncached()) coh->acquire_ack_resp(addr, policy->cmd_for_acuqire_ack(coh_id), delay);
+  virtual void acquire_ack_req(uint64_t addr, uint64_t* delay, int32_t inner_inner_id = 0){
+    if(!is_uncached()) coh->acquire_ack_resp(addr, policy->cmd_for_acquire_ack(coh_id), delay, policy->get_ack_id(inner_inner_id, ack_id));
   }
 };
 
@@ -204,29 +210,30 @@ public:
   InnerCohPortUncached(CohPolicyBase *policy) : InnerCohPortBase(policy) {}
   virtual ~InnerCohPortUncached() {}
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line(addr, cmd, delay);
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, int32_t inner_inner_id = 0) {
+    auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line(addr, cmd, delay, inner_inner_id);
     if(meta->is_valid() && meta->addr(s) == addr){
       policy->meta_after_grant(cmd, meta, meta_inner);
       if (data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
       cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     }
 
-    outer->acquire_ack_req(addr, delay);
+    outer->acquire_ack_req(addr, delay, inner_inner_id);
 
-    if(cmd.id == -1) {// uncached
+    auto unset = policy->acquire_unset_lock(cmd);
+    if(unset){
       UNSET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      acquire resp ack(unset cacheline lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+      unset cacheline lock\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), cmtx);
       std::unique_lock lk(*mtx, std::defer_lock);
       SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      acquire resp ack(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+      set status lock\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
       (*status)[s] = (*status)[s] & (~0x01);
       UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      acquire resp ack(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+      unset status lock\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
       cv->notify_all();
+    }else{
+      record.add(inner_inner_id, cmd.id, addr, addr_info{ai, s, w, mtx, cmtx, cv, status});
     }
-    else
-      record.add(cmd.id, addr, addr_info{ai, s, w, mtx, cmtx, cv, status});
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -241,9 +248,10 @@ public:
     locs->push_front(cache->query_loc(addr));
   }
 
-  virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t cmd, uint64_t* delay){
-    auto info = record.query(cmd.id, addr);
+  virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t cmd, uint64_t* delay, int32_t inner_inner_id){
+    auto info = record.query(inner_inner_id, cmd.id, addr);
     if(info.first){
+
       auto mtx = info.second.mtx;
       auto status = info.second.status;
       auto s = info.second.s;
@@ -257,7 +265,7 @@ public:
       SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
       acquire resp ack(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
       (*status)[s] = (*status)[s] & (~0x01);
-      record.erase(cmd.id, addr);
+      record.erase(inner_inner_id, cmd.id, addr);
       UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
       acquire resp ack(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
       cv->notify_all();
@@ -319,7 +327,7 @@ protected:
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool, std::mutex*>
-  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
+  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay, int32_t inner_id = 0) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
@@ -344,7 +352,7 @@ protected:
         if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
       }
       auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
-      if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay, ai, s, w); hit = false; } // promote permission if needed
+      if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay, ai, s, w, inner_id); hit = false; } // promote permission if needed
       else if(promote_local) {
         meta->to_modified(-1);
       }
@@ -358,7 +366,7 @@ protected:
       mutex: %p, access line,set cache line mtx(not hit)\n", get_time(), database.get_id(get_thread_id), addr, \
       this->cache->get_name().c_str(), ai, s, w, cmtx);
       if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
-      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay, ai, s, w); // fetch the missing block
+      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay, ai, s, w, inner_id); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
   }
@@ -569,7 +577,7 @@ public:
 private:
   // hide and prohibit calling these functions
   virtual uint32_t connect(CohClientBase *c) { return 0;}
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {}
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, int32_t inner_inner_id = 0) {}
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {}
 };
 
@@ -639,8 +647,8 @@ public:
   SliceDispatcher(const std::string &n, int slice) : CohMasterBase(nullptr), name(n), hasher(slice) {}
   virtual ~SliceDispatcher() {}
   void connect(CohMasterBase *c) { cohm.push_back(c); }
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
-    cohm[hasher(addr)]->acquire_resp(addr, data_inner, meta_inner, cmd, delay);
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, int32_t inner_inner_id = 0){
+    cohm[hasher(addr)]->acquire_resp(addr, data_inner, meta_inner, cmd, delay, inner_inner_id);
   }
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
     cohm[hasher(addr)]->writeback_resp(addr, data, meta_inner, cmd, delay);

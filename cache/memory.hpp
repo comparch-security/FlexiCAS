@@ -17,7 +17,6 @@ protected:
   const uint32_t id;                    // a unique id to identify this memory
   const std::string name;
   std::unordered_map<uint64_t, char *> pages;
-  std::unordered_map<uint64_t, std::mutex* > mutexs;
   DLY *timer;      // delay estimator
   std::mutex mtx;
 
@@ -27,7 +26,6 @@ protected:
     assert(page != MAP_FAILED);
 #endif
     pages[ppn] = page;
-    mutexs[ppn] = new std::mutex();
   }
 
 
@@ -53,10 +51,9 @@ public:
 
   virtual ~SimpleMemoryModel() {
     delete CacheMonitorSupport::monitors;
-    for(auto x : mutexs) delete x.second;
   }
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay, int32_t inner_inner_id = 0) {
     if constexpr (!C_VOID(DT)) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
@@ -92,7 +89,7 @@ public:
     if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
-  virtual void acquire_ack_resp(uint64_t addr, uint64_t* delay) {}
+  virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t cmd, uint64_t *delay, int32_t inner_inner_id) {}
 
 private:
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {}

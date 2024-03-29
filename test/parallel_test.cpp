@@ -25,7 +25,7 @@ extern void PlanA(bool flush_cache, bool remap);
 extern void PlanB(bool flush_cache, bool remap);
 extern void PlanC(bool flush_cache, bool remap);
 
-#define THREE_LEVEL_CACHE
+// #define THREE_LEVEL_CACHE
 
 
 int main() {
@@ -61,7 +61,7 @@ int main() {
   lock_log_fp = fopen("dtrace", "w");
   close_log();
 
-  PlanB(true, true);
+  PlanB(false, false);
 
   std::cout << "L1 IW:" << L1IW << " , L1 WN:" << L1WN << std::endl; 
   std::cout << "L2 IW:" << L2IW << " , L2 WN:" << L2WN << std::endl;

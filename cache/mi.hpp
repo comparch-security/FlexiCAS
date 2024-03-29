@@ -87,6 +87,14 @@ public:
       return std::make_tuple(false, false, cmd_for_null());
   }
 
+  virtual bool acquire_unset_lock(coh_cmd_t cmd) const{
+    return cmd.id == -1;
+  }
+
+  virtual int32_t get_ack_id(int32_t inner_id, int32_t ack_id) const {
+    return isL1 ? ack_id : inner_id;
+  }
+
 };
 
 #endif
