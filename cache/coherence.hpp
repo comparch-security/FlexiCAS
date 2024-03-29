@@ -212,8 +212,19 @@ public:
       cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     }
 
-    if(cmd.id == -1) // uncached
-      outer->acquire_ack_req(addr, delay);
+    outer->acquire_ack_req(addr, delay);
+
+    if(cmd.id == -1) {// uncached
+      UNSET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+      acquire resp ack(unset cacheline lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+      std::unique_lock lk(*mtx, std::defer_lock);
+      SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+      acquire resp ack(set status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+      (*status)[s] = (*status)[s] & (~0x01);
+      UNSET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
+      acquire resp ack(unset status lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+      cv->notify_all();
+    }
     else
       record.add(cmd.id, addr, addr_info{ai, s, w, mtx, cmtx, cv, status});
   }
@@ -233,7 +244,6 @@ public:
   virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t cmd, uint64_t* delay){
     auto info = record.query(cmd.id, addr);
     if(info.first){
-      outer->acquire_ack_req(addr, delay);
       auto mtx = info.second.mtx;
       auto status = info.second.status;
       auto s = info.second.s;
@@ -241,7 +251,7 @@ public:
       auto cmtx = info.second.cmtx;
 
       UNSET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
-      acquire resp ack(unset cacheline lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), mtx);
+      acquire resp ack(unset cacheline lock)\n", get_time(), database.get_id(get_thread_id), addr, this->cache->get_name().c_str(), cmtx);
 
       std::unique_lock lk(*mtx, std::defer_lock);
       SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \
