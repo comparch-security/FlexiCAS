@@ -36,12 +36,13 @@ class ReplaceFIFO : public ReplaceFuncBase
 {
 protected:
   std::vector<std::list<uint32_t> > used_map;
-  std::vector<std::unordered_map<uint32_t, bool> > using_map; // Write in the way that the thread needs to use during runtime
+  std::vector<std::vector<bool> > using_map; // Write in the way that the thread needs to use during runtime
   std::vector<std::unordered_set<uint32_t> > free_map; 
 
 public:
   ReplaceFIFO() : ReplaceFuncBase(1ul<<IW), used_map(1ul<<IW), using_map(1ul<<IW), free_map(1ul << IW) {
     for (auto &s: free_map) for(uint32_t i=0; i<NW; i++) s.insert(i);
+    for (auto &s:using_map) for(uint32_t i=0; i<NW; i++) s.emplace_back(false);
     if constexpr (!EF)
       for (auto &s: used_map) for(uint32_t i=0; i<NW; i++) s.push_back(i);
   }
@@ -73,10 +74,9 @@ public:
     std::unique_lock lk(*mtxs[s]);
 #ifndef NDEBUG 
     assert(!free_map[s].count(w)); 
-    assert(using_map[s].count(w));
 #endif
-    if(using_map[s].count(w)){
-      using_map[s].erase(w);
+    if(using_map[s][w]){
+      using_map[s][w] = false;
       used_map[s].push_back(w);
     }
     lk.unlock();
@@ -109,8 +109,8 @@ public:
 #ifndef NDEBUG 
       assert(!free_map[s].count(w)); 
 #endif
-      if(using_map[s].count(w)){
-        using_map[s].erase(w);
+      if(using_map[s][w]){
+        using_map[s][w] = false;
         used_map[s].push_back(w);
       }else{
 #ifndef NDEBUG 
