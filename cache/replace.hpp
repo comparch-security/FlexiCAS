@@ -1,6 +1,8 @@
 #ifndef CM_REPLACE_HPP_
 #define CM_REPLACE_HPP_
 
+// #define SET
+
 #include <list>
 #include <vector>
 #include <set>
@@ -28,6 +30,8 @@ public:
   }
 };
 
+
+#ifdef SET
 /////////////////////////////////
 // FIFO replacement
 // IW: index width, NW: number of ways, EF: empty first, DUO: demand update only (do not update state for release)
@@ -84,6 +88,12 @@ public:
   virtual void invalid(uint32_t s, uint32_t w){
     // if constexpr (EF) used_map[s].remove(w);
     // free_map[s].insert(w);
+    std::unique_lock lk(*mtxs[s]);
+    if(!using_map[s][w]){
+      used_map[s].remove(w);
+      free_map[s].insert(w);
+    }
+    lk.unlock();
   }
 };
 
@@ -129,6 +139,91 @@ public:
     }
   }
 };
+#else
+/////////////////////////////////
+// FIFO replacement
+// IW: index width, NW: number of ways, EF: empty first, DUO: demand update only (do not update state for release)
+template<int IW, int NW, bool EF = true, bool DUO = true>
+class ReplaceFIFO : public ReplaceFuncBase
+{
+protected:
+  std::vector<std::vector<bool> > using_map; // Write in the way that the thread needs to use during runtime
+  std::vector<std::vector<uint32_t> > count_map; 
+public:
+  ReplaceFIFO() : ReplaceFuncBase(1ul<<IW), using_map(1ul<<IW), count_map(1ul << IW){
+    for (auto &s: count_map) for(uint32_t i=0; i<NW; i++) s.emplace_back(0);
+    for (auto &s:using_map) for(uint32_t i=0; i<NW; i++) s.emplace_back(false);
+  }
+  virtual ~ReplaceFIFO() {}
+  virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0){
+    std::unique_lock lk(*mtxs[s]);
+    uint32_t min_index = NW;
+    int max_count = -1;
+    for(int i = 0; i < NW; i++){
+      if(!using_map[s][i]){
+        if(count_map[s][i] == 0){
+          *w = i;
+          break;
+        }else if((int)count_map[s][i] > max_count){
+          *w = i;
+          max_count = count_map[s][i];
+        }
+      }
+    }
+    using_map[s][*w] = true;
+    lk.unlock();
+    return count_map[s].size();
+  }
+
+  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
+    std::unique_lock lk(*mtxs[s]);
+    if(using_map[s][w]){
+      using_map[s][w] = false;
+      count_map[s][w] = 1;
+      for(int i = 0; i < NW; i++){
+        if(count_map[s][i] != 0 && i != w && using_map[s][i] == false) count_map[s][i] += 1;
+      }
+    }
+    lk.unlock();
+  }
+  virtual void invalid(uint32_t s, uint32_t w){
+    // if constexpr (EF) used_map[s].remove(w);
+    // free_map[s].insert(w);
+    std::unique_lock lk(*mtxs[s]);
+    if(!using_map[s][w]){
+      count_map[s][w] = 0;
+    }
+    lk.unlock();
+  }
+};
+
+/////////////////////////////////
+// LRU replacement
+// IW: index width, NW: number of ways, EF: empty first
+template<int IW, int NW, bool EF = true, bool DUO = true>
+class ReplaceLRU : public ReplaceFIFO<IW, NW, EF>
+{
+protected:
+  using ReplaceFIFO<IW,NW>::count_map;
+  using ReplaceFIFO<IW,NW>::using_map;
+  using ReplaceFIFO<IW,NW>::mtxs;
+
+public:
+  ReplaceLRU() : ReplaceFIFO<IW,NW,EF>() {}
+  ~ReplaceLRU() {}
+
+  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
+    std::unique_lock lk(*mtxs[s]);
+    if(using_map[s][w]) using_map[s][w] = false;
+    count_map[s][w] = 1;
+    for(int i = 0; i < NW; i++){
+      if(count_map[s][i] != 0 && i != w && using_map[s][i] == false) count_map[s][i] += 1;
+    }
+    lk.unlock();
+  }
+};
+
+#endif
 
 
 /////////////////////////////////
