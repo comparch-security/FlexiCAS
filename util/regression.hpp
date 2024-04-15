@@ -121,4 +121,8 @@ public:
   }
 };
 
+inline void delete_caches(std::vector<CoherentCacheBase *> &caches) {
+  for(auto c : caches) delete c;
+}
+
 #endif

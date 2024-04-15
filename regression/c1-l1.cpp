@@ -17,5 +17,9 @@ int main() {
   mem->attach_monitor(&tracer);
 
   RegressionGen<1, false, false, AddrN, 0, Data64B> tgen;
-  return tgen.run(TestN, core, core);
+  auto rv = tgen.run(TestN, core, core);
+
+  delete_caches(cache);
+  delete mem;
+  return rv;
 }

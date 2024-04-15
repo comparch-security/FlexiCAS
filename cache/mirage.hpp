@@ -70,8 +70,6 @@ template<typename MT, typename CT>
 class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
 {
   typedef MSIPolicy<MT, false, true> PolicyT;
-protected:
-  using PolicyT::outer;
 public:
   MirageMSIPolicy() : MSIPolicy<MT, false, true>() {}
   virtual ~MirageMSIPolicy() {}
@@ -167,7 +165,7 @@ public:
       if(free_num >= max_free)
         candidates[p++] = std::make_tuple(i, m_s, m_w);
     }
-    std::tie(*ai, *s, *w) = candidates[cm_get_random_uint32() % p];
+    std::tie(*ai, *s, *w) = candidates[(*CacheT::loc_random)() % p];
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
@@ -237,7 +235,7 @@ template<typename MT, typename CT>
 class MirageInnerPortUncached : public InnerCohPortUncached
 {
 public:
-  MirageInnerPortUncached(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
+  MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached(policy) {}
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
   replace_line(uint64_t addr, uint64_t *delay) {

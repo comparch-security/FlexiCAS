@@ -7,7 +7,6 @@
 template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
 {
-  typedef MSIPolicy<MT, false, isLLC> PolicyT;
 protected:
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
@@ -83,7 +82,6 @@ public:
 template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase) && EnDir
 class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
 {
-  typedef ExclusiveMSIPolicy<MT, true, isLLC> PolicyT;
 protected:
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
@@ -136,7 +134,7 @@ public:
       if(0 == genre) CacheSkewedT::replace(addr, ai, s, w, 0);
       else {
         if constexpr (P==1) *ai = 0;
-        else                *ai = (cm_get_random_uint32() % P);
+        else                *ai = ((*CacheSkewedT::loc_random)() % P);
         *s = CacheSkewedT::indexer.index(addr, *ai);
         ext_replacer[*ai].replace(*s, w);
         *w += NW;
@@ -193,7 +191,7 @@ class ExclusiveInnerCohPortUncachedBroadcast : public InnerCohPortUncached
 protected:
   using InnerCohPortBase::cache;
 public:
-  ExclusiveInnerCohPortUncachedBroadcast(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
+  ExclusiveInnerCohPortUncachedBroadcast(policy_ptr policy) : InnerCohPortUncached(policy) {}
   virtual ~ExclusiveInnerCohPortUncachedBroadcast() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -358,7 +356,7 @@ class ExclusiveInnerCohPortUncachedDirectory : public InnerCohPortUncached
 protected:
   using InnerCohPortBase::cache;
 public:
-  ExclusiveInnerCohPortUncachedDirectory(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
+  ExclusiveInnerCohPortUncachedDirectory(policy_ptr policy) : InnerCohPortUncached(policy) {}
   virtual ~ExclusiveInnerCohPortUncachedDirectory() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
@@ -535,7 +533,7 @@ protected:
   using OPUC::inner;
   using OPUC::policy;
 public:
-  ExclusiveOuterCohPortBroadcastT(CohPolicyBase *policy) : OPUC(policy) {}
+  ExclusiveOuterCohPortBroadcastT(policy_ptr policy) : OPUC(policy) {}
   virtual ~ExclusiveOuterCohPortBroadcastT() {}
 
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
@@ -586,7 +584,7 @@ protected:
   using OPUC::inner;
   using OPUC::policy;
 public:
-  ExclusiveOuterCohPortDirectoryT(CohPolicyBase *policy) : OPUC(policy) {}
+  ExclusiveOuterCohPortDirectoryT(policy_ptr policy) : OPUC(policy) {}
   virtual ~ExclusiveOuterCohPortDirectoryT() {}
 
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {

@@ -45,7 +45,7 @@ public:
   SimpleMemoryModel(const std::string &n)
     : InnerCohPortUncached(nullptr), id(UniqueID::new_id(n)), name(n)
   {
-    InnerCohPortBase::policy = new MIPolicy<MetadataMI,false,false>();
+    InnerCohPortBase::policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(id);
   }
 

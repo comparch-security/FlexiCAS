@@ -209,6 +209,7 @@ class CacheSkewed : public CacheBase
 protected:
   IDX indexer;      // index resolver
   RPC replacer[P];  // replacer
+  RandomGen<uint32_t> * loc_random; // a local randomizer for better thread parallelism
   std::unordered_set<CMDataBase *>       data_buffer_pool;
   std::unordered_map<CMDataBase *, bool> data_buffer_state;
   std::unordered_set<CMMetadataBase *>       meta_buffer_pool;
@@ -216,11 +217,13 @@ protected:
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
-    : CacheBase(name)
+    : CacheBase(name), loc_random(nullptr)
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(CacheBase::id);
+
+    if constexpr (P>1) loc_random = cm_alloc_rand32();
 
     // for single thread simulator, we assume a maximum of 2 buffers should be enough
     if constexpr (!C_VOID(DT)) {
@@ -241,6 +244,7 @@ public:
     delete CacheMonitorSupport::monitors;
     if constexpr (!C_VOID(DT)) for(auto &buf: data_buffer_state) delete buf.first;
     for(auto &buf: meta_buffer_state) delete buf.first;
+    if constexpr (P>1) delete loc_random;
   }
 
   virtual std::tuple<int, int, int> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
@@ -264,7 +268,7 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
     if constexpr (P==1) *ai = 0;
-    else                *ai = (cm_get_random_uint32() % P);
+    else                *ai = ((*loc_random)() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
   }

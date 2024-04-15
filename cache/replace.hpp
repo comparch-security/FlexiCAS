@@ -280,17 +280,20 @@ class ReplaceRandom : public ReplaceFuncBase
 {
 protected:
   std::vector<std::set<uint32_t> > free_map;
+  RandomGen<uint32_t> * loc_random; // a local randomizer for better thread parallelism
 public:
-  ReplaceRandom() : ReplaceFuncBase(1ul<<IW), free_map(1ul<<IW) {
+  ReplaceRandom() : ReplaceFuncBase(1ul<<IW), free_map(1ul<<IW), loc_random(cm_alloc_rand32()) {
     for (auto &s: free_map) for(uint32_t i=0; i<NW; i++) s.insert(i);
   }
-  virtual ~ReplaceRandom() {}
+  virtual ~ReplaceRandom() {
+    delete loc_random;
+  }
 
   virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0){
     if constexpr (EF)
-      *w = free_map[s].empty() ? (cm_get_random_uint32() % NW) : *(free_map[s].cbegin());
+      *w = free_map[s].empty() ? ((*loc_random)() % NW) : *(free_map[s].cbegin());
     else
-      *w = cm_get_random_uint32() % NW;
+      *w = (*loc_random)() % NW;
 
     return free_map[s].size();
   }
