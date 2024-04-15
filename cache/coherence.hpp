@@ -23,6 +23,7 @@ class CoherentCacheBase;
 typedef OuterCohPortBase CohClientBase;
 typedef InnerCohPortBase CohMasterBase;
 
+typedef std::shared_ptr<CohPolicyBase> policy_ptr;
 
 /////////////////////////////////
 // Base interface for outer ports
@@ -35,14 +36,13 @@ protected:
   CohMasterBase *coh;      // hook up with the coherence hub
   int32_t coh_id;          // the identifier used in locating this cache client by the coherence master
   int32_t ack_id;          // ack id
-  CohPolicyBase *policy;   // the coherence policy
+  policy_ptr policy;       // the coherence policy
 
 public:
   OuterCohPortBase(policy_ptr policy) : policy(policy) {}
   virtual ~OuterCohPortBase() {}
 
-  void connect(CohMasterBase *h, std::tuple<int32_t, int32_t, CohPolicyBase *> info) { coh = h; ack_id = std::get<0>(info); coh_id = std::get<1>(info); policy->connect(std::get<2>(info)); }
-
+  void connect(CohMasterBase *h, std::tuple<int32_t, int32_t, policy_ptr> info) { coh = h; ack_id = std::get<0>(info); coh_id = std::get<1>(info); policy->connect(std::get<2>(info).get()); }
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai, uint32_t s, uint32_t w, int32_t inner_id = 0) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai = 0, uint32_t s = 0) = 0;
   virtual void acquire_ack_req(uint64_t addr, uint64_t* delay, int32_t inner_inner_id = 0) {}
@@ -64,14 +64,13 @@ protected:
   CacheBase *cache; // reverse pointer for the cache parent
   OuterCohPortBase *outer; // outer port for writeback when replace
   std::vector<CohClientBase *> coh; // hook up with the inner caches, indexed by vector index
-  CohPolicyBase *policy; // the coherence policy
+  policy_ptr policy; // the coherence policy
   InnerAcquireRecord record; // record the address info being acquired
   uint32_t ack_num;
 public:
-  InnerCohPortBase(CohPolicyBase *policy) : policy(policy), ack_num(0) {}
-  virtual ~InnerCohPortBase() { delete policy; }
+  InnerCohPortBase(policy_ptr policy) : policy(policy), ack_num(0) {}
 
-  std::tuple<int32_t, int32_t, CohPolicyBase *> connect(CohClientBase *c, bool uncached = false) {
+  std::tuple<int32_t, int32_t, policy_ptr> connect(CohClientBase *c, bool uncached = false) {
     record.add_size(c->inner->inner_size(), uncached);
     if(uncached) {
       return std::make_tuple(ack_num++, -1, policy);

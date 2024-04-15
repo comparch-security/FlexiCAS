@@ -8,9 +8,8 @@
 #include <mutex>
 #include <vector>
 #include <queue>
+#include "util/regression.hpp"
 
-
-static const uint64_t addr_mask = 0x0ffffffffffc0ull;
 
 class cache_xact 
 {

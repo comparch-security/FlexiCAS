@@ -74,13 +74,8 @@ int main() {
 #else
   std::cout << "only meta" << std::endl;
 #endif
-
-  for(auto l : l1d){
-    delete l;
-  }
-  for(auto l : l1i){
-    delete l;
-  }
+  delete_caches(l1d);
+  delete_caches(l1i);
   delete l2;
   delete mem;
 #ifdef THREE_LEVEL_CACHE 
