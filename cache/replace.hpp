@@ -1,7 +1,7 @@
 #ifndef CM_REPLACE_HPP_
 #define CM_REPLACE_HPP_
 
-// #define SET
+#define SET
 
 #include <list>
 #include <vector>
@@ -41,7 +41,7 @@ class ReplaceFIFO : public ReplaceFuncBase
 protected:
   std::vector<std::list<uint32_t> > used_map;
   std::vector<std::vector<bool> > using_map; // Write in the way that the thread needs to use during runtime
-  std::vector<std::unordered_set<uint32_t> > free_map; 
+  std::vector<std::set<uint32_t> > free_map; 
 
 public:
   ReplaceFIFO() : ReplaceFuncBase(1ul<<IW), used_map(1ul<<IW), using_map(1ul<<IW), free_map(1ul << IW) {
@@ -52,12 +52,11 @@ public:
   }
   virtual ~ReplaceFIFO() {}
   virtual uint32_t replace(uint32_t s, uint32_t *w, uint32_t op = 0){
+    std::unique_lock lk(*mtxs[s]);
     if constexpr (EF){
-      std::unique_lock lk(*mtxs[s]);
       if(!free_map[s].empty()){
-        *w = *(free_map[s].begin());
+        *w = *(free_map[s].cbegin());
         free_map[s].erase(*w);
-        using_map[s][*w] = false;
       }
       else{
 #ifndef NDEBUG 
@@ -65,12 +64,13 @@ public:
 #endif
         *w = used_map[s].front();
         used_map[s].remove(*w);
-        using_map[s][*w] = true;
       }
-      lk.unlock();
     }
-    else
+    else{
       *w = used_map[s].front();
+      used_map[s].remove(*w);
+    }
+    using_map[s][*w] = true;
     return free_map[s].size();
   }
 
@@ -83,17 +83,13 @@ public:
       using_map[s][w] = false;
       used_map[s].push_back(w);
     }
-    lk.unlock();
   }
   virtual void invalid(uint32_t s, uint32_t w){
-    // if constexpr (EF) used_map[s].remove(w);
-    // free_map[s].insert(w);
     std::unique_lock lk(*mtxs[s]);
     if(!using_map[s][w]){
-      used_map[s].remove(w);
+      if constexpr (EF) used_map[s].remove(w);
       free_map[s].insert(w);
     }
-    lk.unlock();
   }
 };
 
@@ -114,8 +110,8 @@ public:
   ~ReplaceLRU() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
+    std::unique_lock lk(*mtxs[s]);
     if constexpr (EF) {
-      std::unique_lock lk(*mtxs[s]);
 #ifndef NDEBUG 
       assert(!free_map[s].count(w)); 
 #endif
@@ -129,9 +125,8 @@ public:
         used_map[s].remove(w);
         used_map[s].push_back(w);
       }
-      lk.unlock();
     } else {
-      if(free_map[s].count(w)) free_map[s].erase(w);
+      if(using_map[s][w]) using_map[w] = false;
       if(!DUO || !release) {
         used_map[s].remove(w);
         used_map[s].push_back(w);
