@@ -151,7 +151,7 @@ public:
       auto [status, mtx, cv] = get_set_control(*ai, *s);
       std::unique_lock lk(*mtx, std::defer_lock);
       lk.lock();
-      /* Wait until the high priority thread ends (lower the priority of the set)  */
+      /** Wait until the high priority thread ends (lower the priority of the set)  */
       cv->wait(lk, [idx, status, priority] { return ((*status)[idx] < priority);} );
       (*status)[*s] |= priority;
       lk.unlock();
@@ -164,7 +164,7 @@ public:
 
     if(need_replace && !hit) replace(addr, ai, s, w);
 
-    /* if don't replace, then *ai=P, else if replace occurs, then 0<=(*ai)< P */
+    /** if don't replace, then *ai=P, else if replace occurs, then 0<=(*ai)< P */
     for(uint32_t i = 0; i < P; i++){
       if(i != *ai){
         uint32_t s = indexer.index(addr, i);

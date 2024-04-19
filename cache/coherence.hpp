@@ -59,7 +59,7 @@ protected:
 public:
   InnerCohPortBase(policy_ptr policy) : policy(policy) {}
 
-  std::pair<uint32_t, policy_ptr> connect(CohClientBase *c, bool uncached = false) {
+  virtual std::pair<uint32_t, policy_ptr> connect(CohClientBase *c, bool uncached = false) {
     if(uncached) {
       return std::make_pair(-1, policy);
     } else {
