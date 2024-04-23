@@ -45,7 +45,7 @@ public:
   virtual std::string to_string() const;
 };
 
-// a common base between data metadat and normal coherence metadata
+// a common base between data metadata and normal coherence metadata
 class CMMetadataCommon
 {
 public:
@@ -209,7 +209,7 @@ public:
   }
 };
 
-template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, MetadataBroadcastBase) && !C_DERIVE(MT, MetadataDirectoryBase)
+template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, MetadataBroadcastBase) && (!C_DERIVE(MT, MetadataDirectoryBase))
 using MetadataBroadcast = MetadataMixer<AW, IW, TOfst, MT>;
 
 template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, MetadataDirectoryBase)
