@@ -27,7 +27,6 @@ typedef std::shared_ptr<CohPolicyBase> policy_ptr;
 
 /////////////////////////////////
 // Base interface for outer ports
-
 class OuterCohPortBase
 {
 protected:
@@ -44,7 +43,7 @@ public:
 
   void connect(CohMasterBase *h, std::tuple<int32_t, int32_t, policy_ptr> info) { coh = h; ack_id = std::get<0>(info); coh_id = std::get<1>(info); policy->connect(std::get<2>(info).get()); }
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai, uint32_t s, uint32_t w, int32_t inner_id = 0) = 0;
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay, uint32_t ai = 0, uint32_t s = 0) = 0;
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void acquire_ack_req(uint64_t addr, uint64_t* delay, int32_t inner_inner_id = 0) {}
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); } // may not implement if not supported
 
@@ -113,12 +112,12 @@ public:
     policy->meta_after_fetch(outer_cmd, meta, addr);
   }
 
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay, uint32_t ai, uint32_t s) {
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = coh_id;
     CMMetadataBase *outer_meta = meta ? meta->get_outer_meta() : nullptr;
     coh->writeback_resp(addr, data, outer_meta, outer_cmd, delay);
     if(meta){
-       policy->meta_after_writeback(outer_cmd, meta);
+      policy->meta_after_writeback(outer_cmd, meta);
     }
   }
 
@@ -300,7 +299,7 @@ protected:
       this->cache->get_name().c_str(), ai, s, mtx);
       // check again
       auto writeback_r = policy->writeback_need_writeback(meta, outer->is_uncached());
-      if(writeback_r.first) outer->writeback_req(addr, meta, data, writeback.second, delay, ai); // writeback if dirty
+      if(writeback_r.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
       SET_LOCK(lk, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, ai:%d, s:%d \
       mutex: %p, evict line over(set lock)\n", get_time(), database.get_id(get_thread_id), addr, \
@@ -430,7 +429,7 @@ protected:
         cv->notify_all();
       }
       // do not handle flush at this level, and send it to the outer cache
-      outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay, ai);
+      outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay);
       return;
     }
 
@@ -445,7 +444,7 @@ protected:
     }
 
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
-    if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay, ai); // writeback if dirty
+    if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     
     policy->meta_after_flush(cmd, meta);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, meta, data, delay);
@@ -522,14 +521,11 @@ public:
     auto cmd = policy->cmd_for_write();
     auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line(addr, cmd, delay);
 
-    if(meta->addr(s) == addr){
-      meta->to_dirty();
-      if(data) data->copy(m_data);
-      cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
-    }else{
-      assert(0);
-    }
-
+    
+    meta->to_dirty();
+    if(data) data->copy(m_data);
+    cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
+    
     outer->acquire_ack_req(addr, delay);
 
     UNSET_LOCK_PTR(cmtx, "time : %lld, thread : %d, addr: 0x%-7lx,  name: %s, mutex: %p, \

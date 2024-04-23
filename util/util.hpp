@@ -10,9 +10,9 @@
 #include <unordered_map>
 
 typedef struct{
-  uint32_t ai    ;
-  uint32_t s     ;
-  uint32_t w     ;
+  uint32_t ai;
+  uint32_t s;
+  uint32_t w;
   std::mutex* mtx;
   std::mutex* cmtx; // cacheline mutex
   std::condition_variable* cv;
@@ -25,7 +25,7 @@ typedef struct{
 }info;
 
 /////////////////////////////////
-// Record inner probing address
+// Record inner acquire address
 class InnerAcquireRecord
 {
 // protected:
