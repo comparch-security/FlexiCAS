@@ -22,6 +22,7 @@ static const uint64_t addr_mask = 0x0ffffffffffc0ull;
 template<int NC, bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
 class RegressionGen
 {
+protected:
   int64_t gi;
   CMHasher hasher;
   const unsigned int total;

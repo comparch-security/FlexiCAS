@@ -8,8 +8,9 @@
 #include "cache/mesi.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
+#include "cache/coherence_multi.hpp"
+#include "cache/policy_multi.hpp"
 
-#include <vector>
 
 template<typename CT, typename CPT>
 inline std::vector<CoherentCacheBase *> cache_generator(int size, const std::string& name_prefix) {
@@ -171,6 +172,88 @@ inline auto cache_gen_llc_mirage(int size, const std::string& name_prefix) {
   typedef MSIPolicy<meta_metadata_type, false, true> policy_type;
   typedef CoherentCacheNorm<cache_base_type, OuterCohPortUncached, MirageInnerCohPort<meta_metadata_type, cache_base_type> > cache_type;
   return cache_generator<cache_type, policy_type>(size, name_prefix);
+}
+
+template<int IW, int WN, typename DT, typename MBT,
+         template <int, int, bool> class RPT,
+         template <typename, bool, bool> class CPT,
+         bool isL1, bool isLLC, bool uncache, typename DLY, bool EnMon>
+inline auto cache_multi_thread_type_compile(int size, const std::string& name_prefix){
+  typedef IndexNorm<IW,6> index_type;
+  typedef RPT<IW,WN,true> replace_type;
+
+  constexpr bool isDir  = std::is_same_v<MBT, MetadataDirectoryBase>;
+  constexpr bool isMESI = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MESIMultiThreadPolicy<MetadataDirectoryBase, false, true> >;
+  constexpr bool isMSI  = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MSIMultiThreadPolicy<MetadataDirectoryBase, false, true> >;
+  constexpr bool isMI   = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MIPolicy<MetadataDirectoryBase, false, true> >;
+
+  // MESI
+  typedef MetadataMESIDirectory<48, IW, IW+6> mesi_metadata_type;
+  typedef MESIMultiThreadPolicy<mesi_metadata_type, false, isLLC> mesi_policy_type;
+
+  // MSI
+  typedef typename std::conditional<isDir, MetadataMSIDirectory<48, IW, IW+6>, MetadataMSIBroadcast<48, IW, IW+6> >::type msi_metadata_type;
+  typedef MSIMultiThreadPolicy<msi_metadata_type, isL1, isLLC> msi_policy_type;
+
+  // MI
+  typedef MetadataMIBroadcast<48, IW, IW+6> mi_metadata_type;
+  typedef MIPolicy<mi_metadata_type, true, isLLC> mi_policy_type;
+
+  typedef typename std::conditional<isMESI, mesi_metadata_type,
+          typename std::conditional<isMSI,  msi_metadata_type,
+                                            mi_metadata_type>::type >::type metadata_type;
+  typedef typename std::conditional<isMESI, mesi_policy_type,
+          typename std::conditional<isMSI,  msi_policy_type,
+                                            mi_policy_type>::type >::type policy_type;
+
+  typedef CacheNormMultiThread<IW, WN, metadata_type, DT, index_type, replace_type, DLY, EnMon> cache_base_type;
+
+  typedef OuterCohPortMultiThreadUncached<cache_base_type> uncached_output_type;
+
+  typedef typename std::conditional<isL1, CoreMultiThreadInterface<uncached_output_type, cache_base_type, policy_type>, 
+                  InnerCohMultiThreadPort<uncached_output_type, cache_base_type, policy_type>>::type input_type;
+  
+  typedef typename std::conditional<isLLC || uncache, uncached_output_type, OuterCohMultiThreadPort<input_type, cache_base_type>>::type output_type;
+
+  typedef CoherentCacheNorm<cache_base_type, output_type, input_type> cache_type;
+
+  return cache_generator<cache_type, policy_type>(size, name_prefix);
+}
+
+
+template<int IW, int WN, typename DT, typename MBT,
+         template <int, int, bool> class RPT,
+         template <typename, bool, bool> class CPT,
+         bool isLLC, bool uncache, typename DLY, bool EnMon>
+inline auto cache_gen_multi_thread_l1(int size, const std::string& name_prefix) {
+  return cache_multi_thread_type_compile<IW, WN, DT, MBT, RPT, CPT, true, isLLC, uncache, DLY, EnMon>(size, name_prefix);
+}
+
+template<int IW, int WN, typename DT, typename MBT,
+         template <int, int, bool> class RPT,
+         template <typename, bool, bool> class CPT,
+         bool isLLC, typename DLY, bool EnMon>
+inline auto cache_gen_multi_thread_l2(int size, const std::string& name_prefix){
+  return cache_multi_thread_type_compile<IW, WN, DT, MBT, RPT, CPT, false, isLLC, false, DLY, EnMon>(size, name_prefix);
+}
+
+template<int IW, int WN, typename DT, typename MBT,
+         template <int, int, bool> class RPT,
+         template <typename, bool, bool> class CPT,
+         typename DLY, bool EnMon>
+inline auto cache_gen_multi_thread_llc(int size, const std::string& name_prefix){
+  return cache_multi_thread_type_compile<IW, WN, DT, MBT, RPT, CPT, false, true, false, DLY, EnMon>(size, name_prefix);
+}
+
+template<int IW, int WN, typename DT, typename MBT,
+         template <int, int, bool> class RPT,
+         template <typename, bool, bool> class CPT,
+         bool uncache, typename DLY, bool EnMon>
+inline auto get_l1_multithread_core_interface(std::vector<CoherentCacheBase *>& array) {
+  auto core = std::vector<CoreMultiThreadSupport *>(array.size());
+  for(unsigned int i=0; i<array.size(); i++)
+    core[i] = dynamic_cast<CoreMultiThreadSupport *>(array[i]->inner);
+  return core;
 }
 
 #endif
