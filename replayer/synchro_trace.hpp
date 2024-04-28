@@ -1,6 +1,7 @@
 #ifndef CM_REPLAYER_SYNCHROTRACE_HPP
 #define CM_REPLAYER_SYNCHROTRACE_HPP
 
+#include "replayer/st_event.hpp"
 #include "st_parser.hpp"
 #include <cstdint>
 enum class ThreadStatus {
@@ -45,8 +46,6 @@ struct ThreadContext
 template <ThreadID NT, int BW>
 class SynchroTraceReplayer
 {
-
-
 private:
 
   /** Abstract cpi estimation for integer ops */
@@ -61,6 +60,9 @@ private:
   StTracePthreadMetadata pthMetadata;
 
   std::vector<ThreadContext<BW>> threadContexts;
+
+  std::vector<std::deque<std::reference_wrapper<ThreadContext<BW>>>>
+        coreToThreadMap;
 
   /** stats: holds if thread can proceed past a barrier */
   std::vector<bool> perThreadBarrierBlocked;
@@ -79,6 +81,29 @@ private:
 
   /** Holds which threads are waiting for a barrier */
   std::map<uint64_t, std::set<ThreadID>> threadBarrierMap;
+
+  /** Directory of Sigil Traces and Pthread metadata file */
+  std::string eventDir;
+
+public:
+  SynchroTraceReplayer(std::string eventDir, float CPI_IOPS, float CPI_FLOPS) 
+  : eventDir(eventDir), CPI_IOPS(CPI_IOPS), CPI_FLOPS(CPI_FLOPS)
+  {
+    for(ThreadID i = 0; i < NT; i++){
+      threadContexts.emplace_back(i, eventDir);
+    }
+    for(auto& tcxt : threadContexts)
+      coreToThreadMap.at(tcxt.threadId).emplace_back(tcxt);
+
+    // Set master (first) thread as active.
+    // Schedule first tick of the initial core.
+    // (the other cores begin 'inactive', and
+    //  expect the master thread to start them)
+    threadContexts[0].status = ThreadStatus::ACTIVE;
+  }
+  void init(){
+    
+  }
 
 };
 

@@ -250,6 +250,4 @@ struct StEvent{
 };
 
 
-
-
 #endif

@@ -25,6 +25,7 @@ endif
 
 UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
+REPLAYER_HEADERS = $(wildcard replayer/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 CACHE_OBJS    = cache/metadata.o
@@ -83,7 +84,7 @@ clean-regression:
 libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 	ar rvs $@ $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 
-syn: synchro_tester.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REPLAY_HEADERS)
+syn: synchro_tester.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REPLAYER_HEADERS)
 	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ -lz
 
 .PHONY: regression
