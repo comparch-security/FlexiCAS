@@ -1,5 +1,5 @@
 
-MODE ?=
+MODE ?= debug
 NCORE ?= `nproc`
 
 MAKE = make
@@ -28,7 +28,7 @@ CACHE_HEADERS = $(wildcard cache/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 CACHE_OBJS    = cache/metadata.o
-UTIL_OBJS     = util/random.o util/query.o util/monitor.o
+UTIL_OBJS     = util/random.o util/query.o util/monitor.o util/zfstream.o
 
 all: libflexicas.a
 
@@ -82,6 +82,9 @@ clean-regression:
 
 libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 	ar rvs $@ $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
+
+syn: synchro_tester.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REPLAY_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ -lz
 
 .PHONY: regression
 
