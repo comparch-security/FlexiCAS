@@ -4,6 +4,9 @@
 #include "cache/cache.hpp"
 #include "cache/coh_policy.hpp"
 #include "cache/slicehash.hpp"
+#include "mesi.hpp"
+#include "metadata.hpp"
+#include "util/random.hpp"
 #include <tuple>
 
 class OuterCohPortBase;
@@ -71,6 +74,8 @@ public:
   virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); } // may not implement if not supported
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
+
+  virtual void remap() {};
   
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -166,6 +171,100 @@ public:
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
     outer->query_loc_req(addr, locs);
     locs->push_front(cache->query_loc(addr));
+  }
+
+
+  virtual void remap() override
+  {
+    auto[ai, nset, nway] = cache->size();
+    ai = ai - 1;
+    
+    cache->monitors->reset_monitor();
+
+    if((this->coh.size()) > 0){ // judge std::vector<CohClientBase *> coh, if coh.size = 1, there is a L1 client
+      for(uint32_t idx = 0; idx < nset; idx++){
+        for(uint32_t way = 0; way < nway; way++){
+          CMMetadataBase *meta = dynamic_cast<CMMetadataBase*>(cache->access(ai, idx, way)); 
+          if(!meta->is_valid()) continue;
+          
+          if(meta->is_modified()){
+            auto data = cache->get_data(ai, idx, way);
+            uint64_t addr = meta->addr(idx);
+            coh_cmd_t cmd = policy->cmd_for_probe_writeback(-1);
+            this->probe_req(addr, meta, data, cmd, NULL);
+          }
+        }
+      }
+    }
+
+    std::vector<uint64_t> newSeeds;
+    for(int i=0; i<1; i++) {
+      newSeeds.push_back(cm_get_random_uint64());
+    }
+    cache->seed(newSeeds);
+    
+    std::unordered_set<uint64_t> remapped;
+
+    for(uint32_t ridx = 0; ridx < nset; ridx++){
+      for(uint32_t rway = 0; rway < nway; rway++){
+        uint32_t idx = ridx;
+        uint32_t way = rway;
+        CMMetadataBase *meta = dynamic_cast<CMMetadataBase*>(cache->access(ai, idx, way)); 
+        
+        auto c_meta = this->cache->meta_copy_buffer();
+        c_meta->init(meta->addr(idx));
+        c_meta->copy(meta);
+        auto c_data = this->cache->data_copy_buffer();
+        c_data->copy(cache->get_data(ai, idx, way));
+        
+        uint64_t c_addr = c_meta->addr(idx);
+        
+        if(meta->is_valid() && !remapped.count(c_addr)){
+          meta->to_invalid();
+          this->cache->hook_manage(c_addr, ai, idx, way, true, true, true, c_meta, c_data, nullptr);
+
+          while(c_meta->is_valid() && !remapped.count(c_addr) )
+          {
+            uint32_t new_idx, new_way;
+            cache->replace(c_addr, &ai, &new_idx, &new_way);
+
+            CMMetadataBase *m_meta = dynamic_cast<CMMetadataBase*>(cache->access(ai, new_idx, new_way)); 
+            uint64_t m_addr = m_meta->addr(new_idx); 
+            CMDataBase *m_data = cache->get_data(ai, new_idx, new_way); 
+
+            auto c_m_meta = this->cache->meta_copy_buffer();
+            c_m_meta->init(m_addr);
+            c_m_meta->copy(m_meta);
+            auto c_m_data = this->cache->data_copy_buffer();
+            c_m_data->copy(m_data);
+
+            coh_cmd_t cmd = policy->cmd_for_probe_release();
+
+            this->cache->hook_manage(m_addr, ai, new_idx, new_way, true, true, true, c_m_meta, c_m_data, nullptr);
+
+            if(remapped.count(m_addr) && c_m_meta->is_valid()) evict(m_meta, m_data, ai, new_idx, new_way, nullptr);
+
+            m_meta->init(c_addr); 
+            m_meta->copy(c_meta);
+            m_data->copy(c_data);
+
+            this->cache->hook_read(c_addr, ai, new_idx, new_way, true, m_meta, m_data, nullptr);
+            remapped.insert(c_addr);
+
+            c_addr = m_addr;
+            c_meta->init(m_addr);
+            c_meta->copy(c_m_meta);
+            c_data->copy(c_m_data);
+            
+            this->cache->meta_return_buffer(c_m_meta);
+            this->cache->data_return_buffer(c_m_data);
+          }
+        }
+        this->cache->meta_return_buffer(c_meta);
+        this->cache->data_return_buffer(c_data);
+      }
+    }
+    cache->monitors->resume_monitor();
   }
 
 protected:
