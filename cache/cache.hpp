@@ -133,7 +133,7 @@ public:
   virtual CMMetadataBase *meta_copy_buffer() = 0;           // allocate a copy buffer, needed by exclusive cache with extended meta
   virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
 
-  virtual std::tuple<int, int, int> size() const = 0;           // return the size parameters of the cache
+  virtual std::tuple<uint32_t, uint32_t, uint32_t> size() const = 0;           // return the size parameters of the cache
   uint32_t get_id() const { return id; }
   const std::string& get_name() const { return name;} 
 
@@ -196,7 +196,7 @@ public:
     if constexpr (P>1) delete loc_random;
   }
 
-  virtual std::tuple<int, int, int> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
+  virtual std::tuple<uint32_t, uint32_t, uint32_t> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
