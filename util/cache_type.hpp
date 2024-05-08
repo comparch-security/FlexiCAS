@@ -173,4 +173,21 @@ inline auto cache_gen_llc_mirage(int size, const std::string& name_prefix) {
   return cache_generator<cache_type, policy_type>(size, name_prefix);
 }
 
+template<int IW, int WN, typename DT,
+         template <int, int, bool> class RPT,
+         typename DLY, bool EnMon>
+inline auto cache_gen_llc_randomized(int size, const std::string& name_prefix) {
+  typedef IndexRandom<IW,6> index_type;
+  typedef RPT<IW,WN,true> replace_type;
+
+  typedef MetadataMSIBroadcast<48,0,0+6> metadata_type;
+  typedef MSIPolicy<metadata_type, false, true> policy_type;
+
+  typedef CacheNorm<IW, WN, metadata_type, DT, index_type, replace_type, DLY, EnMon> cache_base_type;
+
+  typedef CoherentCacheNorm<cache_base_type, OuterCohPortUncached, InnerCohPort> cache_type;
+
+  return cache_generator<cache_type, policy_type>(size, name_prefix);
+}
+
 #endif
