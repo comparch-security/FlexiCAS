@@ -15,6 +15,7 @@ public:
   IndexFuncBase(uint32_t mask) : mask(mask) {}
   virtual ~IndexFuncBase() {}
   virtual uint32_t index(uint64_t addr, int partition) = 0;
+  virtual void seed(std::vector<uint64_t>& seeds) {};
 };
 
 
@@ -48,7 +49,7 @@ public:
     return (hashers[partition](addr >> IOfst)) & mask;
   }
 
-  void seed(std::vector<uint64_t>& seeds) {
+  virtual void seed(std::vector<uint64_t>& seeds) override {
     for(int i=0; i<P; i++) hashers[i].seed(seeds[i]);
   }
 };

@@ -143,6 +143,8 @@ public:
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
   virtual LocInfo query_loc(uint64_t addr) { return LocInfo(id, this, addr); }
   virtual void query_fill_loc(LocInfo *loc, uint64_t addr) = 0;
+
+  virtual void seed(std::vector<uint64_t>& seeds) = 0;
 };
 
 // Skewed Cache
@@ -288,6 +290,8 @@ public:
       loc->insert(LocIdx(i, indexer.index(addr, i)), LocRange(0, NW-1));
     }
   }
+
+  virtual void seed(std::vector<uint64_t>& seeds) { indexer.seed(seeds);}
 };
 
 // Normal set-associative cache
