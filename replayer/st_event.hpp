@@ -5,6 +5,7 @@
 #include <type_traits>
 
 typedef int16_t ThreadID; 
+using CoreID = ThreadID; 
 using StEventID = std::size_t;
 
 enum class Tag : uint8_t

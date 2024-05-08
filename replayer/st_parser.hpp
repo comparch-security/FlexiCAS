@@ -65,14 +65,22 @@ private:
     // Example line:
     //
     // @ 661,0,100,44 $ 0x402b110 0x402b113
+    // @ 661,0,100,44 * 0x402b110 0x402b113
     std::regex pattern(R"(@ (\d+),(\d+),(\d+),(\d+))");
     std::smatch matches;
+    std::string::const_iterator line_start(line.cbegin());
     uint64_t iops, flops, reads, writes, start, end;
-    if(std::regex_search(line, matches, pattern)){
+    if(std::regex_search(line_start, line.cend(), matches, pattern)){
       iops = std::stoi(matches[1]);
       flops = std::stoi(matches[2]);
       reads = std::stoi(matches[3]);
       writes = std::stoi(matches[4]);
+      std::regex addr_pattern(R"( [\$\*] 0x([A-Fa-f0-9]+) 0x([A-Fa-f0-9]+))");
+      line_start = matches.suffix().first;
+      if(std::regex_search(line_start, line.cend(), matches, addr_pattern)){
+        start = std::stoul(matches[1], nullptr, 16);
+        end = std::stoul(matches[2], nullptr, 16);
+      }
     }else{
         // TODO: add fatal match handle
     }
@@ -205,7 +213,7 @@ protected:
   size_t eventsPerFill;
 
 public:
-  StEventStream(int16_t threadId, const std::string& eventDir) : 
+  StEventStream(ThreadID threadId, const std::string& eventDir) : 
   threadId(threadId), filename(eventDir + "/sigil.events.out-" + std::to_string(threadId) + ".gz"), 
   lastLineParsed(0), traceFile(filename.c_str()){
     if(!traceFile){
@@ -317,8 +325,8 @@ class StTracePthreadMetadata
       std::regex pattern(R"(##(\d+),(\d+))");
       std::smatch matches;
       if(std::regex_search(line, matches, pattern)){
-        pthAddr  = std::stoi(matches[2]);
-        threadId = std::stoi(matches[3]); 
+        pthAddr  = std::stoi(matches[1]);
+        threadId = std::stoi(matches[2]); 
       }else{
         std::cerr << "match error" << std::endl;
         assert(0);
