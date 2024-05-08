@@ -125,7 +125,7 @@ protected:
   bool active;
 
 public:
-  SimpleAccMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
+  SimpleAccMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(true) {}
   virtual ~SimpleAccMonitor() {}
 
   virtual bool attach(uint64_t cache_id) { return true; }
@@ -149,6 +149,7 @@ public:
   virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) {
     if(!active) return;
     cnt_invalid++;
+    if(cnt_invalid >= 100) remap = true;
   }
 
   virtual void start() { active = true;  }
@@ -162,6 +163,7 @@ public:
     cnt_write_miss = 0;
     cnt_invalid = 0;
     active = false;
+    remap = false;
   }
 
   // special function supported by PFC only

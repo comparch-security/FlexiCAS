@@ -10,6 +10,7 @@ static boost::format invalid_fmt("%-10s evict %016x %02d %04d %02d  ");
 static boost::format    data_fmt("%016x");
 
 void SimpleTracer::read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) {
+  if(!active) return;
   std::cout << (read_fmt % UniqueID::name(cache_id) % addr % ai % s % w % hit);
 
   if(meta)
@@ -26,6 +27,7 @@ void SimpleTracer::read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s,
 }
 
 void SimpleTracer::write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) {
+  if(!active) return;
   std::cout << (write_fmt % UniqueID::name(cache_id) % addr % ai % s % w % hit);
 
   if(meta)
@@ -42,6 +44,7 @@ void SimpleTracer::write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s
 }
 
 void SimpleTracer::invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) {
+  if(!active) return;
   std::cout << (invalid_fmt % UniqueID::name(cache_id) % addr % ai % s % w) ;
 
   if(meta)
