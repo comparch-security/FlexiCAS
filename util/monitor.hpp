@@ -12,8 +12,11 @@ class CMMetadataBase;
 // monitor base class
 class MonitorBase
 {
+protected:
+  bool remap;                           // remap flag
+
 public:
-  MonitorBase() {}
+  MonitorBase(bool remap = false) : remap(remap) {}
   virtual ~MonitorBase() {}
 
   // standard functions to supprt a type of monitoring
@@ -28,6 +31,8 @@ public:
   virtual void pause() = 0;    // pause the monitor, assming it will resume later
   virtual void resume() = 0;   // resume the monitor, assuming it has been paused
   virtual void reset() = 0;    // reset all internal statistics, assuming to be later started as new
+
+  bool remapping() { return remap; }
 };
 
 // mointor container used in cache
@@ -47,6 +52,10 @@ public:
 
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors.clear(); }
+  void pause_monitor() { if (!monitors.empty()) { for(auto monitor : monitors) monitor->pause();}}
+  void resume_monitor() { if (!monitors.empty()) { for(auto monitor : monitors) monitor->resume();}}
+  void reset_monitor() { if (!monitors.empty()) { for(auto monitor : monitors) monitor->reset();}}
+  bool remap_monitor() { if (!monitors.empty()) { for(auto monitor : monitors) { if (monitor->remapping()) return true; } } return false; }
 
   virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;

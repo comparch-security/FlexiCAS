@@ -43,6 +43,9 @@ public:
 
   bool is_uncached() const { return coh_id == -1; }
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) = 0;
+
+  virtual void remap_req(uint64_t addr) = 0;
+
   friend CoherentCacheBase; // deferred assignment for cache
 };
 
@@ -76,6 +79,7 @@ public:
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
 
   virtual void remap() {};
+  virtual void remap_resp(uint64_t addr) = 0;
   
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -102,6 +106,10 @@ public:
 
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs){
     coh->query_loc_resp(addr, locs);
+  }
+
+  virtual void remap_req(uint64_t addr){ 
+    coh->remap_resp(addr);
   }
 };
 
@@ -173,6 +181,10 @@ public:
     locs->push_front(cache->query_loc(addr));
   }
 
+  virtual void remap_resp(uint64_t addr){
+    if(cache->monitors->remap_monitor()) remap();
+    outer->remap_req(addr);
+  }
 
   virtual void remap() override
   {
@@ -394,6 +406,7 @@ public:
     auto cmd = policy->cmd_for_read();
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    remap_resp(addr);
     return data;
   }
 
@@ -404,13 +417,14 @@ public:
     meta->to_dirty();
     if(data) data->copy(m_data);
     cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
+    remap_resp(addr);
   }
 
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
-  virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); flush_line(addr, policy->cmd_for_flush(), delay); }
+  virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); flush_line(addr, policy->cmd_for_flush(), delay); remap_resp(addr);}
 
   // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
-  virtual void writeback(uint64_t addr, uint64_t *delay) { addr = normalize(addr); flush_line(addr, policy->cmd_for_writeback(), delay); }
+  virtual void writeback(uint64_t addr, uint64_t *delay) { addr = normalize(addr); flush_line(addr, policy->cmd_for_writeback(), delay); remap_resp(addr);}
 
   // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
   virtual void writeback_invalidate(uint64_t *delay) {
@@ -516,6 +530,9 @@ public:
   }
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
     cohm[hasher(addr)]->query_loc_resp(addr, locs);
+  }
+  virtual void remap_resp(uint64_t addr){
+    cohm[hasher(addr)]->remap_resp(addr);
   }
 };
 

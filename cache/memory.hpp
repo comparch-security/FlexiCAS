@@ -71,6 +71,8 @@ public:
     if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
+  virtual void remap_resp(uint64_t addr){}
+
 private:
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {}
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) {}
