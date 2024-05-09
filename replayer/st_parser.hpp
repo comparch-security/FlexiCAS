@@ -149,7 +149,7 @@ private:
     uint64_t typeVal, pthAddr;
     if(std::regex_search(line, matches, pattern)){
       typeVal = std::stoi(matches[1]);
-      pthAddr = std::stoi(matches[2]);
+      pthAddr = std::stoul(matches[2], nullptr, 16);
     }else{
       // TODO: add fatal match handle
       std::cerr << "match error" << std::endl;

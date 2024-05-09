@@ -10,7 +10,7 @@
 #define L2IW 5
 #define L2WN 8
 
-#define NCore 1
+#define NCore 2
 
 int main(){
 
@@ -20,20 +20,20 @@ int main(){
   auto core_inst = get_l1_core_interface(l1i);
   auto l2 = cache_gen_l2_inc<L2IW, L2WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, true, DelayCoherentCache<2, 3, 4>, true>(1, "l2")[0];
   auto mem = new SimpleMemoryModel<void,DelayMemory<10>,true>("mem");
-  SimpleTracer tracer(true);
+  // SimpleTracer tracer(true);
 
   for(int i=0; i<NCore; i++) {
     l1i[i]->outer->connect(l2->inner, l2->inner->connect(l1i[i]->outer, true));
     l1d[i]->outer->connect(l2->inner, l2->inner->connect(l1d[i]->outer));
-    l1i[i]->attach_monitor(&tracer);
-    l1d[i]->attach_monitor(&tracer);
+    // l1i[i]->attach_monitor(&tracer);
+    // l1d[i]->attach_monitor(&tracer);
   }
   l2->outer->connect(mem, mem->connect(l2->outer));
 
-  l2->attach_monitor(&tracer);
-  mem->attach_monitor(&tracer);
+  // l2->attach_monitor(&tracer);
+  // mem->attach_monitor(&tracer);
 
-  SynchroTraceReplayer<1, 1, 1000> replayer(".", 1.0, 1.0, core_data);
+  SynchroTraceReplayer<2, 2, 1000> replayer(".", 1.0, 2.0, 1, 1, core_data);
   replayer.init();
   replayer.start();
 }
