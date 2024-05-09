@@ -186,94 +186,75 @@ public:
     outer->remap_req(addr);
   }
 
-  virtual void remap() override
-  {
+  virtual void remap() override{
     auto[ai, nset, nway] = cache->size();
     ai = ai - 1;
-    
     cache->monitors->reset_monitor();
-
-    if((this->coh.size()) > 0){ // judge std::vector<CohClientBase *> coh, if coh.size = 1, there is a L1 client
+    if(coh.size() > 0){ // judge std::vector<CohClientBase *> coh, if coh.size = 1, there is a L1 client
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
-          CMMetadataBase *meta = dynamic_cast<CMMetadataBase*>(cache->access(ai, idx, way)); 
+          CMMetadataBase *meta;
+          CMDataBase *data; 
+          std::tie(meta, data) = cache->access_line(ai, idx, way);
           if(!meta->is_valid()) continue;
-          
           if(meta->is_modified()){
-            auto data = cache->get_data(ai, idx, way);
             uint64_t addr = meta->addr(idx);
             coh_cmd_t cmd = policy->cmd_for_probe_writeback(-1);
-            this->probe_req(addr, meta, data, cmd, NULL);
+            probe_req(addr, meta, data, cmd, NULL);
           }
         }
       }
     }
-
     std::vector<uint64_t> newSeeds;
-    for(int i=0; i<1; i++) {
-      newSeeds.push_back(cm_get_random_uint64());
-    }
+    for(int i=0; i<ai+1; i++) newSeeds.push_back(cm_get_random_uint64());
     cache->seed(newSeeds);
-    
     std::unordered_set<uint64_t> remapped;
-
     for(uint32_t ridx = 0; ridx < nset; ridx++){
       for(uint32_t rway = 0; rway < nway; rway++){
         uint32_t idx = ridx;
         uint32_t way = rway;
-        CMMetadataBase *meta = dynamic_cast<CMMetadataBase*>(cache->access(ai, idx, way)); 
-        
-        auto c_meta = this->cache->meta_copy_buffer();
+        CMMetadataBase *meta;
+        CMDataBase *data; 
+        std::tie(meta, data) = cache->access_line(ai, idx, way);
+        auto c_meta = cache->meta_copy_buffer();
         c_meta->init(meta->addr(idx));
         c_meta->copy(meta);
-        auto c_data = this->cache->data_copy_buffer();
-        c_data->copy(cache->get_data(ai, idx, way));
-        
+        auto c_data = cache->data_copy_buffer();
+        if(data) c_data->copy(data);
         uint64_t c_addr = c_meta->addr(idx);
-        
         if(meta->is_valid() && !remapped.count(c_addr)){
           meta->to_invalid();
-          this->cache->hook_manage(c_addr, ai, idx, way, true, true, true, c_meta, c_data, nullptr);
-
-          while(c_meta->is_valid() && !remapped.count(c_addr) )
-          {
+          cache->hook_manage(c_addr, ai, idx, way, true, true, true, c_meta, c_data, nullptr);
+          while(c_meta->is_valid() && !remapped.count(c_addr)){
             uint32_t new_idx, new_way;
             cache->replace(c_addr, &ai, &new_idx, &new_way);
-
-            CMMetadataBase *m_meta = dynamic_cast<CMMetadataBase*>(cache->access(ai, new_idx, new_way)); 
+            CMMetadataBase *m_meta;
+            CMDataBase *m_data; 
+            std::tie(m_meta, m_data) = cache->access_line(ai, new_idx, new_way);
             uint64_t m_addr = m_meta->addr(new_idx); 
-            CMDataBase *m_data = cache->get_data(ai, new_idx, new_way); 
-
-            auto c_m_meta = this->cache->meta_copy_buffer();
+            auto c_m_meta = cache->meta_copy_buffer();
             c_m_meta->init(m_addr);
             c_m_meta->copy(m_meta);
-            auto c_m_data = this->cache->data_copy_buffer();
-            c_m_data->copy(m_data);
-
+            auto c_m_data = cache->data_copy_buffer();
+            if(m_data) c_m_data->copy(m_data);
             coh_cmd_t cmd = policy->cmd_for_probe_release();
-
-            this->cache->hook_manage(m_addr, ai, new_idx, new_way, true, true, true, c_m_meta, c_m_data, nullptr);
-
+            cache->hook_manage(m_addr, ai, new_idx, new_way, true, true, true, c_m_meta, c_m_data, nullptr);
             if(remapped.count(m_addr) && c_m_meta->is_valid()) evict(m_meta, m_data, ai, new_idx, new_way, nullptr);
-
             m_meta->init(c_addr); 
             m_meta->copy(c_meta);
-            m_data->copy(c_data);
-
-            this->cache->hook_read(c_addr, ai, new_idx, new_way, true, m_meta, m_data, nullptr);
+            if(c_data) m_data->copy(c_data);
+            cache->hook_read(c_addr, ai, new_idx, new_way, true, m_meta, m_data, nullptr);
             remapped.insert(c_addr);
-
             c_addr = m_addr;
             c_meta->init(m_addr);
             c_meta->copy(c_m_meta);
-            c_data->copy(c_m_data);
-            
-            this->cache->meta_return_buffer(c_m_meta);
-            this->cache->data_return_buffer(c_m_data);
+            if(c_m_data) c_data->copy(c_m_data);
+            cache->meta_return_buffer(c_m_meta);
+            if(c_m_data) cache->data_return_buffer(c_m_data);
           }
         }
-        this->cache->meta_return_buffer(c_meta);
-        this->cache->data_return_buffer(c_data);
+        cache->meta_return_buffer(c_meta);
+        if(c_data) cache->data_return_buffer(c_data);
       }
     }
     cache->monitors->resume_monitor();
@@ -434,9 +415,9 @@ public:
   // flush the whole cache
   virtual void flush_cache(uint64_t *delay) {
     auto [npar, nset, nway] = cache->size();
-    for(int ipar=0; ipar<npar; ipar++)
-      for(int iset=0; iset < nset; iset++)
-        for(int iway=0; iway < nway; iway++) {
+    for(uint32_t ipar=0; ipar<npar; ipar++)
+      for(uint32_t iset=0; iset < nset; iset++)
+        for(uint32_t iway=0; iway < nway; iway++) {
           auto [meta, data] = cache->access_line(ipar, iset, iway);
           if(meta->is_valid())
             flush_line(meta->addr(iset), policy->cmd_for_flush(), delay);
