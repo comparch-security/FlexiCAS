@@ -90,8 +90,8 @@ syn: synchro_tester.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REPLAYER_HEAD
 .PHONY: regression
 
 clean:
+	-rm $(UTIL_OBJS) $(CACHE_OBJS)
 	$(MAKE) clean-regression
 	$(MAKE) clean-parallel-regression
-	-rm $(UTIL_OBJS) $(CACHE_OBJS)
 
 .PHONY: clean
