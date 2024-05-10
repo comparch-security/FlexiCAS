@@ -186,7 +186,7 @@ public:
   {
     // If the producer thread's EventID is greater than the dependent event
     // then the dependency is satisfied
-    return (threadContexts[comm.sourceThreadId-1].currEventId > comm.sourceEventId);
+    return (threadContexts[comm.sourceThreadId].currEventId > comm.sourceEventId);
   }
 
   uint64_t msgReqSend(CoreID coreId, uint64_t addr, uint32_t bytes, ReqType type){
@@ -355,9 +355,9 @@ public:
           for(auto tid : pthMetadata.barrierMap().at(pthAddr))
           {
             threadContexts[tid].status = ThreadStatus::ACTIVE;
+            threadContexts[tid].evStream.pop();
           }
           assert(threadBarrierMap.erase(pthAddr));
-          tcxt.evStream.pop();
           tcxt.status = ThreadStatus::WAIT_THREAD;
           tcxt.wakeupClock = curClock() + pthCycles;
         }

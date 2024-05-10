@@ -10,7 +10,7 @@
 #define L2IW 5
 #define L2WN 8
 
-#define NCore 2
+#define NCore 3
 
 int main(){
 
@@ -33,7 +33,7 @@ int main(){
   // l2->attach_monitor(&tracer);
   // mem->attach_monitor(&tracer);
 
-  SynchroTraceReplayer<2, 2, 1000> replayer(".", 1.0, 2.0, 1, 1, core_data);
+  SynchroTraceReplayer<NCore, NCore, 1000> replayer(".", 1.0, 2.0, 1, 1, core_data);
   replayer.init();
   replayer.start();
 }

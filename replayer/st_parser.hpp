@@ -120,7 +120,7 @@ private:
 
     std::smatch matches;
     if(std::regex_search(line, matches, pattern)){
-      ThreadID  prodThreadId = std::stoi(matches[1]);
+      ThreadID  prodThreadId = std::stoi(matches[1])-1;
       uint64_t prodEventId = std::stoi(matches[2]);
       uint64_t addr = std::stoul(matches[3], nullptr, 16);
       uint64_t bytes = std::stoul(matches[4], nullptr, 16) - addr;
@@ -352,7 +352,7 @@ class StTracePthreadMetadata
 
         while(next != end){
           std::smatch nmatch = *next;
-          m_barrierMap[pthAddr].insert(std::stoi(nmatch.str()));
+          m_barrierMap[pthAddr].insert(std::stoi(nmatch.str())-1);
           next++;
         }
       }else{
