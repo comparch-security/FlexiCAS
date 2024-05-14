@@ -115,7 +115,7 @@ public:
   SynchroTraceReplayer(std::string eventDir, float CPI_IOPS, float CPI_FLOPS, uint32_t pthCycles, uint32_t schedSliceCycles, std::vector<CoreInterface *>& core_data) 
   : eventDir(eventDir), CPI_IOPS(CPI_IOPS), CPI_FLOPS(CPI_FLOPS), pthCycles(pthCycles), perThreadLocksHeld(NT),
     schedSliceCycles(schedSliceCycles), clock(0), pthMetadata(eventDir), 
-    core_data(core_data), coreToThreadMap(NC)
+    core_data(core_data), coreToThreadMap(NC), condSignals(NT)
   {
 
   }
