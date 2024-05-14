@@ -25,12 +25,11 @@ enum class ThreadStatus {
   NUM_STATUSES
 };
 
-template <int BW>
 struct ThreadContext
 {
   ThreadID threadId;
   StEventID currEventId;
-  StEventStream<BW> evStream;
+  StEventStream evStream;
   ThreadStatus status;
   uint64_t wakeupClock;
 
@@ -53,14 +52,9 @@ struct ThreadContext
 };
 
 
-
-
-// NT: num threads, CT: num cores, BW: buffer size
-template <ThreadID NT, CoreID NC, int BW>
-class SynchroTraceReplayer
+class SynchroTraceReplayerBase
 {
-private:
-
+protected:
   int workerThreadCount;
 
   /** Abstract cpi estimation for integer ops */
@@ -79,14 +73,6 @@ private:
    * Synchronization state
   */
   StTracePthreadMetadata pthMetadata;
-
-  std::vector<ThreadContext<BW>> threadContexts;
-
-  std::vector<std::deque<std::reference_wrapper<ThreadContext<BW>>>>
-        coreToThreadMap;
-
-  /** stats: holds if thread can proceed past a barrier */
-  std::vector<bool> perThreadBarrierBlocked;
 
   /** Holds which threads currently possess a mutex lock */
   std::vector<std::vector<uint64_t>> perThreadLocksHeld;
@@ -111,14 +97,11 @@ private:
   /** data cache */
   std::vector<CoreInterface *>& core_data;
 
-public:
-  SynchroTraceReplayer(std::string eventDir, float CPI_IOPS, float CPI_FLOPS, uint32_t pthCycles, uint32_t schedSliceCycles, std::vector<CoreInterface *>& core_data) 
-  : eventDir(eventDir), CPI_IOPS(CPI_IOPS), CPI_FLOPS(CPI_FLOPS), pthCycles(pthCycles), perThreadLocksHeld(NT),
-    schedSliceCycles(schedSliceCycles), clock(0), pthMetadata(eventDir), 
-    core_data(core_data), coreToThreadMap(NC), condSignals(NT)
-  {
+  std::vector<ThreadContext> threadContexts;
+  std::vector<std::deque<std::reference_wrapper<ThreadContext>>>
+        coreToThreadMap;
 
-  }
+  uint64_t curClock() { return clock; }
 
   const char* toString(ThreadStatus status) const{
     switch (status) 
@@ -151,27 +134,38 @@ public:
     }
   }
 
-  uint64_t curClock() { return clock; }
+  virtual CoreID threadIdToCoreId(ThreadID threadId) const = 0;
+  virtual bool isCommDependencyBlocked(const MemoryRequest_ThreadCommunication& comm) const = 0;
+  virtual uint64_t msgReqSend(CoreID coreId, uint64_t addr, uint32_t bytes, ReqType type) = 0;
 
+  virtual void processEventMarker(ThreadContext& tcxt, CoreID coreId) = 0;
+  virtual void processInsnMarker(ThreadContext& tcxt, CoreID coreId) = 0;
+  virtual void processEndMarker(ThreadContext& tcxt, CoreID coreId) = 0;
+
+  virtual void replayCompute(ThreadContext& tcxt, CoreID coreId) = 0;
+  virtual void replayComm(ThreadContext& tcxt, CoreID coreId) = 0;
+  virtual void replayThreadAPI(ThreadContext& tcxt, CoreID coreID) = 0;
+  virtual void wakeupCore(CoreID coreId) = 0;
+  virtual void wakeupDebugLog() = 0;
+
+public:
+  SynchroTraceReplayerBase(std::string eventDir, float CPI_IOPS, float CPI_FLOPS, uint32_t pthCycles, uint32_t schedSliceCycles, std::vector<CoreInterface *>& core_data) : 
+   eventDir(eventDir), CPI_IOPS(CPI_IOPS), CPI_FLOPS(CPI_FLOPS), pthCycles(pthCycles), schedSliceCycles(schedSliceCycles), 
+   core_data(core_data), pthMetadata(eventDir), clock(0){
+
+  }
+  virtual void init() = 0;
+  virtual void start() = 0;
+
+};
+
+// NT: num threads, CT: num cores
+template <ThreadID NT, CoreID NC>
+class SynchroTraceReplayer : public SynchroTraceReplayerBase
+{
+protected:
   CoreID threadIdToCoreId(ThreadID threadId) const{
     return threadId % NC;
-  }
-
-  void init(){
-    workerThreadCount = 0;
-
-    for(ThreadID i = 0; i < NT; i++){
-      threadContexts.emplace_back(i, eventDir);
-    }
-    for(auto& tcxt : threadContexts)
-      coreToThreadMap.at(threadIdToCoreId(tcxt.threadId)).emplace_back(tcxt);
-
-    // Set master (first) thread as active.
-    // Schedule first tick of the initial core.
-    // (the other cores begin 'inactive', and
-    //  expect the master thread to start them)
-    threadContexts[0].status = ThreadStatus::ACTIVE;
-    workerThreadCount++;
   }
 
   /**
@@ -182,14 +176,14 @@ public:
     * reasons, there are no 'dependencies' to enforce in the case of a system
     * call.
     */
-  bool isCommDependencyBlocked(const MemoryRequest_ThreadCommunication& comm) const
+  virtual bool isCommDependencyBlocked(const MemoryRequest_ThreadCommunication& comm) const
   {
     // If the producer thread's EventID is greater than the dependent event
     // then the dependency is satisfied
     return (threadContexts[comm.sourceThreadId].currEventId > comm.sourceEventId);
   }
 
-  uint64_t msgReqSend(CoreID coreId, uint64_t addr, uint32_t bytes, ReqType type){
+  virtual uint64_t msgReqSend(CoreID coreId, uint64_t addr, uint32_t bytes, ReqType type){
     uint64_t delay = 0;
     if(type == ReqType::REQ_READ)
       core_data[coreId]->read(addr, &delay);
@@ -198,25 +192,25 @@ public:
     return delay;
   }
 
-  void processEventMarker(ThreadContext<BW>& tcxt, CoreID coreId)
+  virtual void processEventMarker(ThreadContext& tcxt, CoreID coreId)
   {
     tcxt.currEventId++;  // increment after, starts at 0
     tcxt.evStream.pop();
   }
 
-  void processInsnMarker(ThreadContext<BW>& tcxt, CoreID coreId)
+  virtual void processInsnMarker(ThreadContext& tcxt, CoreID coreId)
   {
     tcxt.evStream.pop();
   }
 
-  void processEndMarker(ThreadContext<BW>& tcxt, CoreID coreId)
+  virtual void processEndMarker(ThreadContext& tcxt, CoreID coreId)
   {
     tcxt.status = ThreadStatus::COMPLETED;
     tcxt.evStream.pop();
   }
 
 
-  void replayCompute(ThreadContext<BW>& tcxt, CoreID coreId)
+  virtual void replayCompute(ThreadContext& tcxt, CoreID coreId)
   {
     assert(tcxt.evStream.peek().tag == Tag::COMPUTE);
     // simulate time for the iops/flops
@@ -226,7 +220,7 @@ public:
     tcxt.evStream.pop();
   }
 
-  void replayMemory(ThreadContext<BW>& tcxt, CoreID coreId)
+  virtual void replayMemory(ThreadContext& tcxt, CoreID coreId)
   {
     assert(tcxt.evStream.peek().tag == Tag::MEMORY);
     // Send the load/store
@@ -237,7 +231,7 @@ public:
     tcxt.evStream.pop();
   }
 
-  void replayComm(ThreadContext<BW>& tcxt, CoreID coreId)
+  virtual void replayComm(ThreadContext& tcxt, CoreID coreId)
   {
     assert(tcxt.evStream.peek().tag == Tag::MEMORY_COMM);
     const StEvent& ev = tcxt.evStream.peek();
@@ -255,7 +249,7 @@ public:
     }
   }
 
-  void replayThreadAPI(ThreadContext<BW>& tcxt, CoreID coreID){
+  virtual void replayThreadAPI(ThreadContext& tcxt, CoreID coreID){
     assert(tcxt.evStream.peek().tag == Tag::THREAD_API);
     const StEvent& ev = tcxt.evStream.peek();
     const uint64_t pthAddr = ev.threadApi.pthAddr;
@@ -303,7 +297,7 @@ public:
 
         const ThreadID workerThreadID = {pthMetadata.addressToIdMap().at(pthAddr)};
         assert(workerThreadID < threadContexts.size());
-        ThreadContext<BW>& workertcxt = threadContexts[workerThreadID];
+        ThreadContext& workertcxt = threadContexts[workerThreadID];
 
         assert(workertcxt.status == ThreadStatus::INACTIVE);
 
@@ -323,7 +317,7 @@ public:
       {
         assert(pthMetadata.addressToIdMap().find(pthAddr) != pthMetadata.addressToIdMap().cend());
 
-        const ThreadContext<BW>& workertcxt = threadContexts[pthMetadata.addressToIdMap().at(pthAddr)];
+        const ThreadContext& workertcxt = threadContexts[pthMetadata.addressToIdMap().at(pthAddr)];
         if(workertcxt.completed())
         {
           // reset to active, in case this thread was previously blocked
@@ -444,8 +438,8 @@ public:
     }
   }
 
-  void wakeupCore(CoreID coreId){
-    ThreadContext<BW>& tcxt = coreToThreadMap[coreId].front();
+  virtual void wakeupCore(CoreID coreId){
+    ThreadContext& tcxt = coreToThreadMap[coreId].front();
     assert(tcxt.running());
 
     switch (tcxt.evStream.peek().tag) 
@@ -476,17 +470,44 @@ public:
     }
   }
 
-  void wakeupDebugLog(){
+  virtual void wakeupDebugLog(){
     printf("clock:%ld\n", curClock());
     for(const auto & cxt : threadContexts){
       printf("Thread<%d>:Event<%ld>:Status<%s>\n", cxt.threadId, cxt.currEventId, toString(cxt.status));
     }
   }
 
-  void start(){
+public:
+  SynchroTraceReplayer(std::string eventDir, float CPI_IOPS, float CPI_FLOPS, uint32_t pthCycles, 
+    uint32_t schedSliceCycles, std::vector<CoreInterface *>& core_data) 
+  : SynchroTraceReplayerBase(eventDir, CPI_IOPS, CPI_FLOPS, pthCycles, schedSliceCycles, core_data)
+  {
+    perThreadLocksHeld.resize(NT);
+    condSignals.resize(NT);
+    coreToThreadMap.resize(NC); 
+  }
+
+  virtual void init(){
+    workerThreadCount = 0;
+
+    for(ThreadID i = 0; i < NT; i++){
+      threadContexts.emplace_back(i, eventDir);
+    }
+    for(auto& tcxt : threadContexts)
+      coreToThreadMap.at(threadIdToCoreId(tcxt.threadId)).emplace_back(tcxt);
+
+    // Set master (first) thread as active.
+    // Schedule first tick of the initial core.
+    // (the other cores begin 'inactive', and
+    //  expect the master thread to start them)
+    threadContexts[0].status = ThreadStatus::ACTIVE;
+    workerThreadCount++;
+  }
+
+  virtual void start(){
     while(true){
       if (std::all_of(threadContexts.cbegin(), threadContexts.cend(),
-                      [](const ThreadContext<BW>& tcxt)
+                      [](const ThreadContext& tcxt)
                       { return tcxt.completed(); })) 
         break;
       for(auto &tcxt : threadContexts)

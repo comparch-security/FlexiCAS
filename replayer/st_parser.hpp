@@ -190,8 +190,6 @@ private:
 
 };
 
-// BW: Buffer Size
-template<int BW>
 class StEventStream
 {
 protected:
@@ -211,19 +209,20 @@ protected:
   std::vector<StEvent>::const_iterator buffer_current;
   std::vector<StEvent>::const_iterator buffer_end;
   size_t eventsPerFill;
+  size_t BufferSize;
 
 public:
-  StEventStream(ThreadID threadId, const std::string& eventDir) : 
+  StEventStream(ThreadID threadId, const std::string& eventDir, size_t BSize = 1024) : 
   threadId(threadId), filename(eventDir + "/sigil.events.out-" + std::to_string(threadId) + ".gz"), 
-  lastLineParsed(0), traceFile(filename.c_str()){
+  lastLineParsed(0), traceFile(filename.c_str()), BufferSize(BSize){
     if(!traceFile){
       std::cerr << "Error opening file " << filename << std::endl;
       assert(0);
     }
-    buffer.reserve(BW);
+    buffer.reserve(BufferSize);
     buffer_current = buffer.cbegin();
     buffer_end = buffer.cend();
-    eventsPerFill = BW/8;
+    eventsPerFill = BufferSize/8;
     refill();
   }
 

@@ -33,7 +33,7 @@ int main(){
   // l2->attach_monitor(&tracer);
   // mem->attach_monitor(&tracer);
 
-  SynchroTraceReplayer<NCore, NCore, 1000> replayer(".", 1.0, 2.0, 1, 1, core_data);
+  SynchroTraceReplayer<NCore, NCore> replayer(".", 1.0, 2.0, 1, 1, core_data);
   replayer.init();
   replayer.start();
 }
