@@ -284,13 +284,33 @@ public:
 
 typedef InnerCohPortT<InnerCohPortUncached> InnerCohPort;
 
+// base class for CoreInterface
+class CoreInterfaceBase
+{
+public:
+  virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) = 0;
+  
+  virtual void write(uint64_t addr, const CMDataBase *m_data, uint64_t *delay) = 0;
+  // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
+  virtual void flush(uint64_t addr, uint64_t *delay) = 0;
+  // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
+  virtual void writeback(uint64_t addr, uint64_t *delay) = 0;
+  // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
+  virtual void writeback_invalidate(uint64_t *delay) = 0;
+
+  // flush the whole cache
+  virtual void flush_cache(uint64_t *delay) = 0;
+
+  virtual void query_loc(uint64_t addr, std::list<LocInfo> *locs) = 0;
+
+  uint64_t normalize(uint64_t addr) const { return addr & ~0x3full; }
+};
+
 // interface with the processing core is a special InnerCohPort
-class CoreInterface : public InnerCohPortUncached {
+class CoreInterface : public InnerCohPortUncached, public CoreInterfaceBase {
 public:
   CoreInterface(policy_ptr policy) : InnerCohPortUncached(policy) {}
   virtual ~CoreInterface() {}
-
-  uint64_t normalize(uint64_t addr) const { return addr & ~0x3full; }
 
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
     addr = normalize(addr);
@@ -309,18 +329,14 @@ public:
     cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
   }
 
-  // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
   virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); flush_line(addr, policy->cmd_for_flush(), delay); }
 
-  // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
   virtual void writeback(uint64_t addr, uint64_t *delay) { addr = normalize(addr); flush_line(addr, policy->cmd_for_writeback(), delay); }
 
-  // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
   virtual void writeback_invalidate(uint64_t *delay) {
     assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
   }
 
-  // flush the whole cache
   virtual void flush_cache(uint64_t *delay) {
     auto [npar, nset, nway] = cache->size();
     for(int ipar=0; ipar<npar; ipar++)
@@ -392,7 +408,7 @@ public:
 };
 
 // Normal L1 coherent cache
-template<typename CacheT, typename OuterT = OuterCohPort, typename CoreT = CoreInterface> requires C_DERIVE(CoreT, CoreInterface)
+template<typename CacheT, typename OuterT = OuterCohPort, typename CoreT = CoreInterface> requires C_DERIVE(CoreT, CoreInterfaceBase)
 using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 /////////////////////////////////

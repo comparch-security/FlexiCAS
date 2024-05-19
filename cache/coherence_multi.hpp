@@ -444,22 +444,11 @@ template <typename OT, typename CT, typename CPT>
         && C_DERIVE2(CPT, CohPolicyBase, CohPolicyMultiThreadSupport)
 using InnerCohMultiThreadPort = InnerCohPortMultiThreadT<InnerCohPortMultiThreadUncached<OT, CT, CPT> >;
 
-class CoreMultiThreadSupport
-{
-public:
-  virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) = 0;
-  virtual void write(uint64_t addr, const CMDataBase *m_data, uint64_t *delay) = 0;
-  virtual void flush(uint64_t addr, uint64_t *delay) = 0;
-  virtual void writeback(uint64_t addr, uint64_t *delay) = 0;
-  virtual void writeback_invalidate(uint64_t *delay) = 0;
-};
-
-
 template <typename OT, typename CT, typename CPT> 
   requires C_DERIVE2(OT, OuterCohPortBase, OuterCohPortMultiThreadSupport)
         && C_DERIVE2(CT, CacheBase, CacheBaseMultiThreadSupport) 
         && C_DERIVE2(CPT, CohPolicyBase, CohPolicyMultiThreadSupport)
-class CoreMultiThreadInterface : public InnerCohPortMultiThreadUncached<OT, CT, CPT>, public CoreMultiThreadSupport
+class CoreMultiThreadInterface : public InnerCohPortMultiThreadUncached<OT, CT, CPT>, public CoreInterfaceBase
 {
   typedef InnerCohPortMultiThreadUncached<OT, CT, CPT> InnerT;
 
@@ -472,8 +461,6 @@ protected:
 public:
   CoreMultiThreadInterface(policy_ptr policy) : InnerT(policy) {}
   virtual ~CoreMultiThreadInterface() {}
-
-  uint64_t normalize(uint64_t addr) const { return addr & ~0x3full; }
 
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
     auto policy = std::static_pointer_cast<CPT>(InnerT::policy);
@@ -528,8 +515,6 @@ public:
   virtual void writeback_invalidate(uint64_t *delay) {
     assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
   }
-
-  // flush the whole cache
   virtual void flush_cache(uint64_t *delay) {
     auto [npar, nset, nway] = cache->size();
     for(int ipar=0; ipar<npar; ipar++)
