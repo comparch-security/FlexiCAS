@@ -408,7 +408,7 @@ public:
 };
 
 // Normal L1 coherent cache
-template<typename CacheT, typename OuterT = OuterCohPort, typename CoreT = CoreInterface> requires C_DERIVE(CoreT, CoreInterface)
+template<typename CacheT, typename OuterT = OuterCohPort, typename CoreT = CoreInterface> requires C_DERIVE(CoreT, CoreInterfaceBase)
 using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 /////////////////////////////////
