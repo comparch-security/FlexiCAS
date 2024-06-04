@@ -43,6 +43,9 @@ public:
 
   bool is_uncached() const { return coh_id == -1; }
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) = 0;
+
+  virtual void finish_req(uint64_t addr) = 0;
+
   friend CoherentCacheBase; // deferred assignment for cache
 };
 
@@ -73,6 +76,8 @@ public:
   virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); } // may not implement if not supported
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
+
+  virtual void finish_resp(uint64_t addr) {};
   
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -99,6 +104,9 @@ public:
 
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs){
     coh->query_loc_resp(addr, locs);
+  }
+  virtual void finish_req(uint64_t addr){
+    coh->finish_resp(addr);
   }
 };
 
@@ -264,6 +272,8 @@ class InnerCohPortT : public IPUC
 {
 protected:
   using IPUC::coh;
+  using IPUC::outer;
+  using IPUC::policy;
 public:
   InnerCohPortT(policy_ptr policy) : IPUC(policy) {}
   virtual ~InnerCohPortT() {}
@@ -279,6 +289,11 @@ public:
       }
     }
     return std::make_pair(hit, writeback);
+  }
+  virtual void finish_resp(uint64_t addr){
+    if(policy->finish_need_req()) {
+      outer->finish_req(addr);
+    }
   }
 };
 
@@ -317,6 +332,7 @@ public:
     auto cmd = policy->cmd_for_read();
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    outer->finish_req(addr);
     return data;
   }
 
@@ -327,11 +343,12 @@ public:
     meta->to_dirty();
     if(data) data->copy(m_data);
     cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
+    outer->finish_req(addr);
   }
 
-  virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); flush_line(addr, policy->cmd_for_flush(), delay); }
+  virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); flush_line(addr, policy->cmd_for_flush(), delay); outer->finish_req(addr);}
 
-  virtual void writeback(uint64_t addr, uint64_t *delay) { addr = normalize(addr); flush_line(addr, policy->cmd_for_writeback(), delay); }
+  virtual void writeback(uint64_t addr, uint64_t *delay) { addr = normalize(addr); flush_line(addr, policy->cmd_for_writeback(), delay); outer->finish_req(addr);}
 
   virtual void writeback_invalidate(uint64_t *delay) {
     assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
@@ -343,8 +360,10 @@ public:
       for(int iset=0; iset < nset; iset++)
         for(int iway=0; iway < nway; iway++) {
           auto [meta, data] = cache->access_line(ipar, iset, iway);
-          if(meta->is_valid())
+          if(meta->is_valid()){
             flush_line(meta->addr(iset), policy->cmd_for_flush(), delay);
+            outer->finish_req(meta->addr(iset));
+          }
         }
   }
 
@@ -435,6 +454,9 @@ public:
   }
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
     cohm[hasher(addr)]->query_loc_resp(addr, locs);
+  }
+  virtual void finish_resp(uint64_t addr){
+    cohm[hasher(addr)]->finish_resp(addr);
   }
 };
 

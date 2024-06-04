@@ -173,6 +173,8 @@ public:
     return std::make_pair(false, cmd_for_null());
   }
 
+  // finish
+  virtual bool finish_need_req() const = 0;
 };
 
 #endif
