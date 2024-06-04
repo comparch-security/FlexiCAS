@@ -10,9 +10,11 @@
 #define L2IW 5
 #define L2WN 8
 
-#define NCore 3
+#define NThread 5
+#define NCore 4
 
 int main(){
+  double st, ed;
 
   auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, DelayL1<1, 1, 1>, true>(NCore, "l1d");
   auto core_data = get_l1_core_interface(l1d);
@@ -33,7 +35,13 @@ int main(){
   // l2->attach_monitor(&tracer);
   // mem->attach_monitor(&tracer);
 
-  SynchroTraceReplayer<NCore, NCore> replayer(".", 1.0, 2.0, 1, 1, core_data);
+  st = clock();
+
+  SynchroTraceReplayer<NThread, NCore> replayer("../pthread_spinlock", 1.0, 2.0, 1, 1, 300, core_data);
   replayer.init();
   replayer.start();
+
+  ed = clock();
+
+  printf("Replay Time: %.0lfms\n", (ed - st) / 1000.0);
 }
