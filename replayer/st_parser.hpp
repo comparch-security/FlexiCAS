@@ -163,7 +163,7 @@ private:
     // the lock variable for the conditional signal/wait
     uint64_t mutexLockAddr = 0;
     std::regex patternM(R"(&0x([A-Fa-f0-9]+))");
-    if(std::regex_search(line, matches, patternM)) mutexLockAddr = std::stoi(matches[1]);
+    if (std::regex_search(line, matches, patternM)) mutexLockAddr = std::stoi(matches[1]);
 
     buffer.emplace_back(StEvent::ThreadApiTag, type, pthAddr, mutexLockAddr);
   }
