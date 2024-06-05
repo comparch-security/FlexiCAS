@@ -83,13 +83,6 @@ public:
       return std::make_tuple(false, false, cmd_for_null());
   }
 
-  virtual bool finish_need_req() const {
-    if constexpr (isLLC) {
-      return false;
-    } else {
-      return true;
-    }
-  }
 };
 
 #endif
