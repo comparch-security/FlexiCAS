@@ -200,10 +200,11 @@ public:
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
-    if(cmd.id == -1)  finish_resp(addr);
 
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
+
+    if(!hit) finish_record(addr, policy->cmd_for_finish(cmd.id));
   }
 
 
@@ -363,10 +364,11 @@ public:
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(outer_cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
-    if(outer_cmd.id == -1)  finish_resp(addr);
 
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
+
+    if(!hit) finish_record(addr, policy->cmd_for_finish(outer_cmd.id));
   }
 
 protected:
@@ -518,7 +520,7 @@ protected:
 typedef InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory> ExclusiveInnerCohPortDirectory;
 
 
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
+template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
 class ExclusiveOuterCohPortBroadcastT : public OPUC
 {
 protected:
@@ -564,17 +566,12 @@ public:
     return std::make_pair(hit||probe_hit, writeback);
   }
 
-  virtual void finish_req(uint64_t addr){
-    assert(!OPUC::is_uncached());
-    OPUC::coh->finish_resp(addr);
-  }
-
 };
 
-typedef ExclusiveOuterCohPortBroadcastT<OuterCohPortUncached> ExclusiveOuterCohPortBroadcast;
+typedef ExclusiveOuterCohPortBroadcastT<OuterCohPortCachedBase> ExclusiveOuterCohPortBroadcast;
 
 
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
+template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
 class ExclusiveOuterCohPortDirectoryT : public OPUC
 {
 protected:
@@ -620,14 +617,9 @@ public:
     return std::make_pair(hit||probe_hit, writeback);
   }
 
-  virtual void finish_req(uint64_t addr){
-    assert(!OPUC::is_uncached());
-    OPUC::coh->finish_resp(addr);
-  }
-
 };
 
-typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortUncached> ExclusiveOuterCohPortDirectory;
+typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortCachedBase> ExclusiveOuterCohPortDirectory;
 
 template<typename CT>
 using ExclusiveL2CacheBroadcast = CoherentCacheNorm<CT, ExclusiveOuterCohPortBroadcast, ExclusiveInnerCohPortBroadcast>;

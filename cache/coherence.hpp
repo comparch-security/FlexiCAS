@@ -72,11 +72,12 @@ public:
   }
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
 
   // may not implement probe_req() and finish_resp() if the port is uncached
   virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); }
-  virtual void finish_resp(uint64_t addr) {};
+  virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd) {};
+  virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) {};
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
   
@@ -108,8 +109,21 @@ public:
   }
 };
 
+// common behvior for cached outer ports
+class OuterCohPortCachedBase : public OuterCohPortUncached
+{
+public:
+  OuterCohPortCachedBase(policy_ptr policy) : OuterCohPortUncached(policy) {}
+  virtual ~OuterCohPortCachedBase() {}
+
+  virtual void finish_req(uint64_t addr){
+    assert(!is_uncached());
+    coh->finish_resp(addr, policy->cmd_for_finish(coh_id));
+  }
+};
+
 // common behavior for cached outer ports
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
+template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
 class OuterCohPortT : public OPUC
 {
 protected:
@@ -147,13 +161,9 @@ public:
     return std::make_pair(hit, writeback);
   }
 
-  virtual void finish_req(uint64_t addr){
-    assert(!OPUC::is_uncached());
-    OPUC::coh->finish_resp(addr);
-  }
 };
 
-typedef OuterCohPortT<OuterCohPortUncached> OuterCohPort;
+typedef OuterCohPortT<OuterCohPortCachedBase> OuterCohPort;
 
 class InnerCohPortUncached : public InnerCohPortBase
 {
@@ -167,7 +177,7 @@ public:
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
-    if(cmd.id == -1)  finish_resp(addr);
+    if(!hit) finish_record(addr, policy->cmd_for_finish(cmd.id));
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -274,11 +284,16 @@ protected:
 template<class IPUC> requires C_DERIVE(IPUC, InnerCohPortUncached)
 class InnerCohPortT : public IPUC
 {
+private:
+  // record the pending finish message from inner caches
+  // replace the single storage to a set in multi-thread sim
+  uint64_t addr_pending_finish;
+  int32_t  id_pending_finish;
 protected:
   using IPUC::coh;
   using IPUC::outer;
 public:
-  InnerCohPortT(policy_ptr policy) : IPUC(policy) {}
+  InnerCohPortT(policy_ptr policy) : IPUC(policy), addr_pending_finish(0) {}
   virtual ~InnerCohPortT() {}
 
   virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
@@ -294,8 +309,23 @@ public:
     return std::make_pair(hit, writeback);
   }
 
-  virtual void finish_resp(uint64_t addr){
-    outer->finish_req(addr);
+  // record pending finish
+  virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd) {
+    if(outer_cmd.id == -1) {
+      outer->finish_req(addr);
+    } else {
+      addr_pending_finish = addr;
+      id_pending_finish = outer_cmd.id;
+    }
+  }
+
+  // only forward the finish message recorded by previous acquire
+  virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) {
+    assert(addr_pending_finish == 0 || (addr_pending_finish == addr && id_pending_finish == outer_cmd.id));
+    if(addr_pending_finish == addr && id_pending_finish == outer_cmd.id) {
+      outer->finish_req(addr);
+      addr_pending_finish = 0;
+    }
   }
 };
 
@@ -334,7 +364,7 @@ public:
     auto cmd = policy->cmd_for_read();
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
-    outer->finish_req(addr);
+    if(!hit) outer->finish_req(addr);
     return data;
   }
 
@@ -345,7 +375,7 @@ public:
     meta->to_dirty();
     if(data) data->copy(m_data);
     cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
-    outer->finish_req(addr);
+    if(!hit) outer->finish_req(addr);
   }
 
   virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); flush_line(addr, policy->cmd_for_flush(), delay); }
@@ -455,8 +485,8 @@ public:
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
     cohm[hasher(addr)]->query_loc_resp(addr, locs);
   }
-  virtual void finish_resp(uint64_t addr){
-    cohm[hasher(addr)]->finish_resp(addr);
+  virtual void finish_resp(uint64_t addr, coh_cmd_t cmd){
+    cohm[hasher(addr)]->finish_resp(addr, cmd);
   }
 };
 

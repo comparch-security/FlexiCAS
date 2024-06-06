@@ -30,6 +30,7 @@ protected:
   static const uint32_t release_msg = 2;
   static const uint32_t probe_msg   = 3;
   static const uint32_t flush_msg   = 4;
+  static const uint32_t finish_msg  = 5;
   static const uint32_t fetch_read_act  = 0;
   static const uint32_t fetch_write_act = 1;
   static const uint32_t evict_act       = 2;
@@ -48,6 +49,7 @@ public:
   bool is_release(coh_cmd_t cmd) const     { return cmd.msg == release_msg;     }
   bool is_probe(coh_cmd_t cmd) const       { return cmd.msg == probe_msg;       }
   bool is_flush(coh_cmd_t cmd) const       { return cmd.msg == flush_msg;       }
+  bool is_finish(coh_cmd_t cmd) const      { return cmd.msg == finish_msg;      }
 
   // action type
   bool is_fetch_read(coh_cmd_t cmd) const      { return cmd.act == fetch_read_act;  }
@@ -73,6 +75,7 @@ public:
   coh_cmd_t cmd_for_probe_writeback(int32_t id)   const { return {id, probe_msg,   writeback_act  }; }
   coh_cmd_t cmd_for_probe_release(int32_t id)     const { return {id, probe_msg,   evict_act      }; }
   coh_cmd_t cmd_for_probe_downgrade(int32_t id)   const { return {id, probe_msg,   downgrade_act  }; }
+  coh_cmd_t cmd_for_finish(int32_t id)            const { return {id, finish_msg,  0              }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
 
