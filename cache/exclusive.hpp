@@ -205,6 +205,7 @@ public:
     cache->data_return_buffer(data);
 
     if(!hit) finish_record(addr, policy->cmd_for_finish(cmd.id));
+    if(cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(cmd.id));
   }
 
 
@@ -369,6 +370,7 @@ public:
     cache->data_return_buffer(data);
 
     if(!hit) finish_record(addr, policy->cmd_for_finish(outer_cmd.id));
+    if(outer_cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(outer_cmd.id));
   }
 
 protected:

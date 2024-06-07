@@ -178,6 +178,7 @@ public:
     policy->meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     if(!hit) finish_record(addr, policy->cmd_for_finish(cmd.id));
+    if(cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(cmd.id));
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -311,12 +312,8 @@ public:
 
   // record pending finish
   virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd) {
-    if(outer_cmd.id == -1) {
-      outer->finish_req(addr);
-    } else {
-      addr_pending_finish = addr;
-      id_pending_finish = outer_cmd.id;
-    }
+    addr_pending_finish = addr;
+    id_pending_finish = outer_cmd.id;
   }
 
   // only forward the finish message recorded by previous acquire
