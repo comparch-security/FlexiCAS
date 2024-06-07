@@ -156,16 +156,17 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
     int max_free = -1, p = 0;
-    std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > candidates(P);
-    uint32_t m_s, m_w;
+    std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
+    uint32_t m_s;
     for(int i=0; i<P; i++) {
       m_s = CacheT::indexer.index(addr, i);
-      int free_num = CacheT::replacer[i].replace(m_s, &m_w);
+      int free_num = CacheT::replacer[i].get_free_num(m_s);
       if(free_num > max_free) { p = 0; max_free = free_num; }
       if(free_num >= max_free)
-        candidates[p++] = std::make_tuple(i, m_s, m_w);
+        candidates[p++] = std::make_pair(i, m_s);
     }
-    std::tie(*ai, *s, *w) = candidates[(*CacheT::loc_random)() % p];
+    std::tie(*ai, *s) = candidates[(*CacheT::loc_random)() % p];
+    CacheT::replacer[*ai].replace(*s, w);
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
