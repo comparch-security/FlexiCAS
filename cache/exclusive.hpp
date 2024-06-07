@@ -203,6 +203,9 @@ public:
 
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
+
+    if(!hit) finish_record(addr, policy->cmd_for_finish(cmd.id));
+    if(cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(cmd.id));
   }
 
 
@@ -365,6 +368,9 @@ public:
 
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
+
+    if(!hit) finish_record(addr, policy->cmd_for_finish(outer_cmd.id));
+    if(outer_cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(outer_cmd.id));
   }
 
 protected:
@@ -516,7 +522,7 @@ protected:
 typedef InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory> ExclusiveInnerCohPortDirectory;
 
 
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
+template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
 class ExclusiveOuterCohPortBroadcastT : public OPUC
 {
 protected:
@@ -564,10 +570,10 @@ public:
 
 };
 
-typedef ExclusiveOuterCohPortBroadcastT<OuterCohPortUncached> ExclusiveOuterCohPortBroadcast;
+typedef ExclusiveOuterCohPortBroadcastT<OuterCohPortCachedBase> ExclusiveOuterCohPortBroadcast;
 
 
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
+template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
 class ExclusiveOuterCohPortDirectoryT : public OPUC
 {
 protected:
@@ -615,7 +621,7 @@ public:
 
 };
 
-typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortUncached> ExclusiveOuterCohPortDirectory;
+typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortCachedBase> ExclusiveOuterCohPortDirectory;
 
 template<typename CT>
 using ExclusiveL2CacheBroadcast = CoherentCacheNorm<CT, ExclusiveOuterCohPortBroadcast, ExclusiveInnerCohPortBroadcast>;
