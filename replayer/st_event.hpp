@@ -52,6 +52,37 @@ enum class EventType {
   NUM_TYPES,
 };
 
+const char* EventToString(EventType type) {
+  switch (type) 
+  {
+    case EventType::INVALID_EVENT:
+      return "INVALID_EVENT";
+    case EventType::MUTEX_LOCK:
+      return "MUTEX_LOCK";
+    case EventType::MUTEX_UNLOCK:
+      return "MUTEX_UNLOCK";
+    case EventType::THREAD_CREATE:
+      return "THREAD_CREATE";
+    case EventType::THREAD_JOIN:
+      return "THREAD_JOIN";
+    case EventType::BARRIER_WAIT:
+      return "BARRIER_WAIT";
+    case EventType::COND_WAIT:
+      return "COND_WAIT";
+    case EventType::COND_SG:
+      return "COND_SG";
+    case EventType::COND_BR:
+      return "COND_BR";
+    case EventType::SPIN_LOCK:
+      return "SPIN_LOCK";
+    case EventType::SPIN_UNLOCK:
+      return "SPIN_UNLOCK";
+    default:
+      std::cerr << "Unexpected Event Type" << std::endl;
+      assert(0);
+  }
+}
+
 /** Read/Write */
 enum class ReqType: uint8_t {
     REQ_READ,
