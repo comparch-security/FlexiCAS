@@ -86,8 +86,8 @@ libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 .PHONY: regression
 
 clean:
-	$(MAKE) clean-regression
-	$(MAKE) clean-parallel-regression
+	-$(MAKE) clean-regression
+	-$(MAKE) clean-parallel-regression
 	-rm $(UTIL_OBJS) $(CACHE_OBJS)
 
 .PHONY: clean
