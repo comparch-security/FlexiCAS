@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cassert>
+#include <mutex>
 #include "util/random.hpp"
 
 ///////////////////////////////////
@@ -42,7 +43,7 @@ public:
 
   uint32_t get_free_num(uint32_t s) const { return free_num[s]; }
 
-  virtual void replace(uint32_t s, uint32_t *w, uint32_t op = 0){
+  virtual void replace(uint32_t s, uint32_t *w, uint32_t op = 0) {
     uint32_t i = 0;
     if constexpr (EF) {
       if(free_num[s] > 0) i = alloc_from_free(s);
@@ -63,6 +64,39 @@ public:
       free_map[s][w] = true;
       free_num[s]++;
     }
+  }
+};
+
+///////////////////////////////////
+// Base Replacer class supporting multi-thread (MT)
+// EF: empty first
+template<bool EF>
+class ReplaceFuncBaseMT : public ReplaceFuncBase<EF>
+{
+protected:
+  std::vector<std::mutex *> mtxs;
+
+  void lock(uint32_t s)   { mtxs[s]->lock();   }
+  void unlock(uint32_t s) { mtxs[s]->unlock(); }
+
+public:
+  ReplaceFuncBaseMT(uint32_t nset, uint32_t nway)
+    : ReplaceFuncBase<EF>(nset, nway), mtxs(nset, nullptr) {
+    for(auto &m: mtxs) m = new std::mutex();
+  }
+
+  virtual ~ReplaceFuncBaseMT() { for(auto m : mtxs) delete m; }
+
+  virtual void replace(uint32_t s, uint32_t *w, uint32_t op = 0) {
+    lock(s);
+    ReplaceFuncBase<EF>::replace(s, w, op);
+    unlock(s);
+  }
+
+  virtual void invalid(uint32_t s, uint32_t w){
+    lock(s);
+    ReplaceFuncBase<EF>::invalid(s, w);
+    unlock(s);
   }
 };
 
@@ -94,17 +128,22 @@ public:
   virtual ~ReplaceFIFO_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
     if(alloc_map[s][w] && !release) {
       alloc_map[s][w] = false;
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
   }
 };
 
 template<int IW, int NW, bool EF = true, bool DUO = true>
 using ReplaceFIFO = ReplaceFIFO_G<ReplaceFuncBase, IW, NW, EF, DUO>;
+
+template<int IW, int NW, bool EF = true, bool DUO = true>
+using ReplaceFIFOMultiThread = ReplaceFIFO_G<ReplaceFuncBaseMT, IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // LRU replacement
@@ -121,17 +160,22 @@ public:
   ~ReplaceLRU_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
     if(alloc_map[s][w] || !DUO || !release) {
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
     if(alloc_map[s][w] && !release) alloc_map[s][w] = false;
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
   }
 };
 
 template<int IW, int NW, bool EF = true, bool DUO = true>
 using ReplaceLRU = ReplaceLRU_G<ReplaceFuncBase, IW, NW, EF, DUO>;
+
+template<int IW, int NW, bool EF = true, bool DUO = true>
+using ReplaceLRUMultiThread = ReplaceLRU_G<ReplaceFuncBaseMT, IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // Static RRIP replacement
@@ -159,19 +203,26 @@ public:
   virtual ~ReplaceSRRIP_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0){
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
     if(alloc_map[s][w] || !DUO || !release)
       used_map[s][w] = (alloc_map[s][w]) ? 2 : 0;
     if(alloc_map[s][w] && !release) alloc_map[s][w] = false;
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
   }
 
   virtual void invalid(uint32_t s, uint32_t w){
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
     used_map[s][w] = 3;
-    RPT<EF>::invalid(s, w);
+    ReplaceFuncBase<EF>::invalid(s, w);
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
   }
 };
 
 template<int IW, int NW, bool EF = true, bool DUO = true>
 using ReplaceSRRIP = ReplaceSRRIP_G<ReplaceFuncBase, IW, NW, EF, DUO>;
+
+template<int IW, int NW, bool EF = true, bool DUO = true>
+using ReplaceSRRIPMultiThread = ReplaceSRRIP_G<ReplaceFuncBaseMT, IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // Random replacement
@@ -196,11 +247,16 @@ public:
   }
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0){
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
     if(alloc_map[s][w] && !release) alloc_map[s][w] = false;
+    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
   }
 };
 
 template<int IW, int NW, bool EF = true, bool DUO = true>
 using ReplaceRandom = ReplaceRandom_G<ReplaceFuncBase, IW, NW, EF, DUO>;
+
+template<int IW, int NW, bool EF = true, bool DUO = true>
+using ReplaceRandomMultiThread = ReplaceRandom_G<ReplaceFuncBaseMT, IW, NW, EF, DUO>;
 
 #endif
