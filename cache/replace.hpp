@@ -68,13 +68,13 @@ public:
 
 /////////////////////////////////
 // FIFO replacement
-// IW: index width, NW: number of ways, EF: empty first, DUO: demand update only (do not update state for release)
-template<int IW, int NW, bool EF = true, bool DUO = true>
-class ReplaceFIFO : public ReplaceFuncBase<EF>
+// RPT: base class, IW: index width, NW: number of ways, EF: empty first, DUO: demand update only (do not update state for release)
+template<template <bool> class RPT, int IW, int NW, bool EF, bool DUO>
+class ReplaceFIFO_G : public RPT<EF>
 {
 protected:
-  using ReplaceFuncBase<EF>::alloc_map;
-  using ReplaceFuncBase<EF>::used_map;
+  using RPT<EF>::alloc_map;
+  using RPT<EF>::used_map;
 
   virtual uint32_t select(uint32_t s) {
     for(uint32_t i=0; i<NW; i++)
@@ -85,13 +85,13 @@ protected:
   }
 
 public:
-  ReplaceFIFO() : ReplaceFuncBase<EF>(1ul << IW, NW) {
+  ReplaceFIFO_G() : RPT<EF>(1ul << IW, NW) {
     for (auto &s: used_map) {
       s.resize(NW);
       for(uint32_t i=0; i<NW; i++) s[i] = i;
     }
   }
-  virtual ~ReplaceFIFO() {}
+  virtual ~ReplaceFIFO_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
     if(alloc_map[s][w] && !release) {
@@ -101,22 +101,24 @@ public:
       used_map[s][w] = NW-1;
     }
   }
-
 };
+
+template<int IW, int NW, bool EF = true, bool DUO = true>
+using ReplaceFIFO = ReplaceFIFO_G<ReplaceFuncBase, IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // LRU replacement
-// IW: index width, NW: number of ways, EF: empty first
-template<int IW, int NW, bool EF = true, bool DUO = true>
-class ReplaceLRU : public ReplaceFIFO<IW, NW, EF>
+// RPT: base class, IW: index width, NW: number of ways, EF: empty first
+template<template <bool> class RPT, int IW, int NW, bool EF, bool DUO>
+class ReplaceLRU_G : public ReplaceFIFO_G<RPT, IW, NW, EF, DUO>
 {
 protected:
-  using ReplaceFuncBase<EF>::alloc_map;
-  using ReplaceFuncBase<EF>::used_map;
+  using RPT<EF>::alloc_map;
+  using RPT<EF>::used_map;
 
 public:
-  ReplaceLRU() : ReplaceFIFO<IW, NW, EF>() {}
-  ~ReplaceLRU() {}
+  ReplaceLRU_G() : ReplaceFIFO_G<RPT, IW, NW, EF, DUO>() {}
+  ~ReplaceLRU_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
     if(alloc_map[s][w] || !DUO || !release) {
@@ -128,16 +130,18 @@ public:
   }
 };
 
+template<int IW, int NW, bool EF = true, bool DUO = true>
+using ReplaceLRU = ReplaceLRU_G<ReplaceFuncBase, IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // Static RRIP replacement
-// IW: index width, NW: number of ways, EF: empty first
-template<int IW, int NW, bool EF = true, bool DUO = true>
-class ReplaceSRRIP : public ReplaceFuncBase<EF>
+// RPT: base class, IW: index width, NW: number of ways, EF: empty first
+template<template <bool> class RPT, int IW, int NW, bool EF, bool DUO>
+class ReplaceSRRIP_G : public RPT<EF>
 {
 protected:
-  using ReplaceFuncBase<EF>::used_map;
-  using ReplaceFuncBase<EF>::alloc_map;
+  using RPT<EF>::used_map;
+  using RPT<EF>::alloc_map;
 
   virtual uint32_t select(uint32_t s) {
     uint32_t max_prio = used_map[s][0];
@@ -149,10 +153,10 @@ protected:
   }
 
 public:
-  ReplaceSRRIP() : ReplaceFuncBase<EF>(1ul << IW, NW) {
+  ReplaceSRRIP_G() : RPT<EF>(1ul << IW, NW) {
     for (auto &s: used_map) s.resize(NW, 3);
   }
-  virtual ~ReplaceSRRIP() {}
+  virtual ~ReplaceSRRIP_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0){
     if(alloc_map[s][w] || !DUO || !release)
@@ -162,19 +166,21 @@ public:
 
   virtual void invalid(uint32_t s, uint32_t w){
     used_map[s][w] = 3;
-    ReplaceFuncBase<EF>::invalid(s, w);
+    RPT<EF>::invalid(s, w);
   }
 };
 
+template<int IW, int NW, bool EF = true, bool DUO = true>
+using ReplaceSRRIP = ReplaceSRRIP_G<ReplaceFuncBase, IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // Random replacement
-// IW: index width, NW: number of ways, EF: empty first
-template<int IW, int NW, bool EF = true, bool DUO = true>
-class ReplaceRandom  : public ReplaceFuncBase<EF>
+// RPT: base class, IW: index width, NW: number of ways, EF: empty first
+template<template <bool> class RPT, int IW, int NW, bool EF = true, bool DUO = true>
+class ReplaceRandom_G  : public RPT<EF>
 {
 protected:
-  using ReplaceFuncBase<EF>::alloc_map;
+  using RPT<EF>::alloc_map;
 
   RandomGen<uint32_t> * loc_random; // a local randomizer for better thread parallelism
 
@@ -183,16 +189,18 @@ protected:
   }
 
 public:
-  ReplaceRandom() : ReplaceFuncBase<EF>(1ul << IW, NW), loc_random(cm_alloc_rand32()) {}
+  ReplaceRandom_G() : RPT<EF>(1ul << IW, NW), loc_random(cm_alloc_rand32()) {}
 
-  virtual ~ReplaceRandom() {
+  virtual ~ReplaceRandom_G() {
     delete loc_random;
   }
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0){
     if(alloc_map[s][w] && !release) alloc_map[s][w] = false;
   }
-
 };
+
+template<int IW, int NW, bool EF = true, bool DUO = true>
+using ReplaceRandom = ReplaceRandom_G<ReplaceFuncBase, IW, NW, EF, DUO>;
 
 #endif
