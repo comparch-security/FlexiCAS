@@ -76,8 +76,8 @@ class ReplaceFuncBaseMT : public ReplaceFuncBase<EF>
 protected:
   std::vector<std::mutex *> mtxs;
 
-  void lock(uint32_t s)   { mtxs[s]->lock();   }
-  void unlock(uint32_t s) { mtxs[s]->unlock(); }
+  __always_inline void lock(uint32_t s)   { mtxs[s]->lock();   }
+  __always_inline void unlock(uint32_t s) { mtxs[s]->unlock(); }
 
 public:
   ReplaceFuncBaseMT(uint32_t nset, uint32_t nway)
