@@ -150,9 +150,10 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
+// EF: empty first in replacer
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true>
   requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
-           C_DERIVE(IDX, IndexFuncBase) && C_DERIVE(RPC, ReplaceFuncBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
+  C_DERIVE(IDX, IndexFuncBase) && C_DERIVE(RPC, ReplaceFuncBase<EF>) && C_DERIVE_OR_VOID(DLY, DelayBase)
 class CacheSkewed : public CacheBase
 {
 protected:
