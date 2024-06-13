@@ -94,11 +94,12 @@ private:
 // DIDX: data indexer type, DRPC: data replacer type
 // EnMon: whether to enable monitoring
 // EnableRelocation : whether to enable relocation
+// EF: empty first in replacer
 template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
-         typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation>
+         typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation, bool EF = true>
   requires C_DERIVE2(MT, MetadataBroadcastBase, MirageMetadataSupport) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
            C_DERIVE(DTMT, MirageDataMeta)  && C_DERIVE(MIDX, IndexFuncBase)   && C_DERIVE(DIDX, IndexFuncBase) &&
-           C_DERIVE(MRPC, ReplaceFuncBase) && C_DERIVE(DRPC, ReplaceFuncBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
+           C_DERIVE(MRPC, ReplaceFuncBase<EF>) && C_DERIVE(DRPC, ReplaceFuncBase<EF>) && C_DERIVE_OR_VOID(DLY, DelayBase)
 class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
@@ -156,16 +157,17 @@ public:
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
     int max_free = -1, p = 0;
-    std::vector<std::tuple<uint32_t, uint32_t, uint32_t> > candidates(P);
-    uint32_t m_s, m_w;
+    std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
+    uint32_t m_s;
     for(int i=0; i<P; i++) {
       m_s = CacheT::indexer.index(addr, i);
-      int free_num = CacheT::replacer[i].replace(m_s, &m_w);
+      int free_num = CacheT::replacer[i].get_free_num(m_s);
       if(free_num > max_free) { p = 0; max_free = free_num; }
       if(free_num >= max_free)
-        candidates[p++] = std::make_tuple(i, m_s, m_w);
+        candidates[p++] = std::make_pair(i, m_s);
     }
-    std::tie(*ai, *s, *w) = candidates[(*CacheT::loc_random)() % p];
+    std::tie(*ai, *s) = candidates[(*CacheT::loc_random)() % p];
+    CacheT::replacer[*ai].replace(*s, w);
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {

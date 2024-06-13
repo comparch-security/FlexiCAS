@@ -1629,12 +1629,10 @@ l1d-1      write 0000792d5ad259c0 00 0007 01 0 [MdW] 817044232bfa184a
 mem        read  00004fefb0cb7cc0 -1 -001 -1 1 [McW] 0000000000000000
 l2         read  00004fefb0cb7cc0 -1 -001 -1 0 [IcR] 0000000000000000
 l1d-0      write 00004fefb0cb7cc0 00 0003 01 0 [MdW] 38afdc4cdcf866a7
-mem        write 00006f44ab8bcf80 -1 -001 -1 1 [MdW] 54ef841c985c9745
-l2         evict 00006f44ab8bcf80 00 0030 00   [IcR] 54ef841c985c9745
-l2         write 00006cf58254d780 00 0030 00 0 [SdW] cd2840a4925c9683
+l2         write 00006cf58254d780 00 0030 01 0 [SdW] cd2840a4925c9683
 l1d-0      evict 00006cf58254d780 00 0014 02   [IcR] cd2840a4925c9683
-mem        read  00006f44ab8bcf80 -1 -001 -1 1 [McW] 54ef841c985c9745
-l2         read  00006f44ab8bcf80 -1 -001 -1 0 [IcR] 54ef841c985c9745
+mem        write 00006f44ab8bcf80 -1 -001 -1 1 [MdW] 54ef841c985c9745
+l2         read  00006f44ab8bcf80 00 0030 00 1 [IcR] 54ef841c985c9745
 l1d-0      read  00006f44ab8bcf80 00 0014 02 0 [McW] 54ef841c985c9745
 l1d-0      write 00004813c834cdc0 00 0007 00 1 [MdW] 1c05eadfc5b117e3
 l1d-1      read  0000c92c00098fc0 00 0015 02 1 [MdW] 5ac8f2c9a0464889
@@ -1689,7 +1687,7 @@ l1d-0      read  0000792d5ad259c0 00 0007 02 0 [McW] 817044232bfa184a
 l1d-0      read  000049afd5e02b40 00 0013 00 1 [MdW] 0d73762cec20ec64
 l1d-1      read  0000fc3d1a588d00 00 0004 03 1 [McW] 20d6291b6fceeaa3
 l1d-1      read  0000095a29bb9340 00 0013 00 1 [MdW] cd5095ef84be60be
-l2         write 0000f2231ef84f80 00 0030 01 0 [SdW] 794119a0f1a9513d
+l2         write 0000f2231ef84f80 00 0030 02 0 [SdW] 794119a0f1a9513d
 l1d-1      evict 0000f2231ef84f80 00 0014 02   [IcR] 794119a0f1a9513d
 mem        read  0000b1312a1f2f80 -1 -001 -1 1 [McW] 63f4a195a598fedc
 l2         read  0000b1312a1f2f80 -1 -001 -1 0 [IcR] 63f4a195a598fedc

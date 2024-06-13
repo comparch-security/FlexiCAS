@@ -2,7 +2,6 @@
 #define CM_CACHE_CACHE_MULTI_HPP
 
 #include "cache/cache.hpp"
-#include "cache/replace_multi.hpp"
 #include <mutex>
 #include <condition_variable>
 #include <tuple>
@@ -88,11 +87,12 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
+// EF: empty first in replacer
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true>
   requires C_DERIVE(MT, CMMetadataBase) 
         && C_DERIVE_OR_VOID(DT, CMDataBase)
         && C_DERIVE(IDX, IndexFuncBase) 
-        && C_DERIVE2(RPC, ReplaceFuncBase, ReplaceMultiThreadSupport) 
+        && C_DERIVE(RPC, ReplaceFuncBaseMT<EF>)
         && C_DERIVE_OR_VOID(DLY, DelayBase)
 class CacheSkewedMultiThread : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>, 
                                public CacheBaseMultiThreadSupport

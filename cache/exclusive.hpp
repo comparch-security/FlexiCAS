@@ -298,7 +298,7 @@ protected:
       std::tie(meta, data, ai, s, w) = InnerCohPortUncached::replace_line(addr, delay);
       if(data_inner && data) data->copy(data_inner);
       meta->init(addr); policy->meta_after_release(cmd, meta, meta_inner);
-      cache->hook_write(addr, ai, s, w, false, true, meta, data, delay);
+      cache->hook_write(addr, ai, s, w, false, false, meta, data, delay);
     }
   }
 
@@ -459,7 +459,7 @@ protected:
       policy->meta_after_release(cmd, meta, meta_inner);
       if(meta->is_extend()) outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay); // writeback if dirty
       assert(meta_inner); // assume meta_inner is valid for all writebacks
-      cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
+      cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
       cache->data_return_buffer(data); // return it anyway
     } else {
       bool phit = false;
@@ -479,7 +479,7 @@ protected:
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(data_inner && mdata) mdata->copy(data);
         policy->meta_after_release(cmd, mmeta, meta_inner);
-        cache->hook_write(addr, mai, ms, mw, true, true, mmeta, mdata, delay);
+        cache->hook_write(addr, mai, ms, mw, true, false, mmeta, mdata, delay);
       }
       cache->data_return_buffer(data);
     }

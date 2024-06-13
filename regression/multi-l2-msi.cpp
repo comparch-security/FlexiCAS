@@ -2,7 +2,6 @@
 #include "cache/policy_multi.hpp"
 #include "cache/msi.hpp"
 #include "cache/memory.hpp"
-#include "cache/replace_multi.hpp"
 #include "cache/cache_multi.hpp"
 #include "cache/coherence_multi.hpp"
 #include "cache/memory_multi.hpp"
