@@ -21,10 +21,21 @@ protected:
   static const unsigned int write_max = 64; // allowing 64 parallel write
 
   __always_inline char * allocate(uint64_t ppn) {
-    char *page = static_cast<char *>(mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0));
-    assert(page != MAP_FAILED);
-    if constexpr (MT) page_mtx.lock();
-    pages[ppn] = page;
+    char *page;
+    bool miss = true;
+
+    if constexpr (MT) {
+      page_mtx.lock();
+      miss = !pages.count(ppn);
+    }
+
+    if (miss) {
+      page = static_cast<char *>(mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0));
+      assert(page != MAP_FAILED);
+      pages[ppn] = page;
+    } else
+      page = pages[ppn];
+
     if constexpr (MT) page_mtx.unlock();
     return page;
   }
