@@ -118,6 +118,7 @@ public:
       if(flush == 2){ // share instruction flush
         for(int i = 0; i < NC; i++){
           std::unique_lock lk(*xact_mutux[i]);
+          act.core = i;
           xact_queue[core].push_back(act);
         }
       }else{
