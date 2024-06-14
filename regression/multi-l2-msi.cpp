@@ -4,7 +4,6 @@
 #include "cache/memory.hpp"
 #include "cache/cache_multi.hpp"
 #include "cache/coherence_multi.hpp"
-#include "cache/memory_multi.hpp"
 #include "util/cache_type.hpp"
 #include "util/parallel_regression.hpp"
 
@@ -27,7 +26,7 @@ int main(){
   auto core_inst = get_l1_core_interface(l1i);
 
   auto l2 = cache_gen_multi_thread_l2<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRUMultiThread, MSIMultiThreadPolicy, true, void, false>(1, "l2")[0];
-  auto mem = new SimpleMultiThreadMemoryModel<Data64B, void, false>("mem");
+  auto mem = new SimpleMemoryModel<Data64B, void, false, true>("mem");
 
   for(int i=0; i<NCore; i++) {
     l1i[i]->outer->connect(l2->inner, l2->inner->connect(l1i[i]->outer, true));
