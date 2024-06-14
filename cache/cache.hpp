@@ -36,7 +36,7 @@ public:
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
 template<int IW, int NW, typename MT, typename DT>
-  requires C_DERIVE(MT, CMMetadataCommon) && C_DERIVE_OR_VOID(DT, CMDataBase)
+  requires C_DERIVE<MT, CMMetadataCommon> && C_DERIVE_OR_VOID(DT, CMDataBase)
 class CacheArrayNorm : public CacheArrayBase
 {
 protected:
@@ -152,8 +152,8 @@ public:
 // EnMon: whether to enable monitoring
 // EF: empty first in replacer
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true>
-  requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
-  C_DERIVE(IDX, IndexFuncBase) && C_DERIVE(RPC, ReplaceFuncBase<EF>) && C_DERIVE_OR_VOID(DLY, DelayBase)
+  requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID(DT, CMDataBase) &&
+  C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF>> && C_DERIVE_OR_VOID(DLY, DelayBase)
 class CacheSkewed : public CacheBase
 {
 protected:

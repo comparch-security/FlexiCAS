@@ -23,7 +23,7 @@ using MetadataMSIBroadcast = MetadataBroadcast<AW, IW, TOfst, MetadataMSIBase<Me
 template <int AW, int IW, int TOfst>
 using MetadataMSIDirectory = MetadataDirectory<AW, IW, TOfst, MetadataMSIBase<MetadataDirectoryBase> >;
 
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, MetadataBroadcastBase>
   class MSIPolicy : public MIPolicy<MT, isL1, isLLC>
 {
   typedef MIPolicy<MT, isL1, isLLC> PolicT;

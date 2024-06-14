@@ -20,7 +20,7 @@ typedef MetadataMIBase MetadataMI;
 template <int AW, int IW, int TOfst>
 using MetadataMIBroadcast = MetadataBroadcast<AW, IW, TOfst, MetadataMIBase>;
 
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, CMMetadataBase>
 class MIPolicy : public CohPolicyBase
 {
 protected:

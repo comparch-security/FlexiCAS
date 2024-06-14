@@ -4,7 +4,7 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE<MT, CMMetadataBase>
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
 {
 protected:
@@ -79,7 +79,7 @@ public:
   }
 };
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase) && EnDir
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE<MT, MetadataDirectoryBase> && EnDir
 class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
 {
 protected:
@@ -522,7 +522,7 @@ protected:
 typedef InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory> ExclusiveInnerCohPortDirectory;
 
 
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
+template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
 class ExclusiveOuterCohPortBroadcastT : public OPUC
 {
 protected:
@@ -573,7 +573,7 @@ public:
 typedef ExclusiveOuterCohPortBroadcastT<OuterCohPortCachedBase> ExclusiveOuterCohPortBroadcast;
 
 
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
+template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
 class ExclusiveOuterCohPortDirectoryT : public OPUC
 {
 protected:

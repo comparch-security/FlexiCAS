@@ -23,14 +23,14 @@ public:
   }
 };
 
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase)
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, MetadataBroadcastBase>
 class MSIMultiThreadPolicy : public MSIPolicy<MT, isL1, isLLC>, public CohPolicyMultiThreadSupport
 {
 public:
   virtual ~MSIMultiThreadPolicy() {}
 };
 
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, MetadataBroadcastBase) && !isL1
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, MetadataBroadcastBase> && !isL1
 class MESIMultiThreadPolicy : public MESIPolicy<MT, isL1, isLLC>, public CohPolicyMultiThreadSupport
 {
 public:

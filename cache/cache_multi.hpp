@@ -19,7 +19,7 @@ public:
 // Multi-thread Cache Array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
 template<int IW, int NW, typename MT, typename DT>
-  requires C_DERIVE(MT, CMMetadataCommon) 
+  requires C_DERIVE<MT, CMMetadataCommon> 
         && C_DERIVE_OR_VOID(DT, CMDataBase)
 class CacheArrayMultiThread : public CacheArrayNorm<IW, NW, MT, DT>, 
                               public CacheArrayMultiThreadSupport
@@ -89,10 +89,10 @@ public:
 // EnMon: whether to enable monitoring
 // EF: empty first in replacer
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true>
-  requires C_DERIVE(MT, CMMetadataBase) 
+  requires C_DERIVE<MT, CMMetadataBase> 
         && C_DERIVE_OR_VOID(DT, CMDataBase)
-        && C_DERIVE(IDX, IndexFuncBase) 
-        && C_DERIVE(RPC, ReplaceFuncBaseMT<EF>)
+        && C_DERIVE<IDX, IndexFuncBase> 
+        && C_DERIVE<RPC, ReplaceFuncBaseMT<EF>>
         && C_DERIVE_OR_VOID(DLY, DelayBase)
 class CacheSkewedMultiThread : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>, 
                                public CacheBaseMultiThreadSupport
