@@ -126,7 +126,7 @@ protected:
 
 // common behvior for multi-thread uncached outer ports
 template <typename CT>
-  requires C_DERIVE2(CT, CacheBase, CacheBaseMultiThreadSupport)
+  requires C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport>
 class OuterCohPortMultiThreadUncached : public OuterCohPortUncached, public OuterCohPortMultiThreadSupport
 {
 public:
@@ -152,8 +152,8 @@ public:
 
 // common behavior for cached outer ports
 template <class OPUC, typename IT, typename CT> 
-  requires C_DERIVE2(IT, InnerCohPortMultiThreadSupport, InnerCohPortBase)
-        && C_DERIVE2(CT, CacheBase, CacheBaseMultiThreadSupport)
+  requires C_DERIVE<IT, InnerCohPortMultiThreadSupport, InnerCohPortBase>
+        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport>
 class OuterCohPortMultiThreadT : public OPUC
 {
 protected:
@@ -216,14 +216,14 @@ public:
 };
 
 template <typename IT, typename CT> 
-  requires C_DERIVE2(IT, InnerCohPortBase, InnerCohPortMultiThreadSupport)
-        && C_DERIVE2(CT, CacheBase, CacheBaseMultiThreadSupport)
+  requires C_DERIVE<IT, InnerCohPortBase, InnerCohPortMultiThreadSupport>
+        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport>
 using OuterCohMultiThreadPort = OuterCohPortMultiThreadT<OuterCohPortMultiThreadUncached<CT>, IT, CT>;
 
 template <typename OT, typename CT, typename CPT> 
-  requires C_DERIVE2(OT, OuterCohPortBase, OuterCohPortMultiThreadSupport)
-        && C_DERIVE2(CT, CacheBase, CacheBaseMultiThreadSupport) 
-        && C_DERIVE2(CPT, CohPolicyBase, CohPolicyMultiThreadSupport)
+  requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
+        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport> 
+        && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
 class InnerCohPortMultiThreadUncached : public InnerCohPortUncached, public InnerCohPortMultiThreadSupport
 {
 protected:
@@ -439,15 +439,15 @@ public:
 };
 
 template <typename OT, typename CT, typename CPT> 
-  requires C_DERIVE2(OT, OuterCohPortBase, OuterCohPortMultiThreadSupport)
-        && C_DERIVE2(CT, CacheBase, CacheBaseMultiThreadSupport) 
-        && C_DERIVE2(CPT, CohPolicyBase, CohPolicyMultiThreadSupport)
+  requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
+        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport> 
+        && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
 using InnerCohMultiThreadPort = InnerCohPortMultiThreadT<InnerCohPortMultiThreadUncached<OT, CT, CPT> >;
 
 template <typename OT, typename CT, typename CPT> 
-  requires C_DERIVE2(OT, OuterCohPortBase, OuterCohPortMultiThreadSupport)
-        && C_DERIVE2(CT, CacheBase, CacheBaseMultiThreadSupport) 
-        && C_DERIVE2(CPT, CohPolicyBase, CohPolicyMultiThreadSupport)
+  requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
+        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport> 
+        && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
 class CoreMultiThreadInterface : public InnerCohPortMultiThreadUncached<OT, CT, CPT>, public CoreInterfaceBase
 {
   typedef InnerCohPortMultiThreadUncached<OT, CT, CPT> InnerT;

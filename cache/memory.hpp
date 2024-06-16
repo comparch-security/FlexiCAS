@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 template<typename DT, typename DLY, bool EnMon = false>
-  requires C_DERIVE_OR_VOID(DT, CMDataBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
+  requires C_DERIVE_OR_VOID<DT, CMDataBase> && C_DERIVE_OR_VOID<DLY, DelayBase>
   class SimpleMemoryModel : public InnerCohPortUncached, public CacheMonitorSupport
 {
 protected:
@@ -35,7 +35,7 @@ public:
   }
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
-    if constexpr (!C_VOID(DT)) {
+    if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       if(!pages.count(ppn)) allocate(ppn);
@@ -47,7 +47,7 @@ public:
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
-    if constexpr (!C_VOID(DT)) {
+    if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       assert(pages.count(ppn));
@@ -63,11 +63,11 @@ public:
   void detach_monitor() { CacheMonitorSupport::monitors->detach_monitor(); }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
-    if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) CacheMonitorSupport::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
-    if constexpr (EnMon || !C_VOID(DLY)) CacheMonitorSupport::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) CacheMonitorSupport::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
 private:

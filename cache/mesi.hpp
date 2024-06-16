@@ -5,7 +5,7 @@
 
 #include "cache/msi.hpp"
 
-template <typename BT> requires C_DERIVE(BT, MetadataDirectoryBase)
+template <typename BT> requires C_DERIVE<BT, MetadataDirectoryBase>
 class MetadataMESIBase : public BT
 {
 public:
@@ -19,7 +19,7 @@ private:
 template <int AW, int IW, int TOfst>
 using MetadataMESIDirectory = MetadataDirectory<AW, IW, TOfst, MetadataMESIBase<MetadataDirectoryBase> >;
 
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase) && !isL1
+template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, MetadataDirectoryBase> && !isL1
 class MESIPolicy : public MSIPolicy<MT, false, isLLC>
 {
   typedef MSIPolicy<MT, false, isLLC> PolicyT;
