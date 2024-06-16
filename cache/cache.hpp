@@ -36,7 +36,7 @@ public:
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
 template<int IW, int NW, typename MT, typename DT>
-  requires C_DERIVE(MT, CMMetadataCommon) && C_DERIVE_OR_VOID(DT, CMDataBase)
+  requires C_DERIVE<MT, CMMetadataCommon> && C_DERIVE_OR_VOID<DT, CMDataBase>
 class CacheArrayNorm : public CacheArrayBase
 {
 protected:
@@ -58,7 +58,7 @@ public:
         for(unsigned int w=NW; w<way_num; w++)
           meta[s*way_num+w]->to_extend();
 
-    if constexpr (!C_VOID(DT)) {
+    if constexpr (!C_VOID<DT>) {
       data.resize(data_num);
       for(auto &d:data) d = new DT();
     }
@@ -66,7 +66,7 @@ public:
 
   virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
-    if constexpr (!C_VOID(DT)) for(auto d:data) delete d;
+    if constexpr (!C_VOID<DT>) for(auto d:data) delete d;
   }
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
@@ -80,7 +80,7 @@ public:
 
   virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) { return meta[s*way_num + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
-    if constexpr (C_VOID(DT)) return nullptr;
+    if constexpr (C_VOID<DT>) return nullptr;
     else                      return data[s*NW + w];
   }
 };
@@ -152,8 +152,8 @@ public:
 // EnMon: whether to enable monitoring
 // EF: empty first in replacer
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true>
-  requires C_DERIVE(MT, CMMetadataBase) && C_DERIVE_OR_VOID(DT, CMDataBase) &&
-  C_DERIVE(IDX, IndexFuncBase) && C_DERIVE(RPC, ReplaceFuncBase<EF>) && C_DERIVE_OR_VOID(DLY, DelayBase)
+  requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
+  C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase>
 class CacheSkewed : public CacheBase
 {
 protected:
@@ -176,7 +176,7 @@ public:
     if constexpr (P>1) loc_random = cm_alloc_rand32();
 
     // for single thread simulator, we assume a maximum of 2 buffers should be enough
-    if constexpr (!C_VOID(DT)) {
+    if constexpr (!C_VOID<DT>) {
       for(int i=0; i<2; i++) {
         auto buffer = new DT();
         data_buffer_pool.insert(buffer);
@@ -192,7 +192,7 @@ public:
 
   virtual ~CacheSkewed() {
     delete CacheMonitorSupport::monitors;
-    if constexpr (!C_VOID(DT)) for(auto &buf: data_buffer_state) delete buf.first;
+    if constexpr (!C_VOID<DT>) for(auto &buf: data_buffer_state) delete buf.first;
     for(auto &buf: meta_buffer_state) delete buf.first;
     if constexpr (P>1) delete loc_random;
   }
@@ -210,7 +210,7 @@ public:
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
     auto meta = static_cast<CMMetadataBase *>(arrays[ai]->get_meta(s, w));
-    if constexpr (!C_VOID(DT))
+    if constexpr (!C_VOID<DT>)
       return std::make_pair(meta, w < NW ? arrays[ai]->get_data(s, w) : nullptr);
     else
       return std::make_pair(meta, nullptr);
@@ -225,21 +225,21 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
     if(ai < P) replacer[ai].access(s, w, false);
-    if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
     if(ai < P) replacer[ai].access(s, w, is_release);
-    if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
     if(ai < P && hit && evict) replacer[ai].invalid(s, w);
-    if constexpr (EnMon || !C_VOID(DLY)) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
   }
 
   virtual CMDataBase *data_copy_buffer() {
-    if constexpr (C_VOID(DT)) return nullptr;
+    if constexpr (C_VOID<DT>) return nullptr;
     else {
       assert(!data_buffer_pool.empty());
       auto buffer = *(data_buffer_pool.begin());

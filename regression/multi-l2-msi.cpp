@@ -13,11 +13,15 @@
 #define L2IW 5
 #define L2WN 8
 
+#define PAddrN 1024
+#define SAddrN 256
 #define NCore 4
+#define TestN ((PAddrN + SAddrN) * NCore * 2)
 
-#define PAddrN 128
-#define SAddrN 64
-#define TestN 512
+//#define NCore 4
+//#define PAddrN 128
+//#define SAddrN 64
+//#define TestN 512
 
 int main(){
   auto l1d = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRUMultiThread, MSIMultiThreadPolicy, false, false, void, false>(NCore, "l1d");

@@ -76,11 +76,11 @@ protected:
 
 public:
   CacheMonitorImp(uint32_t id) : MonitorContainerBase(id) {
-    if constexpr (!C_VOID(DLY)) timer = new DLY();
+    if constexpr (!C_VOID<DLY>) timer = new DLY();
   }
 
   virtual ~CacheMonitorImp() {
-    if constexpr (!C_VOID(DLY)) delete timer;
+    if constexpr (!C_VOID<DLY>) delete timer;
   }
 
   virtual void attach_monitor(MonitorBase *m) {
@@ -91,19 +91,19 @@ public:
 
   virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
     if constexpr (EnMon) for(auto m:monitors) m->read(id, addr, ai, s, w, hit, meta, data);
-    if constexpr (!C_VOID(DLY)) timer->read(addr, ai, s, w, hit, delay);
+    if constexpr (!C_VOID<DLY>) timer->read(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
     if constexpr (EnMon) for(auto m:monitors) m->write(id, addr, ai, s, w, hit, meta, data);
-    if constexpr (!C_VOID(DLY)) timer->write(addr, ai, s, w, hit, delay);
+    if constexpr (!C_VOID<DLY>) timer->write(addr, ai, s, w, hit, delay);
   }
 
   virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
     if(hit && evict) {
       if constexpr (EnMon) for(auto m:monitors) m->invalid(id, addr, ai, s, w, meta, data);
     }
-    if constexpr (!C_VOID(DLY)) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
+    if constexpr (!C_VOID<DLY>) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
 };

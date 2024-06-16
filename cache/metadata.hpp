@@ -164,7 +164,7 @@ public:
 // TOfst : tag offset
 // MT    : metadata type
 // OutMT : the metadata type to store outer cache state
-template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, CMMetadataBase)
+template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE<MT, CMMetadataBase>
 class MetadataMixer : public MT
 {
 protected:
@@ -209,10 +209,10 @@ public:
   }
 };
 
-template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, MetadataBroadcastBase) && (!C_DERIVE(MT, MetadataDirectoryBase))
+template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE<MT, MetadataBroadcastBase> && (!C_DERIVE<MT, MetadataDirectoryBase>)
 using MetadataBroadcast = MetadataMixer<AW, IW, TOfst, MT>;
 
-template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE(MT, MetadataDirectoryBase)
+template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE<MT, MetadataDirectoryBase>
 using MetadataDirectory = MetadataMixer<AW, IW, TOfst, MT>;
 
 #endif

@@ -128,14 +128,14 @@ public:
   virtual ~ReplaceFIFO_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::lock(s);
     if(alloc_map[s][w] && !release) {
       alloc_map[s][w] = false;
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::unlock(s);
   }
 };
 
@@ -160,14 +160,14 @@ public:
   ~ReplaceLRU_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::lock(s);
     if(alloc_map[s][w] || !DUO || !release) {
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
     if(alloc_map[s][w] && !release) alloc_map[s][w] = false;
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::unlock(s);
   }
 };
 
@@ -203,18 +203,18 @@ public:
   virtual ~ReplaceSRRIP_G() {}
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0){
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::lock(s);
     if(alloc_map[s][w] || !DUO || !release)
       used_map[s][w] = (alloc_map[s][w]) ? 2 : 0;
     if(alloc_map[s][w] && !release) alloc_map[s][w] = false;
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::unlock(s);
   }
 
   virtual void invalid(uint32_t s, uint32_t w){
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::lock(s);
     used_map[s][w] = 3;
     ReplaceFuncBase<EF>::invalid(s, w);
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::unlock(s);
   }
 };
 
@@ -247,9 +247,9 @@ public:
   }
 
   virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0){
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::lock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::lock(s);
     if(alloc_map[s][w] && !release) alloc_map[s][w] = false;
-    if constexpr C_DERIVE(RPT<EF>, ReplaceFuncBaseMT<EF>) RPT<EF>::unlock(s);
+    if constexpr (C_DERIVE<RPT<EF>, ReplaceFuncBaseMT<EF>>) RPT<EF>::unlock(s);
   }
 };
 

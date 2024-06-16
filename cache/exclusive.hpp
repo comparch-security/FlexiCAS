@@ -4,7 +4,7 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE<MT, CMMetadataBase>
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
 {
 protected:
@@ -79,7 +79,7 @@ public:
   }
 };
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase) && EnDir
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE<MT, MetadataDirectoryBase> && EnDir
 class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
 {
 protected:
@@ -146,9 +146,9 @@ public:
     if(ai < P) {
       if(w >= NW) ext_replacer[ai].access(s, w-NW, false);
       else        CacheSkewedT::replacer[ai].access(s, w, false);
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
@@ -156,9 +156,9 @@ public:
     if(ai < P) {
       if(w >= NW) ext_replacer[ai].access(s, w-NW, is_release);
       else        CacheSkewedT::replacer[ai].access(s, w, is_release);
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
@@ -168,9 +168,9 @@ public:
         if(w >= NW) ext_replacer[ai].invalid(s, w-NW);
         else        CacheSkewedT::replacer[ai].invalid(s, w);
       }
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
     }
   }
 
@@ -522,7 +522,7 @@ protected:
 typedef InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory> ExclusiveInnerCohPortDirectory;
 
 
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
+template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
 class ExclusiveOuterCohPortBroadcastT : public OPUC
 {
 protected:
@@ -573,7 +573,7 @@ public:
 typedef ExclusiveOuterCohPortBroadcastT<OuterCohPortCachedBase> ExclusiveOuterCohPortBroadcast;
 
 
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
+template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
 class ExclusiveOuterCohPortDirectoryT : public OPUC
 {
 protected:

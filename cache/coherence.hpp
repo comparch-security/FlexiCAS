@@ -123,7 +123,7 @@ public:
 };
 
 // common behavior for cached outer ports
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortCachedBase)
+template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
 class OuterCohPortT : public OPUC
 {
 protected:
@@ -282,7 +282,7 @@ protected:
 
 };
 
-template<class IPUC> requires C_DERIVE(IPUC, InnerCohPortUncached)
+template<class IPUC> requires C_DERIVE<IPUC, InnerCohPortUncached>
 class InnerCohPortT : public IPUC
 {
 private:
@@ -445,7 +445,7 @@ public:
 
 // Normal coherent cache
 template<typename CacheT, typename OuterT = OuterCohPort, typename InnerT = InnerCohPort>
-  requires C_DERIVE(CacheT, CacheBase) && C_DERIVE(OuterT, OuterCohPortBase) && C_DERIVE(InnerT, InnerCohPortBase)
+  requires C_DERIVE<CacheT, CacheBase> && C_DERIVE<OuterT, OuterCohPortBase> && C_DERIVE<InnerT, InnerCohPortBase>
 class CoherentCacheNorm : public CoherentCacheBase
 {
 public:
@@ -454,7 +454,7 @@ public:
 };
 
 // Normal L1 coherent cache
-template<typename CacheT, typename OuterT = OuterCohPort, typename CoreT = CoreInterface> requires C_DERIVE(CoreT, CoreInterfaceBase)
+template<typename CacheT, typename OuterT = OuterCohPort, typename CoreT = CoreInterface> requires C_DERIVE<CoreT, CoreInterfaceBase>
 using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 /////////////////////////////////
@@ -462,7 +462,7 @@ using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 // generic dispatcher
 // HT: hasher type
-template<typename HT> requires C_DERIVE(HT, SliceHashBase)
+template<typename HT> requires C_DERIVE<HT, SliceHashBase>
 class SliceDispatcher : public CohMasterBase
 {
 protected:
