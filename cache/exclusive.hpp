@@ -146,9 +146,9 @@ public:
     if(ai < P) {
       if(w >= NW) ext_replacer[ai].access(s, w-NW, false);
       else        CacheSkewedT::replacer[ai].access(s, w, false);
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
@@ -156,9 +156,9 @@ public:
     if(ai < P) {
       if(w >= NW) ext_replacer[ai].access(s, w-NW, is_release);
       else        CacheSkewedT::replacer[ai].access(s, w, is_release);
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
@@ -168,9 +168,9 @@ public:
         if(w >= NW) ext_replacer[ai].invalid(s, w-NW);
         else        CacheSkewedT::replacer[ai].invalid(s, w);
       }
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
     }
   }
 

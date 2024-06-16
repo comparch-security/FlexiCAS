@@ -9,7 +9,7 @@
   #include <type_traits>
   template <typename Derived, typename... Bases>
   constexpr bool C_DERIVE = (std::is_base_of_v<Bases, Derived> && ...) && 
-                              (std::is_convertible_v<const volatile Derived*, const volatile Bases*> && ...);
+                            (std::is_convertible_v<const volatile Derived*, const volatile Bases*> && ...);
 #else
   // C++20
   #include <concepts>
@@ -17,8 +17,13 @@
   constexpr bool C_DERIVE = (std::derived_from<Bases, Derived> && ...);
 #endif
 
-#define C_VOID(c)        std::is_void_v<c>
-#define C_SAME(lhs, rhs) std::is_same_v<lhs, rhs>
-#define C_DERIVE_OR_VOID(c, b) (C_DERIVE<c, b> || C_VOID(c))
+template<typename c>
+constexpr bool C_VOID = std::is_void_v<c>;
+
+template<typename lhs, typename rhs>
+constexpr bool C_SAME = std::is_same_v<lhs, rhs>;
+
+template <typename Derived, typename... Bases>
+constexpr bool C_DERIVE_OR_VOID = C_DERIVE<Derived, Bases...> || C_VOID<Derived>;
 
 #endif

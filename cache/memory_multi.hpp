@@ -4,7 +4,7 @@
 #include "cache/memory.hpp"
 
 template<typename DT, typename DLY, bool EnMon = false>
-  requires C_DERIVE_OR_VOID(DT, CMDataBase) && C_DERIVE_OR_VOID(DLY, DelayBase)
+  requires C_DERIVE_OR_VOID<DT, CMDataBase> && C_DERIVE_OR_VOID<DLY, DelayBase>
 
 class SimpleMultiThreadMemoryModel : public SimpleMemoryModel<DT, DLY, EnMon>, public InnerCohPortMultiThreadSupport
 {
@@ -35,7 +35,7 @@ public:
   virtual ~SimpleMultiThreadMemoryModel() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
-    if constexpr (!C_VOID(DT)) {
+    if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       auto base = get_base_address(ppn, false);
@@ -47,7 +47,7 @@ public:
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
-    if constexpr (!C_VOID(DT)) {
+    if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       auto base = get_base_address(ppn, true);

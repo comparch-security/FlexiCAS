@@ -5,7 +5,7 @@
 
 // metadata supporting MSI coherency
 template <typename BT>
-  requires C_SAME(BT, MetadataBroadcastBase) || C_SAME(BT, MetadataDirectoryBase)
+  requires C_SAME<BT, MetadataBroadcastBase> || C_SAME<BT, MetadataDirectoryBase>
 class MetadataMSIBase : public BT
 {
 public:

@@ -97,9 +97,9 @@ private:
 // EF: empty first in replacer
 template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation, bool EF = true>
-  requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID(DT, CMDataBase) &&
+  requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<DTMT, MirageDataMeta>  && C_DERIVE<MIDX, IndexFuncBase>   && C_DERIVE<DIDX, IndexFuncBase> &&
-           C_DERIVE<MRPC, ReplaceFuncBase<EF>> && C_DERIVE<DRPC, ReplaceFuncBase<EF>> && C_DERIVE_OR_VOID(DLY, DelayBase)
+           C_DERIVE<MRPC, ReplaceFuncBase<EF> > && C_DERIVE<DRPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase>
 class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
@@ -126,7 +126,7 @@ public:
 
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
     auto meta = static_cast<CMMetadataBase *>(arrays[ai]->get_meta(s, w));
-    if constexpr (!C_VOID(DT))
+    if constexpr (!C_VOID<DT>)
       return std::make_pair(meta, get_data_data(static_cast<MT *>(meta)));
     else
       return std::make_pair(meta, nullptr);
