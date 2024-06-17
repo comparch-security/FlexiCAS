@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <shared_mutex>
 
-template<typename DT, typename DLY, bool EnMon = false, bool MT = false>
+template<typename DT, typename DLY, bool EnMon = false, bool EnMT = false>
   requires C_DERIVE_OR_VOID<DT, CMDataBase> && C_DERIVE_OR_VOID<DLY, DelayBase>
   class SimpleMemoryModel : public InnerCohPortUncached, public CacheMonitorSupport
 {
@@ -24,7 +24,7 @@ protected:
     char *page;
     bool miss = true;
 
-    if constexpr (MT) {
+    if constexpr (EnMT) {
       page_mtx.lock();
       miss = !pages.count(ppn);
     }
@@ -36,15 +36,15 @@ protected:
     } else
       page = pages[ppn];
 
-    if constexpr (MT) page_mtx.unlock();
+    if constexpr (EnMT) page_mtx.unlock();
     return page;
   }
   
   __always_inline bool get_page(uint64_t ppn, char ** page) {
-    if constexpr (MT) page_mtx.lock_shared();
+    if constexpr (EnMT) page_mtx.lock_shared();
     bool hit = pages.count(ppn);
     if(hit) *page = pages[ppn];
-    if constexpr (MT) page_mtx.unlock_shared();
+    if constexpr (EnMT) page_mtx.unlock_shared();
     return hit;
   }
 
@@ -54,7 +54,7 @@ public:
   {
     InnerCohPortBase::policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(id);
-    if constexpr (MT) {
+    if constexpr (EnMT) {
       write_mutex.resize(write_max);
       for(auto &m: write_mutex) m = new std::mutex();
     }
@@ -62,7 +62,7 @@ public:
 
   virtual ~SimpleMemoryModel() {
     delete CacheMonitorSupport::monitors;
-    if constexpr (MT) {
+    if constexpr (EnMT) {
       for(auto m: write_mutex) delete m;
     }
   }
@@ -87,7 +87,7 @@ public:
       char * page;
       bool hit = get_page(ppn, &page); assert(hit);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(page + offset);
-      if constexpr (MT) {
+      if constexpr (EnMT) {
         auto lock_index = (addr >> 6) % write_max;
         std::lock_guard<std::mutex> lock(*write_mutex[lock_index]);
         for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);

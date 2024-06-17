@@ -89,15 +89,12 @@ public:
 // EnMon: whether to enable monitoring
 // EF: empty first in replacer
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true>
-  requires C_DERIVE<MT, CMMetadataBase> 
-        && C_DERIVE_OR_VOID<DT, CMDataBase>
-        && C_DERIVE<IDX, IndexFuncBase> 
-        && C_DERIVE<RPC, ReplaceFuncBaseMT<EF> >
-        && C_DERIVE_OR_VOID<DLY, DelayBase>
-class CacheSkewedMultiThread : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>, 
+  requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID<DT, CMDataBase> && C_DERIVE<IDX, IndexFuncBase> &&
+           C_DERIVE_OR_VOID<DLY, DelayBase>
+class CacheSkewedMultiThread : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon, EF, true>,
                                public CacheBaseMultiThreadSupport
 {
-  typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheT;
+  typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon, EF, true> CacheT;
   typedef CacheArrayMultiThread<IW, NW, MT, DT> CacheAT;
 
 protected:

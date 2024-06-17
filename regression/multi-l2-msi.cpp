@@ -24,12 +24,12 @@
 //#define TestN 512
 
 int main(){
-  auto l1d = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRUMultiThread, MSIMultiThreadPolicy, false, false, void, false>(NCore, "l1d");
+  auto l1d = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIMultiThreadPolicy, false, false, void, false>(NCore, "l1d");
   auto core_data = get_l1_core_interface(l1d);
-  auto l1i = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRUMultiThread, MSIMultiThreadPolicy, false, true, void, false>(NCore, "l1i");
+  auto l1i = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIMultiThreadPolicy, false, true, void, false>(NCore, "l1i");
   auto core_inst = get_l1_core_interface(l1i);
 
-  auto l2 = cache_gen_multi_thread_l2<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRUMultiThread, MSIMultiThreadPolicy, true, void, false>(1, "l2")[0];
+  auto l2 = cache_gen_multi_thread_l2<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIMultiThreadPolicy, true, void, false>(1, "l2")[0];
   auto mem = new SimpleMemoryModel<Data64B, void, false, true>("mem");
 
   for(int i=0; i<NCore; i++) {
