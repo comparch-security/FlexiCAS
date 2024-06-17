@@ -5,8 +5,9 @@
 #include "cache/mi.hpp"
 #include <sys/mman.h>
 #include <unordered_map>
+#include <shared_mutex>
 
-template<typename DT, typename DLY, bool EnMon = false>
+template<typename DT, typename DLY, bool EnMon = false, bool MT = false>
   requires C_DERIVE_OR_VOID<DT, CMDataBase> && C_DERIVE_OR_VOID<DLY, DelayBase>
   class SimpleMemoryModel : public InnerCohPortUncached, public CacheMonitorSupport
 {
@@ -15,31 +16,64 @@ protected:
   const std::string name;
   std::unordered_map<uint64_t, char *> pages;
   DLY *timer;      // delay estimator
+  std::shared_mutex         page_mtx;
+  std::vector<std::mutex *> write_mutex;
+  static const unsigned int write_max = 64; // allowing 64 parallel write
 
-  void allocate(uint64_t ppn) {
-    char *page = static_cast<char *>(mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0));
-    assert(page != MAP_FAILED);
-    pages[ppn] = page;
+  __always_inline char * allocate(uint64_t ppn) {
+    char *page;
+    bool miss = true;
+
+    if constexpr (MT) {
+      page_mtx.lock();
+      miss = !pages.count(ppn);
+    }
+
+    if (miss) {
+      page = static_cast<char *>(mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0));
+      assert(page != MAP_FAILED);
+      pages[ppn] = page;
+    } else
+      page = pages[ppn];
+
+    if constexpr (MT) page_mtx.unlock();
+    return page;
   }
   
+  __always_inline bool get_page(uint64_t ppn, char ** page) {
+    if constexpr (MT) page_mtx.lock_shared();
+    bool hit = pages.count(ppn);
+    if(hit) *page = pages[ppn];
+    if constexpr (MT) page_mtx.unlock_shared();
+    return hit;
+  }
+
 public:
   SimpleMemoryModel(const std::string &n)
     : InnerCohPortUncached(nullptr), id(UniqueID::new_id(n)), name(n)
   {
     InnerCohPortBase::policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(id);
+    if constexpr (MT) {
+      write_mutex.resize(write_max);
+      for(auto &m: write_mutex) m = new std::mutex();
+    }
   }
 
   virtual ~SimpleMemoryModel() {
     delete CacheMonitorSupport::monitors;
+    if constexpr (MT) {
+      for(auto m: write_mutex) delete m;
+    }
   }
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
     if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
-      if(!pages.count(ppn)) allocate(ppn);
-      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
+      char * page;
+      if(!get_page(ppn, &page)) page = allocate(ppn);
+      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(page + offset);
       data_inner->write(mem_addr);
     }
     if(meta_inner) meta_inner->to_modified(-1);
@@ -50,9 +84,15 @@ public:
     if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
-      assert(pages.count(ppn));
-      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(pages[ppn] + offset);
-      for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
+      char * page;
+      bool hit = get_page(ppn, &page); assert(hit);
+      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(page + offset);
+      if constexpr (MT) {
+        auto lock_index = (addr >> 6) % write_max;
+        std::lock_guard<std::mutex> lock(*write_mutex[lock_index]);
+        for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
+      } else
+        for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
     }
     hook_write(addr, 0, 0, 0, true, true, meta_inner, data_inner, delay);
   }
