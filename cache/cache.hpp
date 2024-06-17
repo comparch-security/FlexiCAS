@@ -7,6 +7,9 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
+#include <mutex>
+#include <memory>
+#include <condition_variable>
 
 #include "util/random.hpp"
 #include "util/monitor.hpp"
@@ -31,11 +34,17 @@ public:
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
+
+  // support multithread
+  virtual void set_mt_state(uint32_t s, uint16_t prio) = 0;   // preserve a cache set according to transaction priority
+  virtual void check_mt_state(uint32_t s, uint16_t prio) = 0; // check priority before continuing remaining work  on a cache set
+  virtual void reset_mt_state(uint32_t s, uint16_t prio) = 0; // reset the state of a cache set after processing a transaction
 };
 
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
-template<int IW, int NW, typename MT, typename DT>
+// EnMT: enable multithread support
+template<int IW, int NW, typename MT, typename DT, bool EnMT = false>
   requires C_DERIVE<MT, CMMetadataCommon> && C_DERIVE_OR_VOID<DT, CMDataBase>
 class CacheArrayNorm : public CacheArrayBase
 {
@@ -43,6 +52,11 @@ protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
   const unsigned int way_num;
+
+  // multi-thread support
+  std::vector<std::unique_ptr<std::atomic_uint16_t> >    mt_state;
+  std::vector<std::unique_ptr<std::condition_variable> > mt_set_cv;
+  std::vector<std::unique_ptr<std::mutex> >              mt_set_mtx;
 
 public:
   static constexpr uint32_t nset = 1ul<<IW;  // number of sets
@@ -61,6 +75,16 @@ public:
     if constexpr (!C_VOID<DT>) {
       data.resize(data_num);
       for(auto &d:data) d = new DT();
+    }
+
+    if constexpr (EnMT) {
+      mt_state.resize(nset);
+      mt_set_cv.resize(nset);
+      mt_set_mtx.resize(nset);
+      for(auto &s : mt_state)   s = std::make_unique<std::atomic_uint16_t>(0);
+      for(auto &c : mt_set_cv)  c = std::make_unique<std::condition_variable>();
+      for(auto &m : mt_set_mtx) m = std::make_unique<std::mutex>();
+      assert(mt_state[0]->is_lock_free());
     }
   }
 
@@ -82,6 +106,34 @@ public:
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
     if constexpr (C_VOID<DT>) return nullptr;
     else                      return data[s*NW + w];
+  }
+
+  virtual void set_mt_state(uint32_t s, uint16_t prio) {
+    while(true) {
+      auto state = mt_state[s]->load();
+      if(prio > state && mt_state[s]->compare_exchange_strong(state, prio|state)) break;
+      else {
+        std::unique_lock lck(*mt_set_mtx[s]);
+        mt_set_cv[s]->wait(lck);
+      }
+    }
+  }
+
+  virtual void check_mt_state(uint32_t s, uint16_t prio) {
+    prio = (prio << 1) - 1;
+    while(true) {
+      auto state = mt_state[s]->load();
+      if(prio >= state) break;
+      else {
+        std::unique_lock lck(*mt_set_mtx[s]);
+        mt_set_cv[s]->wait(lck);
+      }
+    }
+  }
+
+  virtual void reset_mt_state(uint32_t s, uint16_t prio) {
+    *mt_state[s] &= ~prio;
+    mt_set_cv[s]->notify_all();
   }
 };
 
@@ -171,7 +223,7 @@ public:
     : CacheBase(name), loc_random(nullptr)
   {
     arrays.resize(P+extra_par);
-    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
+    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT,EnMT>(extra_way);
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(CacheBase::id);
 
     if constexpr (P>1) loc_random = cm_alloc_rand32();

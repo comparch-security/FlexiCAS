@@ -15,10 +15,10 @@ public:
   static const uint16_t flush         = 0x001;
   static const uint16_t read          = 0x001;
   static const uint16_t write         = 0x001;
-  static const uint16_t probe         = 0x010;
+  static const uint16_t probe         = 0x010; // acquire miss, requiring lower cahce which back-probe this cache
   static const uint16_t evict         = 0x010;
   static const uint16_t evict_cv_wait = 0x100;
-  static const uint16_t release       = 0x100;
+  static const uint16_t release       = 0x100; // acquire hit but need back probe and writeback from inner
 };
 
 struct addr_info{
