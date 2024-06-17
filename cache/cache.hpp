@@ -162,8 +162,13 @@ public:
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
-                   uint32_t *s, uint32_t *w
+                   uint32_t *s, uint32_t *w,
+                   uint16_t prio, bool set_prio // support multithread, update cache set state during hit check
                    ) = 0;
+
+  bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w) {
+    return hit(addr, ai, s, w, 0, false);
+  }
 
   bool hit(uint64_t addr) {
     uint32_t ai, s, w;
@@ -252,11 +257,12 @@ public:
 
   virtual std::tuple<int, int, int> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
 
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool set_prio) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      if(CacheBase::arrays[*ai]->hit(addr, *s, w))
-        return true;
+      if constexpr (EnMT) if(set_prio) CacheBase::arrays[*ai]->set_mt_state(*s, prio);
+      if(CacheBase::arrays[*ai]->hit(addr, *s, w)) return true;
+      if constexpr (EnMT) if(set_prio) CacheBase::arrays[*ai]->reset_mt_state(*s, prio);
     }
     return false;
   }
