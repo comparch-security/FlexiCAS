@@ -12,6 +12,7 @@
 #include "util/monitor.hpp"
 #include "util/concept_macro.hpp"
 #include "util/query.hpp"
+#include "util/multithread.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
 #include "cache/metadata.hpp"
