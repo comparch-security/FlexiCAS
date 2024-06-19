@@ -204,7 +204,7 @@ public:
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      if(CacheBase::arrays[*ai]->hit(addr, *s, w))
+      if(arrays[*ai]->hit(addr, *s, w))
         return true;
     }
     return false;

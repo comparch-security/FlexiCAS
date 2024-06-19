@@ -130,7 +130,7 @@ protected:
   using OuterCohPortBase::cache;
   using OuterCohPortBase::coh_id;
   using OuterCohPortBase::inner;
-  using OPUC::writeback_req;
+  using OuterCohPortBase::policy;
 public:
   OuterCohPortT(policy_ptr policy) : OPUC(policy) {}
   virtual ~OuterCohPortT() {}
@@ -145,19 +145,19 @@ public:
       std::tie(meta, data) = cache->access_line(ai, s, w); // need c++17 for auto type infer
 
       // sync if necessary
-      auto sync = OPUC::policy->probe_need_sync(outer_cmd, meta);
+      auto sync = policy->probe_need_sync(outer_cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = inner->probe_req(addr, meta, data, sync.second, delay);
         if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
       }
 
       // writeback if dirty
-      if((writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta))) {
+      if((writeback = policy->probe_need_writeback(outer_cmd, meta))) {
         if(data_outer) data_outer->copy(data);
       }
     }
-    OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-    cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
+    policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
+    cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
     return std::make_pair(hit, writeback);
   }
 
@@ -291,8 +291,9 @@ private:
   uint64_t addr_pending_finish;
   int32_t  id_pending_finish;
 protected:
-  using IPUC::coh;
-  using IPUC::outer;
+  using InnerCohPortBase::coh;
+  using InnerCohPortBase::outer;
+  using InnerCohPortBase::policy;
 public:
   InnerCohPortT(policy_ptr policy) : IPUC(policy), addr_pending_finish(0) {}
   virtual ~InnerCohPortT() {}
@@ -300,7 +301,7 @@ public:
   virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
     bool hit = false, writeback = false;
     for(uint32_t i=0; i<coh.size(); i++) {
-      auto probe = IPUC::policy->probe_need_probe(cmd, meta, i);
+      auto probe = policy->probe_need_probe(cmd, meta, i);
       if(probe.first) {
         auto [phit, pwb] = coh[i]->probe_resp(addr, meta, data, probe.second, delay);
         hit       |= phit;

@@ -69,19 +69,20 @@ template<typename MT, typename CT>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
 class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
 {
-  typedef MSIPolicy<MT, false, true> PolicyT;
+  using CohPolicyBase::is_flush;
+  using CohPolicyBase::is_evict;
 public:
   MirageMSIPolicy() : MSIPolicy<MT, false, true>() {}
   virtual ~MirageMSIPolicy() {}
 
   virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const {
-    assert(PolicyT::is_flush(cmd));
-    if(PolicyT::is_evict(cmd)) invalidate_cache_line(meta);
+    assert(is_flush(cmd));
+    if(is_evict(cmd)) invalidate_cache_line(meta);
   }
 
 private:
   void invalidate_cache_line(CMMetadataBase *meta) const {
-    static_cast<CT *>(PolicyT::cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
+    static_cast<CT *>(CohPolicyBase::cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
     meta->to_invalid();
   }
 
@@ -107,6 +108,9 @@ class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, 
   typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon> CacheT;
 protected:
   using CacheT::arrays;
+  using CacheT::indexer;
+  using CacheT::loc_random;
+  using CacheT::replacer;
   DIDX d_indexer;   // data index resolver
   DRPC d_replacer;  // data replacer
 
@@ -120,7 +124,7 @@ public:
   virtual ~MirageCache() {}
 
   virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
-    auto pointer = static_cast<MT *>(CacheT::access(ai, s, w))->pointer();
+    auto pointer = static_cast<MT *>(this->access(ai, s, w))->pointer();
     return arrays[P]->get_data(pointer.first, pointer.second);
   }
 
@@ -141,7 +145,7 @@ public:
   }
 
   CMMetadataBase *get_meta_meta(const std::tuple<uint32_t, uint32_t, uint32_t>& pointer) {
-    return static_cast<CMMetadataBase *>(CacheBase::access(std::get<0>(pointer), std::get<1>(pointer), std::get<2>(pointer)));
+    return static_cast<CMMetadataBase *>(this->access(std::get<0>(pointer), std::get<1>(pointer), std::get<2>(pointer)));
   }
 
   // grammer sugar
@@ -160,19 +164,19 @@ public:
     std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
     uint32_t m_s;
     for(int i=0; i<P; i++) {
-      m_s = CacheT::indexer.index(addr, i);
-      int free_num = CacheT::replacer[i].get_free_num(m_s);
+      m_s = indexer.index(addr, i);
+      int free_num = replacer[i].get_free_num(m_s);
       if(free_num > max_free) { p = 0; max_free = free_num; }
       if(free_num >= max_free)
         candidates[p++] = std::make_pair(i, m_s);
     }
-    std::tie(*ai, *s) = candidates[(*CacheT::loc_random)() % p];
-    CacheT::replacer[*ai].replace(*s, w);
+    std::tie(*ai, *s) = candidates[(*loc_random)() % p];
+    replacer[*ai].replace(*s, w);
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
     if(ai < P) {
-      auto [ds, dw] = static_cast<MT *>(CacheBase::access(ai, s, w))->pointer();
+      auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
       d_replacer.access(ds, dw, false);
     }
     CacheT::hook_read(addr, ai, s, w, hit, meta, data, delay);
@@ -180,7 +184,7 @@ public:
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
     if(ai < P) {
-      auto [ds, dw] = static_cast<MT *>(CacheBase::access(ai, s, w))->pointer();
+      auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
       d_replacer.access(ds, dw, is_release);
     }
     CacheT::hook_write(addr, ai, s, w, hit, is_release, meta, data, delay);
@@ -188,7 +192,7 @@ public:
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
     if(ai < P && hit && evict) {
-      auto [ds, dw] = static_cast<MT *>(CacheBase::access(ai, s, w))->pointer();
+      auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
       d_replacer.invalid(ds, dw);
     }
     CacheT::hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
@@ -202,9 +206,9 @@ public:
       auto addr = meta->addr(*s);
       while(meta->is_valid() && relocation++ < MaxRelocN){
         m_ai = (*ai+1)%P; // Do we need total random selection of partition here, does not matter for Mirage as P=2
-        m_s  = CacheT::indexer.index(addr, m_ai);
-        CacheT::replacer[m_ai].replace(m_s, &m_w);
-        auto m_meta = static_cast<MT *>(CacheT::access(m_ai, m_s, m_w));
+        m_s  = indexer.index(addr, m_ai);
+        replacer[m_ai].replace(m_s, &m_w);
+        auto m_meta = static_cast<MT *>(this->access(m_ai, m_s, m_w));
         auto m_addr = m_meta->addr(m_s);
         if(remapped.count(m_addr)) break;
         remapped.insert(addr);
@@ -216,7 +220,7 @@ public:
 
   void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
     auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
-    auto m_meta = static_cast<MT *>(CacheT::access(m_ai, m_s, m_w));
+    auto m_meta = static_cast<MT *>(this->access(m_ai, m_s, m_w));
     auto addr = m_meta->addr(m_s);
     meta->init(addr); meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
     get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);

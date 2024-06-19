@@ -52,8 +52,8 @@ public:
   SimpleMemoryModel(const std::string &n)
     : InnerCohPortUncached(nullptr), id(UniqueID::new_id(n)), name(n)
   {
-    InnerCohPortBase::policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
-    CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(id);
+    policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
+    monitors = new CacheMonitorImp<DLY, EnMon>(id);
     if constexpr (EnMT) {
       write_mutex.resize(write_max);
       for(auto &m: write_mutex) m = new std::mutex();
@@ -61,7 +61,7 @@ public:
   }
 
   virtual ~SimpleMemoryModel() {
-    delete CacheMonitorSupport::monitors;
+    delete monitors;
     if constexpr (EnMT) {
       for(auto m: write_mutex) delete m;
     }
@@ -98,16 +98,16 @@ public:
   }
 
   // monitor related
-  void attach_monitor(MonitorBase *m) { CacheMonitorSupport::monitors->attach_monitor(m); }
+  void attach_monitor(MonitorBase *m) { monitors->attach_monitor(m); }
   // support run-time assign/reassign mointors
-  void detach_monitor() { CacheMonitorSupport::monitors->detach_monitor(); }
+  void detach_monitor() { monitors->detach_monitor(); }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
-    if constexpr (EnMon || !C_VOID<DLY>) CacheMonitorSupport::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
-    if constexpr (EnMon || !C_VOID<DLY>) CacheMonitorSupport::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
 private:
