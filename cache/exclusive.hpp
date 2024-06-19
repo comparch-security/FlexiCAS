@@ -49,7 +49,7 @@ public:
   }
 
   virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
-    if(cmd.id == -1) CohPolicyBase::meta_after_release(cmd, meta, meta_inner);
+    if(cmd.id == -1) this->meta_after_release(cmd, meta, meta_inner);
     else {
       meta->get_outer_meta()->copy(meta_inner);
       meta_inner->to_invalid();
@@ -122,20 +122,24 @@ template<int IW, int NW, int DW, int P, typename MT, typename DT, typename IDX, 
   requires !EnDir || DW > 0
 class CacheSkewedExclusive : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>
 {
-  typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheSkewedT;
+  typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheT;
+  using CacheT::indexer;
+  using CacheT::loc_random;
+  using CacheT::replacer;
+  using CacheMonitorSupport::monitors;
 protected:
   DRPC ext_replacer[P];
 public:
-  CacheSkewedExclusive(std::string name = "") : CacheSkewedT(name, 0, (EnDir ? DW : 0)) {}
+  CacheSkewedExclusive(std::string name = "") : CacheT(name, 0, (EnDir ? DW : 0)) {}
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
-    if constexpr (!EnDir) CacheSkewedT::replace(addr, ai, s, w, 0);
+    if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, 0);
     else {
-      if(0 == genre) CacheSkewedT::replace(addr, ai, s, w, 0);
+      if(0 == genre) CacheT::replace(addr, ai, s, w, 0);
       else {
         if constexpr (P==1) *ai = 0;
-        else                *ai = ((*CacheSkewedT::loc_random)() % P);
-        *s = CacheSkewedT::indexer.index(addr, *ai);
+        else                *ai = ((*loc_random)() % P);
+        *s = indexer.index(addr, *ai);
         ext_replacer[*ai].replace(*s, w);
         *w += NW;
       }
@@ -145,20 +149,20 @@ public:
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
     if(ai < P) {
       if(w >= NW) ext_replacer[ai].access(s, w-NW, false);
-      else        CacheSkewedT::replacer[ai].access(s, w, false);
-      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
+      else        replacer[ai].access(s, w, false);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
     if(ai < P) {
       if(w >= NW) ext_replacer[ai].access(s, w-NW, is_release);
-      else        CacheSkewedT::replacer[ai].access(s, w, is_release);
-      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
+      else        replacer[ai].access(s, w, is_release);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
@@ -166,11 +170,11 @@ public:
     if(ai < P){
       if(hit && evict) {
         if(w >= NW) ext_replacer[ai].invalid(s, w-NW);
-        else        CacheSkewedT::replacer[ai].invalid(s, w);
+        else        replacer[ai].invalid(s, w);
       }
-      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID<DLY>) CacheSkewedT::monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
     }
   }
 
@@ -254,7 +258,7 @@ protected:
       data = cache->data_copy_buffer();
       auto probe_hit = fetch_line(addr, meta, data, cmd, delay);
       if(cmd.id == -1 && !probe_hit) { // need to reserve a place in the normal way if there no cached copy
-        auto [mmeta, mdata, mai, ms, mw] = InnerCohPortUncached::replace_line(addr, delay);
+        auto [mmeta, mdata, mai, ms, mw] = this->replace_line(addr, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(mdata) mdata->copy(data);
         cache->hook_write(addr, mai, ms, mw, false, false, mmeta, mdata, delay); // a write occurred during the probe
@@ -295,7 +299,7 @@ protected:
     }
 
     if(!probe_hit) { // exclusive cache handles a release only when there is no other sharer
-      std::tie(meta, data, ai, s, w) = InnerCohPortUncached::replace_line(addr, delay);
+      std::tie(meta, data, ai, s, w) = this->replace_line(addr, delay);
       if(data_inner && data) data->copy(data_inner);
       meta->init(addr); policy->meta_after_release(cmd, meta, meta_inner);
       cache->hook_write(addr, ai, s, w, false, false, meta, data, delay);
@@ -437,7 +441,7 @@ protected:
       }
     } else { // miss
       if(cmd.id == -1) // request from an uncached inner, fetch to a normal way
-        std::tie(meta, data, ai, s, w) = InnerCohPortUncached::replace_line(addr, delay);
+        std::tie(meta, data, ai, s, w) = this->replace_line(addr, delay);
       else { // normal request, fetch to an extended way
         std::tie(meta, data, ai, s, w) = replace_line_ext(addr, delay);
         data = cache->data_copy_buffer();
@@ -475,7 +479,7 @@ protected:
       if(data_inner) data->copy(data_inner);
       if(!phit) { // exclusive cache handles a release only when there is no other sharer
         // move it to normal meta
-        auto [mmeta, mdata, mai, ms, mw] = InnerCohPortUncached::replace_line(addr, delay);
+        auto [mmeta, mdata, mai, ms, mw] = this->replace_line(addr, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(data_inner && mdata) mdata->copy(data);
         policy->meta_after_release(cmd, mmeta, meta_inner);
@@ -526,9 +530,10 @@ template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
 class ExclusiveOuterCohPortBroadcastT : public OPUC
 {
 protected:
-  using OPUC::cache;
-  using OPUC::inner;
-  using OPUC::policy;
+  using OuterCohPortCachedBase::cache;
+  using OuterCohPortCachedBase::inner;
+  using OuterCohPortCachedBase::policy;
+  using OuterCohPortCachedBase::coh_id;
 public:
   ExclusiveOuterCohPortBroadcastT(policy_ptr policy) : OPUC(policy) {}
   virtual ~ExclusiveOuterCohPortBroadcastT() {}
@@ -557,7 +562,7 @@ public:
         if(data_outer) data_outer->copy(data);
     }
 
-    policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id, writeback);
+    policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
 
     if(!hit) {
@@ -577,9 +582,10 @@ template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
 class ExclusiveOuterCohPortDirectoryT : public OPUC
 {
 protected:
-  using OPUC::cache;
-  using OPUC::inner;
-  using OPUC::policy;
+  using OuterCohPortCachedBase::cache;
+  using OuterCohPortCachedBase::inner;
+  using OuterCohPortCachedBase::policy;
+  using OuterCohPortCachedBase::coh_id;
 public:
   ExclusiveOuterCohPortDirectoryT(policy_ptr policy) : OPUC(policy) {}
   virtual ~ExclusiveOuterCohPortDirectoryT() {}
@@ -609,7 +615,7 @@ public:
         if(data_outer) data_outer->copy(data);
     }
 
-    policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id, writeback);
+    policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
 
     if(hit && meta->is_extend()) {

@@ -22,7 +22,6 @@ using MetadataMESIDirectory = MetadataDirectory<AW, IW, TOfst, MetadataMESIBase<
 template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, MetadataDirectoryBase> && !isL1
 class MESIPolicy : public MSIPolicy<MT, false, isLLC>
 {
-  typedef MSIPolicy<MT, false, isLLC> PolicyT;
 protected:
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
