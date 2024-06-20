@@ -43,14 +43,14 @@ inline auto cache_type_compile(int size, const std::string& name_prefix) {
   constexpr bool isMI   = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MIPolicy<MetadataDirectoryBase, false, true> >;
 
   // ports
-  typedef typename std::conditional<isL1, CoreInterface,
+  typedef typename std::conditional<isL1, CoreInterface<false>,
                                     typename std::conditional<isExc,
-                                      typename std::conditional<isDir, ExclusiveInnerCohPortDirectory, ExclusiveInnerCohPortBroadcast>::type,
-                                      InnerCohPort>::type >::type input_type;
-  typedef typename std::conditional<isLLC || uncache, OuterCohPortUncached,
+                                      typename std::conditional<isDir, ExclusiveInnerCohPortDirectory<false>, ExclusiveInnerCohPortBroadcast<false> >::type,
+                                      InnerCohPort<false> >::type >::type input_type;
+  typedef typename std::conditional<isLLC || uncache, OuterCohPortUncached<false>,
                                     typename std::conditional<isExc,
-                                      typename std::conditional<isDir, ExclusiveOuterCohPortDirectory, ExclusiveOuterCohPortBroadcast>::type,
-                                      OuterCohPort>::type >::type output_type;
+                                      typename std::conditional<isDir, ExclusiveOuterCohPortDirectory<false>, ExclusiveOuterCohPortBroadcast<false> >::type,
+                                      OuterCohPort<false> >::type >::type output_type;
 
   // MESI
   typedef MetadataMESIDirectory<48, IW, IW+6> mesi_metadata_type;
@@ -170,7 +170,7 @@ inline auto cache_gen_llc_mirage(int size, const std::string& name_prefix) {
                       meta_replace_type, data_replace_type,
                       DLY, EnMon, EnableRelocation> cache_base_type;
   typedef MSIPolicy<meta_metadata_type, false, true> policy_type;
-  typedef CoherentCacheNorm<cache_base_type, OuterCohPortUncached, MirageInnerCohPort<meta_metadata_type, cache_base_type> > cache_type;
+  typedef CoherentCacheNorm<cache_base_type, OuterCohPortUncached<false>, MirageInnerCohPort<meta_metadata_type, cache_base_type, false> > cache_type;
   return cache_generator<cache_type, policy_type>(size, name_prefix);
 }
 

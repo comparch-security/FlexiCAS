@@ -9,8 +9,9 @@
 
 template<typename DT, typename DLY, bool EnMon = false, bool EnMT = false>
   requires C_DERIVE_OR_VOID<DT, CMDataBase> && C_DERIVE_OR_VOID<DLY, DelayBase>
-  class SimpleMemoryModel : public InnerCohPortUncached, public CacheMonitorSupport
+  class SimpleMemoryModel : public InnerCohPortUncached<EnMT>, public CacheMonitorSupport
 {
+  using InnerCohPortBase::policy;
 protected:
   const uint32_t id;                    // a unique id to identify this memory
   const std::string name;
@@ -50,7 +51,7 @@ protected:
 
 public:
   SimpleMemoryModel(const std::string &n)
-    : InnerCohPortUncached(nullptr), id(UniqueID::new_id(n)), name(n)
+    : InnerCohPortUncached<EnMT>(nullptr), id(UniqueID::new_id(n)), name(n)
   {
     policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
     monitors = new CacheMonitorImp<DLY, EnMon>(id);
