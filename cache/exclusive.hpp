@@ -190,12 +190,17 @@ public:
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNormExclusiveBroadcast = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, ReplaceRandom<1,1>, DLY, EnMon, false>;
 
-class ExclusiveInnerCohPortUncachedBroadcast : public InnerCohPortUncached
+template<bool EnMT>
+class ExclusiveInnerCohPortUncachedBroadcast : public InnerCohPortUncached<EnMT>
 {
 protected:
+  typedef InnerCohPortUncached<EnMT> BaseT;
   using InnerCohPortBase::cache;
+  using InnerCohPortBase::policy;
+  using InnerCohPortBase::outer;
+
 public:
-  ExclusiveInnerCohPortUncachedBroadcast(policy_ptr policy) : InnerCohPortUncached(policy) {}
+  ExclusiveInnerCohPortUncachedBroadcast(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
   virtual ~ExclusiveInnerCohPortUncachedBroadcast() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -208,8 +213,8 @@ public:
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
 
-    if(!hit) finish_record(addr, policy->cmd_for_finish(cmd.id));
-    if(cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(cmd.id));
+    if(!hit) this->finish_record(addr, policy->cmd_for_finish(cmd.id));
+    if(cmd.id == -1) this->finish_resp(addr, policy->cmd_for_finish(cmd.id));
   }
 
 
@@ -219,7 +224,7 @@ protected:
     bool probe_writeback = false;
     auto sync = policy->access_need_sync(cmd, meta);
     if(sync.first) {
-      std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      std::tie(probe_hit, probe_writeback) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(probe_writeback) { // always writeback the line as it likely(always??) dirty
         assert(meta->is_dirty());
         outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
@@ -277,7 +282,7 @@ protected:
     CMDataBase *data = nullptr;
 
     if(cmd.id == -1) { // request from an uncached inner
-      InnerCohPortUncached::write_line(addr, data_inner, meta_inner, cmd, delay);
+      BaseT::write_line(addr, data_inner, meta_inner, cmd, delay);
       cache->meta_return_buffer(meta);
       cache->data_return_buffer(data);
       return;
@@ -292,7 +297,7 @@ protected:
     if(sync.first) {
       meta = cache->meta_copy_buffer();
       data = cache->data_copy_buffer();
-      std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      std::tie(probe_hit, probe_writeback) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       assert(!probe_writeback); // there should be no probe writeback
       cache->meta_return_buffer(meta);
       cache->data_return_buffer(data);
@@ -326,7 +331,7 @@ protected:
     }
 
     if(probe) {
-      auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
+      auto [phit, pwb] = this->probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
       if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
     }
 
@@ -344,7 +349,8 @@ protected:
 
 };
 
-typedef InnerCohPortT<ExclusiveInnerCohPortUncachedBroadcast> ExclusiveInnerCohPortBroadcast;
+template<bool EnMT = false>
+using ExclusiveInnerCohPortBroadcast = InnerCohPortT<ExclusiveInnerCohPortUncachedBroadcast<EnMT>, EnMT>;
 
 // Norm Exclusive Cache with Extened Directory
 // Assume extended directory meta is always supported when directory is used
@@ -355,12 +361,17 @@ typedef InnerCohPortT<ExclusiveInnerCohPortUncachedBroadcast> ExclusiveInnerCohP
 template<int IW, int NW, int DW, typename MT, typename DT, typename IDX, typename RPC, typename DRPC, typename DLY, bool EnMon>
 using CacheNormExclusiveDirectory = CacheSkewedExclusive<IW, NW, DW, 1, MT, DT, IDX, RPC, DRPC, DLY, EnMon, true>;
 
-class ExclusiveInnerCohPortUncachedDirectory : public InnerCohPortUncached
+template<bool EnMT>
+class ExclusiveInnerCohPortUncachedDirectory : public InnerCohPortUncached<EnMT>
 {
 protected:
+  typedef InnerCohPortUncached<EnMT> BaseT;
   using InnerCohPortBase::cache;
+  using InnerCohPortBase::policy;
+  using InnerCohPortBase::outer;
+
 public:
-  ExclusiveInnerCohPortUncachedDirectory(policy_ptr policy) : InnerCohPortUncached(policy) {}
+  ExclusiveInnerCohPortUncachedDirectory(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
   virtual ~ExclusiveInnerCohPortUncachedDirectory() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
@@ -373,8 +384,8 @@ public:
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
 
-    if(!hit) finish_record(addr, policy->cmd_for_finish(outer_cmd.id));
-    if(outer_cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(outer_cmd.id));
+    if(!hit) this->finish_record(addr, policy->cmd_for_finish(outer_cmd.id));
+    if(outer_cmd.id == -1) this->finish_resp(addr, policy->cmd_for_finish(outer_cmd.id));
   }
 
 protected:
@@ -384,7 +395,7 @@ protected:
     cache->replace(addr, &ai, &s, &w, true);
     auto [meta, data] = cache->access_line(ai, s, w);
     data = cache->data_copy_buffer();
-    if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
+    if(meta->is_valid()) this->evict(meta, data, ai, s, w, delay);
     cache->data_return_buffer(data);
     return std::make_tuple(meta, nullptr, ai, s, w);
   }
@@ -420,7 +431,7 @@ protected:
         data = cache->data_copy_buffer();
         auto sync = policy->access_need_sync(cmd, meta);
         if(sync.first) {
-          std::tie(phit, pwb) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+          std::tie(phit, pwb) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
           if(pwb) { // a write occurred during the probe, always write it back as it likely (always??) dirty
             assert(meta->is_dirty());
             outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
@@ -473,7 +484,7 @@ protected:
       data = cache->data_copy_buffer();
       auto sync = policy->access_need_sync(cmd, meta);
       if(sync.first) {
-        std::tie(phit, pwb) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+        std::tie(phit, pwb) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         assert(!pwb); // there should be no probe writeback
       }
       if(data_inner) data->copy(data_inner);
@@ -508,7 +519,7 @@ protected:
     if(meta->is_extend()) data = cache->data_copy_buffer();
 
     if(probe) {
-      auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
+      auto [phit, pwb] = this->probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
       if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
     }
 
@@ -523,17 +534,17 @@ protected:
 
 };
 
-typedef InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory> ExclusiveInnerCohPortDirectory;
+template<bool EnMT = false>
+using ExclusiveInnerCohPortDirectory = InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory<EnMT>, EnMT>;
 
-
-template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
+template<class OPUC, bool EnMT> requires C_DERIVE<OPUC, OuterCohPortUncached<EnMT> >
 class ExclusiveOuterCohPortBroadcastT : public OPUC
 {
 protected:
-  using OuterCohPortCachedBase::cache;
-  using OuterCohPortCachedBase::inner;
-  using OuterCohPortCachedBase::policy;
-  using OuterCohPortCachedBase::coh_id;
+  using OuterCohPortBase::cache;
+  using OuterCohPortBase::inner;
+  using OuterCohPortBase::policy;
+  using OuterCohPortBase::coh_id;
 public:
   ExclusiveOuterCohPortBroadcastT(policy_ptr policy) : OPUC(policy) {}
   virtual ~ExclusiveOuterCohPortBroadcastT() {}
@@ -575,17 +586,17 @@ public:
 
 };
 
-typedef ExclusiveOuterCohPortBroadcastT<OuterCohPortCachedBase> ExclusiveOuterCohPortBroadcast;
+template<bool EnMT = false>
+using ExclusiveOuterCohPortBroadcast = ExclusiveOuterCohPortBroadcastT<OuterCohPortUncached<EnMT>, EnMT>;
 
-
-template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
+template<class OPUC, bool EnMT> requires C_DERIVE<OPUC, OuterCohPortUncached<EnMT> >
 class ExclusiveOuterCohPortDirectoryT : public OPUC
 {
 protected:
-  using OuterCohPortCachedBase::cache;
-  using OuterCohPortCachedBase::inner;
-  using OuterCohPortCachedBase::policy;
-  using OuterCohPortCachedBase::coh_id;
+  using OuterCohPortBase::cache;
+  using OuterCohPortBase::inner;
+  using OuterCohPortBase::policy;
+  using OuterCohPortBase::coh_id;
 public:
   ExclusiveOuterCohPortDirectoryT(policy_ptr policy) : OPUC(policy) {}
   virtual ~ExclusiveOuterCohPortDirectoryT() {}
@@ -627,18 +638,7 @@ public:
 
 };
 
-typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortCachedBase> ExclusiveOuterCohPortDirectory;
-
-template<typename CT>
-using ExclusiveL2CacheBroadcast = CoherentCacheNorm<CT, ExclusiveOuterCohPortBroadcast, ExclusiveInnerCohPortBroadcast>;
-
-template<typename CT>
-using ExclusiveLLCBroadcast = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerCohPortBroadcast>;
-
-template<typename CT>
-using ExclusiveL2CacheDirectory = CoherentCacheNorm<CT, ExclusiveOuterCohPortDirectory, ExclusiveInnerCohPortDirectory>;
-
-template<typename CT>
-using ExclusiveLLCDirectory = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerCohPortDirectory>;
+template<bool EnMT = false>
+using ExclusiveOuterCohPortDirectory = ExclusiveOuterCohPortDirectoryT<OuterCohPortUncached<EnMT>, EnMT>;
 
 #endif

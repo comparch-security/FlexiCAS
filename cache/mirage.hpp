@@ -97,15 +97,16 @@ private:
 // EnableRelocation : whether to enable relocation
 // EF: empty first in replacer
 template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
-         typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation, bool EF = true>
+         typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation,
+         bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<DTMT, MirageDataMeta>  && C_DERIVE<MIDX, IndexFuncBase>   && C_DERIVE<DIDX, IndexFuncBase> &&
 C_DERIVE<MRPC, ReplaceFuncBase<EF,false> > && C_DERIVE<DRPC, ReplaceFuncBase<EF,false> > && C_DERIVE_OR_VOID<DLY, DelayBase>
-class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon>
+class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
 
-  typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon> CacheT;
+  typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR> CacheT;
 protected:
   using CacheT::arrays;
   using CacheT::indexer;
@@ -119,6 +120,12 @@ public:
   { 
     // CacheMirage has P+1 CacheArray
     arrays[P] = new CacheArrayNorm<IW,P*NW,DTMT,DT>(); // the separated data array
+
+    // allocate data buffer pool as the DT given to CacheDkewed is void
+    if constexpr (!C_VOID<DT>) {
+      CacheT::data_buffer_pool.resize(MSHR, nullptr);
+      for(auto &b : CacheT::data_buffer_pool) { b = new DT(); CacheT::data_buffer_pool_set.insert(b); }
+    }
   }
 
   virtual ~MirageCache() {}
@@ -231,17 +238,17 @@ public:
 
 };
 
-typedef OuterCohPortUncached MirageOuterPort; // MirageCache is always the LLC, no need to support probe() from memory
-
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename CT>
+template<typename MT, typename CT, bool EnMT>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
-class MirageInnerPortUncached : public InnerCohPortUncached
+class MirageInnerPortUncached : public InnerCohPortUncached<EnMT>
 {
+protected:
+  typedef InnerCohPortUncached<EnMT> BaseT;
 public:
-  MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached(policy) {}
+  MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
   replace_line(uint64_t addr, uint64_t *delay) {
@@ -255,7 +262,7 @@ protected:
     std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > stack;
     if(meta->is_valid()) cache->cuckoo_search(&ai, &s, &w, meta, stack);
     if(meta->is_valid()) { // associative eviction!
-      evict(meta, cache->get_data_data(static_cast<MT *>(meta)), ai, s, w, delay);
+      BaseT::evict(meta, cache->get_data_data(static_cast<MT *>(meta)), ai, s, w, delay);
       cache->get_data_meta(static_cast<MT *>(meta))->to_invalid();
     }
     while(!stack.empty()) cache->cuckoo_relocate(&ai, &s, &w, meta, stack, delay);
@@ -266,7 +273,7 @@ protected:
     if(data_meta->is_valid()) {
       auto meta_pointer = data_meta->pointer();
       auto replace_meta = cache->get_meta_meta(meta_pointer);
-      evict(replace_meta, data, std::get<0>(meta_pointer), std::get<1>(meta_pointer), std::get<2>(meta_pointer), delay);
+      BaseT::evict(replace_meta, data, std::get<0>(meta_pointer), std::get<1>(meta_pointer), std::get<2>(meta_pointer), delay);
       replace_meta->to_invalid();
     }
     static_cast<MT *>(meta)->bind(data_pointer.first, data_pointer.second);
@@ -275,8 +282,8 @@ protected:
   }
 };
 
-template<typename MT, typename CT>
+template<typename MT, typename CT, bool EnMT>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
-using MirageInnerCohPort = InnerCohPortT<MirageInnerPortUncached<MT, CT> >;
+using MirageInnerCohPort = InnerCohPortT<MirageInnerPortUncached<MT, CT, EnMT>, EnMT>;
 
 #endif

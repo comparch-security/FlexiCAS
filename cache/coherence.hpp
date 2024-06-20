@@ -85,6 +85,7 @@ public:
 };
 
 // common behvior for uncached outer ports
+template<bool EnMT>
 class OuterCohPortUncached : public OuterCohPortBase
 {
 public:
@@ -93,7 +94,27 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = coh_id;
-    coh->acquire_resp(addr, data, meta->get_outer_meta(), outer_cmd, delay);
+
+    // In the multithread env, an outer probe may invalidate the cache line during a fetch/promotion.
+    // To void concurrent write on the same metadata or data (by probe and acquire)
+    // use a copy buffer for the outer acquire
+    CMMetadataBase * mmeta; CMDataBase * mdata;  // I think allocating data buffer is unnecessary, but play safe for now
+    if constexpr (EnMT) {
+      mmeta = cache->meta_copy_buffer(); mdata = cache->data_copy_buffer();
+      mmeta->copy(meta); // some derived cache may store key info inside the meta, such as the data set/way in MIRAGE
+      // unlock cache line
+    } else {
+      mmeta = meta; mdata = data;
+    }
+
+    coh->acquire_resp(addr, mdata, mmeta->get_outer_meta(), outer_cmd, delay);
+
+    if constexpr (EnMT) {
+      // lock the cache line
+      meta->copy(mmeta); if(data) data->copy(mdata);
+      cache->meta_return_buffer(mmeta); cache->data_return_buffer(mdata);
+    }
+
     policy->meta_after_fetch(outer_cmd, meta, addr);
   }
 
@@ -109,27 +130,13 @@ public:
   }
 };
 
-// common behvior for cached outer ports
-class OuterCohPortCachedBase : public OuterCohPortUncached
-{
-public:
-  OuterCohPortCachedBase(policy_ptr policy) : OuterCohPortUncached(policy) {}
-  virtual ~OuterCohPortCachedBase() {}
-
-  virtual void finish_req(uint64_t addr){
-    assert(!is_uncached());
-    coh->finish_resp(addr, policy->cmd_for_finish(coh_id));
-  }
-};
-
 // common behavior for cached outer ports
-template<class OPUC> requires C_DERIVE<OPUC, OuterCohPortCachedBase>
+template<class OPUC, bool EnMT> requires C_DERIVE<OPUC, OuterCohPortUncached<EnMT> >
 class OuterCohPortT : public OPUC
 {
 protected:
   using OuterCohPortBase::cache;
   using OuterCohPortBase::coh_id;
-  using OuterCohPortBase::inner;
   using OuterCohPortBase::policy;
 public:
   OuterCohPortT(policy_ptr policy) : OPUC(policy) {}
@@ -147,7 +154,7 @@ public:
       // sync if necessary
       auto sync = policy->probe_need_sync(outer_cmd, meta);
       if(sync.first) {
-        auto [phit, pwb] = inner->probe_req(addr, meta, data, sync.second, delay);
+        auto [phit, pwb] = OuterCohPortBase::inner->probe_req(addr, meta, data, sync.second, delay);
         if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
       }
 
@@ -161,10 +168,17 @@ public:
     return std::make_pair(hit, writeback);
   }
 
+  virtual void finish_req(uint64_t addr){
+    assert(!this->is_uncached());
+    OuterCohPortBase::coh->finish_resp(addr, policy->cmd_for_finish(coh_id));
+  }
+
 };
 
-typedef OuterCohPortT<OuterCohPortCachedBase> OuterCohPort;
+template <bool EnMT = false>
+using OuterCohPort = OuterCohPortT<OuterCohPortUncached<EnMT>, EnMT> ;
 
+template<bool EnMT>
 class InnerCohPortUncached : public InnerCohPortBase
 {
 public:
@@ -282,7 +296,7 @@ protected:
 
 };
 
-template<class IPUC> requires C_DERIVE<IPUC, InnerCohPortUncached>
+template<class IPUC, bool EnMT> requires C_DERIVE<IPUC, InnerCohPortUncached<EnMT> >
 class InnerCohPortT : public IPUC
 {
 private:
@@ -327,7 +341,8 @@ public:
   }
 };
 
-typedef InnerCohPortT<InnerCohPortUncached> InnerCohPort;
+template<bool EnMT = false>
+using InnerCohPort = InnerCohPortT<InnerCohPortUncached<EnMT>, EnMT>;
 
 // base class for CoreInterface
 class CoreInterfaceBase
@@ -352,9 +367,17 @@ public:
 };
 
 // interface with the processing core is a special InnerCohPort
-class CoreInterface : public InnerCohPortUncached, public CoreInterfaceBase {
+template<bool EnMT = false>
+class CoreInterface : public InnerCohPortUncached<EnMT>, public CoreInterfaceBase {
+  typedef InnerCohPortUncached<EnMT> BaseT;
+  using BaseT::policy;
+  using BaseT::cache;
+  using BaseT::outer;
+  using BaseT::access_line;
+  using BaseT::flush_line;
+
 public:
-  CoreInterface(policy_ptr policy) : InnerCohPortUncached(policy) {}
+  CoreInterface(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
   virtual ~CoreInterface() {}
 
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
@@ -445,18 +468,15 @@ public:
 
 
 // Normal coherent cache
-template<typename CacheT, typename OuterT = OuterCohPort, typename InnerT = InnerCohPort>
+template<typename CacheT, typename OuterT, class InnerT>
   requires C_DERIVE<CacheT, CacheBase> && C_DERIVE<OuterT, OuterCohPortBase> && C_DERIVE<InnerT, InnerCohPortBase>
 class CoherentCacheNorm : public CoherentCacheBase
 {
 public:
-  CoherentCacheNorm(policy_ptr policy, std::string name = "") : CoherentCacheBase(new CacheT(name), new OuterT(policy), new InnerT(policy), policy, name) {}
+  CoherentCacheNorm(policy_ptr policy, std::string name = "")
+    : CoherentCacheBase(new CacheT(name), new OuterT(policy), new InnerT(policy), policy, name) {}
   virtual ~CoherentCacheNorm() {}
 };
-
-// Normal L1 coherent cache
-template<typename CacheT, typename OuterT = OuterCohPort, typename CoreT = CoreInterface> requires C_DERIVE<CoreT, CoreInterfaceBase>
-using CoherentL1CacheNorm = CoherentCacheNorm<CacheT, OuterT, CoreT>;
 
 /////////////////////////////////
 // Slice dispatcher needed normally needed for sliced LLC

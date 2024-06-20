@@ -127,10 +127,10 @@ protected:
 // common behvior for multi-thread uncached outer ports
 template <typename CT>
   requires C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport>
-class OuterCohPortMultiThreadUncached : public OuterCohPortUncached, public OuterCohPortMultiThreadSupport
+class OuterCohPortMultiThreadUncached : public OuterCohPortUncached<true>, public OuterCohPortMultiThreadSupport
 {
 public:
-  OuterCohPortMultiThreadUncached(policy_ptr policy) : OuterCohPortUncached(policy), OuterCohPortMultiThreadSupport() {}
+  OuterCohPortMultiThreadUncached(policy_ptr policy) : OuterCohPortUncached<true>(policy), OuterCohPortMultiThreadSupport() {}
   virtual ~OuterCohPortMultiThreadUncached() {}
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, 
@@ -224,14 +224,14 @@ template <typename OT, typename CT, typename CPT>
   requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
         && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport> 
         && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
-class InnerCohPortMultiThreadUncached : public InnerCohPortUncached, public InnerCohPortMultiThreadSupport
+class InnerCohPortMultiThreadUncached : public InnerCohPortUncached<true>, public InnerCohPortMultiThreadSupport
 {
 protected:
   InnerAddressDataBase* database;
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool, std::mutex*>
   access_line_multithread(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { 
     uint32_t ai, s, w;
-    auto cache = static_cast<CT *>(InnerCohPortUncached::cache);
+    auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
     /** true indicates that replace is desired */
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::acquire, true);
     auto [status, mtx, cv] = cache->get_set_control(ai, s);
@@ -256,7 +256,7 @@ protected:
     return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
   }
   virtual void evict(CMMetadataBase *meta, CMDataBase *data, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
-    auto cache = static_cast<CT *>(InnerCohPortUncached::cache);
+    auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
     auto addr = meta->addr(s);
     auto sync = policy->writeback_need_sync(meta);
     if(sync.first) {
@@ -288,7 +288,7 @@ protected:
 
   virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
     uint32_t ai, s, w;
-    auto cache = static_cast<CT *>(InnerCohPortUncached::cache);
+    auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::release);
     if(hit){
       auto [status, mtx, cv] = cache->get_set_control(ai, s);
@@ -314,7 +314,7 @@ protected:
     std::mutex* wmtx;
     std::condition_variable* cv;
     std::vector<uint32_t>* status;
-    auto cache = static_cast<CT *>(InnerCohPortUncached::cache);
+    auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::flush);
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
@@ -408,7 +408,7 @@ public:
   }
 
   virtual std::pair<uint32_t, policy_ptr> connect(CohClientBase *c, bool uncached = false) {
-    auto conn = InnerCohPortUncached::connect(c, uncached);
+    auto conn = InnerCohPortUncached<true>::connect(c, uncached);
     database->resize(coh.size());
     return conn;
   }
