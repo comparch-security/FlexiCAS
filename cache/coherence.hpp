@@ -94,7 +94,27 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
     outer_cmd.id = coh_id;
-    coh->acquire_resp(addr, data, meta->get_outer_meta(), outer_cmd, delay);
+
+    // In the multithread env, an outer probe may invalidate the cache line during a fetch/promotion.
+    // To void concurrent write on the same metadata or data (by probe and acquire)
+    // use a copy buffer for the outer acquire
+    CMMetadataBase * mmeta; CMDataBase * mdata;  // I think allocating data buffer is unnecessary, but play safe for now
+    if constexpr (EnMT) {
+      mmeta = cache->meta_copy_buffer(); mdata = cache->data_copy_buffer();
+      mmeta->copy(meta); // some derived cache may store key info inside the meta, such as the data set/way in MIRAGE
+      // unlock cache line
+    } else {
+      mmeta = meta; mdata = data;
+    }
+
+    coh->acquire_resp(addr, mdata, mmeta->get_outer_meta(), outer_cmd, delay);
+
+    if constexpr (EnMT) {
+      // lock the cache line
+      meta->copy(mmeta); if(data) data->copy(mdata);
+      cache->meta_return_buffer(mmeta); cache->data_return_buffer(mdata);
+    }
+
     policy->meta_after_fetch(outer_cmd, meta, addr);
   }
 
