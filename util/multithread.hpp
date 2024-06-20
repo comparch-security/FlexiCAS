@@ -14,16 +14,17 @@ class AtomicVar {
 
 public:
   AtomicVar() : var(new std::atomic<T>()) {}
+  AtomicVar(const T& v) : var(new std::atomic<T>(v)) {}
 
-  __always_inline T read() {
+  __always_inline T read() const {
     return var->load();
   }
 
-  __always_inline void write(const T& v) {
+  __always_inline void write(T v) {
     var->store(v);
   }
 
-  __always_inline bool swap(const T& expect, const T& v, bool notify = false) {
+  __always_inline bool swap(T& expect, T v, bool notify = false) {
     bool rv = var->compare_exchange_strong(expect, v);
     if(rv && notify) {
       std::unique_lock lk(mtx);
