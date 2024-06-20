@@ -5,7 +5,6 @@
 #include <cstring>
 #include <string>
 #include <unordered_set>
-#include <unordered_map>
 #include <vector>
 
 #include "util/random.hpp"
@@ -152,24 +151,31 @@ public:
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
 // EF: empty first in replacer
-// EnMT: enable multithread
-template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true, bool EnMT = false>
+// EnMT: enable multithread, MSHR: maximal number of transactions on the fly
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY,
+         bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
-           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF, EnMT> > && C_DERIVE_OR_VOID<DLY, DelayBase>
+           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF, EnMT> > && C_DERIVE_OR_VOID<DLY, DelayBase> &&
+           MSHR >= 2 // 2 buffers are required even for single-thread simulation
 class CacheSkewed : public CacheBase
 {
+  typedef typename std::conditional<EnMT, AtomicVar<uint16_t>, uint16_t>::type buffer_state_t;
 protected:
   IDX indexer;      // index resolver
   RPC replacer[P];  // replacer
   RandomGen<uint32_t> * loc_random; // a local randomizer for better thread parallelism
-  std::unordered_set<CMDataBase *>       data_buffer_pool;
-  std::unordered_map<CMDataBase *, bool> data_buffer_state;
-  std::unordered_set<CMMetadataBase *>       meta_buffer_pool;
-  std::unordered_map<CMMetadataBase *, bool> meta_buffer_state;
+
+  std::unordered_set<CMDataBase *> data_buffer_pool_set;
+  std::vector<CMDataBase *>        data_buffer_pool;
+  buffer_state_t                   data_buffer_state;
+
+  std::unordered_set<CMMetadataBase *> meta_buffer_pool_set;
+  std::vector<CMMetadataBase *>        meta_buffer_pool;
+  buffer_state_t                       meta_buffer_state;
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
-    : CacheBase(name), loc_random(nullptr)
+    : CacheBase(name), loc_random(nullptr), data_buffer_state(MSHR), meta_buffer_pool(MSHR), meta_buffer_state(MSHR)
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
@@ -177,25 +183,19 @@ public:
 
     if constexpr (P>1) loc_random = cm_alloc_rand32();
 
-    // for single thread simulator, we assume a maximum of 2 buffers should be enough
+    // allocate buffer pools
+    meta_buffer_pool.resize(MSHR, nullptr);
+    for(auto &b : meta_buffer_pool) { b = new MT(); meta_buffer_pool_set.insert(b); }
     if constexpr (!C_VOID<DT>) {
-      for(int i=0; i<2; i++) {
-        auto buffer = new DT();
-        data_buffer_pool.insert(buffer);
-        data_buffer_state[buffer] = true;
-      }
-    }
-    for(int i=0; i<2; i++) {
-      auto buffer = new MT();
-      meta_buffer_pool.insert(buffer);
-      meta_buffer_state[buffer] = true;
+      data_buffer_pool.resize(MSHR, nullptr);
+      for(auto &b : data_buffer_pool) { b = new DT(); data_buffer_pool_set.insert(b); }
     }
   }
 
   virtual ~CacheSkewed() {
     delete CacheMonitorSupport::monitors;
-    if constexpr (!C_VOID<DT>) for(auto &buf: data_buffer_state) delete buf.first;
-    for(auto &buf: meta_buffer_state) delete buf.first;
+    if (!data_buffer_pool_set.empty()) for(auto b: data_buffer_pool_set) delete b;
+    for(auto b: meta_buffer_pool_set) delete b;
     if constexpr (P>1) delete loc_random;
   }
 
@@ -241,41 +241,64 @@ public:
   }
 
   virtual CMDataBase *data_copy_buffer() {
-    if constexpr (C_VOID<DT>) return nullptr;
-    else {
-      assert(!data_buffer_pool.empty());
-      auto buffer = *(data_buffer_pool.begin());
-      assert(data_buffer_state[buffer]);
-      data_buffer_pool.erase(buffer);
-      data_buffer_state[buffer] = false;
-      return buffer;
+    if (data_buffer_pool_set.empty()) return nullptr;
+    uint16_t index;
+    if constexpr (EnMT) { // when multithread
+      while(true) {
+        index = data_buffer_state.read();
+        if(index == 0) { data_buffer_state.wait(); continue; } // pool empty
+        if(!data_buffer_state.swap(index, index-1)) continue;  // atomic write
+        index--; break;
+      }
+    } else {
+      assert(data_buffer_state > 0);
+      index = --data_buffer_state;
     }
+    return data_buffer_pool[index];
   }
 
   virtual void data_return_buffer(CMDataBase *buf) {
-    if(data_buffer_state.count(buf)) {
-      assert(!data_buffer_state[buf]);
-      data_buffer_state[buf] = true;
-      data_buffer_pool.insert(buf);
+    if (!buf) return;
+    if(data_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
+      uint16_t index;
+      if constexpr (EnMT) { // when multithread
+        while(true) {
+          index = data_buffer_state.read();
+          if(data_buffer_state.swap(index, index+1, true)) break;  // atomic write
+        }
+      } else
+        index = data_buffer_state++;
+      data_buffer_pool[index] = buf;
     }
   }
 
   virtual CMMetadataBase *meta_copy_buffer() {
-    assert(!meta_buffer_pool.empty());
-    auto buffer = *(meta_buffer_pool.begin());
-    assert(meta_buffer_state[buffer]);
-    meta_buffer_pool.erase(buffer);
-    meta_buffer_state[buffer] = false;
-    //std::cout << std::hex << name << " alloc meta buffer 0x" << buffer << std::endl;
-    return buffer;
+    uint16_t index;
+    if constexpr (EnMT) { // when multithread
+      while(true) {
+        index = meta_buffer_state.read();
+        if(index == 0) { meta_buffer_state.wait(); continue; } // pool empty
+        if(!meta_buffer_state.swap(index, index-1)) continue;  // atomic write
+        index--; break;
+      }
+    } else {
+      assert(meta_buffer_state > 0);
+      index = --meta_buffer_state;
+    }
+    return meta_buffer_pool[index];
   }
 
   virtual void meta_return_buffer(CMMetadataBase *buf) {
-    if(meta_buffer_state.count(buf)) {
-      assert(!meta_buffer_state[buf]);
-      meta_buffer_state[buf] = true;
-      meta_buffer_pool.insert(buf);
-      //std::cout << std::hex << name << " return meta buffer 0x" << buf << std::endl;
+    if(meta_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
+      uint16_t index;
+      if constexpr (EnMT) { // when multithread
+        while(true) {
+          index = meta_buffer_state.read();
+          if(meta_buffer_state.swap(index, index+1, true)) break;  // atomic write
+        }
+      } else
+        index = meta_buffer_state++;
+      meta_buffer_pool[index] = buf;
     }
   }
 
