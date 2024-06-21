@@ -21,11 +21,11 @@ public:
 template<int IW, int NW, typename MT, typename DT>
   requires C_DERIVE<MT, CMMetadataCommon> 
         && C_DERIVE_OR_VOID<DT, CMDataBase>
-class CacheArrayMultiThread : public CacheArrayNorm<IW, NW, MT, DT>, 
+class CacheArrayMultiThread : public CacheArrayNorm<IW, NW, MT, DT, true>, 
                               public CacheArrayMultiThreadSupport
 {
 
-  typedef CacheArrayNorm<IW, NW, MT, DT> CacheAT;
+  typedef CacheArrayNorm<IW, NW, MT, DT, true> CacheAT;
 protected:
   std::vector<uint32_t> status; // record every set status
   std::vector<std::mutex *> status_mtxs; // mutex for status

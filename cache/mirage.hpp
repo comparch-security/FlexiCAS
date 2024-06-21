@@ -119,7 +119,7 @@ public:
   MirageCache(std::string name = "") : CacheT(name, 1)
   { 
     // CacheMirage has P+1 CacheArray
-    arrays[P] = new CacheArrayNorm<IW,P*NW,DTMT,DT>(); // the separated data array
+    arrays[P] = new CacheArrayNorm<IW,P*NW,DTMT,DT,EnMT>(); // the separated data array
 
     // allocate data buffer pool as the DT given to CacheDkewed is void
     if constexpr (!C_VOID<DT>) {

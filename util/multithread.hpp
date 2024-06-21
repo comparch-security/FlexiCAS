@@ -16,6 +16,9 @@ public:
   AtomicVar() : var(new std::atomic<T>()) {}
   AtomicVar(const T& v) : var(new std::atomic<T>(v)) {}
 
+  // to put AtomicVar into a runtime resizable vector, a copy constructor must be provided
+  AtomicVar(const AtomicVar<T>& v) : var(new std::atomic<T>(v.read())) {}
+
   __always_inline T read() const {
     return var->load();
   }
