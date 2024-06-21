@@ -45,8 +45,9 @@ template<int IW, int NW, typename MT, typename DT, bool EnMT>
   requires C_DERIVE<MT, CMMetadataCommon> && C_DERIVE_OR_VOID<DT, CMDataBase>
 class CacheArrayNorm : public CacheArrayBase
 {
+  typedef typename std::conditional<EnMT, MetaLock<MT>, MT>::type C_MT;
 protected:
-  std::vector<MT *> meta;   // meta array
+  std::vector<C_MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
   const unsigned int way_num;
   std::vector<AtomicVar<uint16_t> > cache_set_state;  // record current transactions for multithread support
@@ -59,7 +60,7 @@ public:
     constexpr size_t data_num = nset * NW;
 
     meta.resize(meta_num);
-    for(auto &m:meta) m = new MT();
+    for(auto &m:meta) m = new C_MT();
     if(extra_way)
       for(unsigned int s=0; s<nset; s++)
         for(unsigned int w=NW; w<way_num; w++)

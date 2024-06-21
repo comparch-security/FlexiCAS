@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include "util/concept_macro.hpp"
+#include <mutex>
 
 #ifndef NDEBUG
 #include <typeinfo>
@@ -53,6 +54,10 @@ public:
   virtual bool is_valid() const = 0;
   virtual bool match(uint64_t addr) const = 0;
   virtual void to_extend() = 0;
+
+  // support multithread (should not be here but MIRAGE need a data metadata which does not derive from CMMetadataBase)
+  virtual void lock() {}
+  virtual void unlock() {}
 };
 
 // base class for all metadata supporting coherence
@@ -214,5 +219,16 @@ using MetadataBroadcast = MetadataMixer<AW, IW, TOfst, MT>;
 
 template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE<MT, MetadataDirectoryBase>
 using MetadataDirectory = MetadataMixer<AW, IW, TOfst, MT>;
+
+// A wrapper for implementing the multithread required cache line lock utility
+template <typename MT> requires C_DERIVE<MT, CMMetadataCommon>
+class MetaLock : public MT {
+  std::mutex mtx;
+public:
+  MetaLock() : MT() {}
+  virtual ~MetaLock() {}
+  virtual void lock() { mtx.lock(); }
+  virtual void unlock() { mtx.unlock(); }
+};
 
 #endif
