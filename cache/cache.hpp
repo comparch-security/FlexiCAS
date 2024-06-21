@@ -31,11 +31,17 @@ public:
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) = 0;
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) = 0;
+
+  // support multithread
+  virtual void set_mt_state(uint32_t s, uint16_t prio) = 0;   // preserve a cache set according to transaction priority
+  virtual void check_mt_state(uint32_t s, uint16_t prio) = 0; // check priority before continuing remaining work  on a cache set
+  virtual void reset_mt_state(uint32_t s, uint16_t prio) = 0; // reset the state of a cache set after processing a transaction
 };
 
 // normal set associative cache array
 // IW: index width, NW: number of ways, MT: metadata type, DT: data type (void if not in use)
-template<int IW, int NW, typename MT, typename DT>
+// EnMT: enable multithread support
+template<int IW, int NW, typename MT, typename DT, bool EnMT>
   requires C_DERIVE<MT, CMMetadataCommon> && C_DERIVE_OR_VOID<DT, CMDataBase>
 class CacheArrayNorm : public CacheArrayBase
 {
@@ -43,6 +49,7 @@ protected:
   std::vector<MT *> meta;   // meta array
   std::vector<DT *> data;   // data array, could be null
   const unsigned int way_num;
+  std::vector<AtomicVar<uint16_t> > cache_set_state;  // record current transactions for multithread support
 
 public:
   static constexpr uint32_t nset = 1ul<<IW;  // number of sets
@@ -62,6 +69,8 @@ public:
       data.resize(data_num);
       for(auto &d:data) d = new DT();
     }
+
+    if constexpr (EnMT) cache_set_state.resize(nset);
   }
 
   virtual ~CacheArrayNorm() {
@@ -82,6 +91,32 @@ public:
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
     if constexpr (C_VOID<DT>) return nullptr;
     else                      return data[s*NW + w];
+  }
+
+  virtual void set_mt_state(uint32_t s, uint16_t prio) {
+    while(true) {
+      auto state = cache_set_state[s].read();
+      if(prio <= state) { cache_set_state[s].wait(); continue; }
+      if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+    }
+  }
+
+  virtual void check_mt_state(uint32_t s, uint16_t prio) {
+    auto prio_upper = (prio << 1) - 1;
+    while(true) {
+      auto state = cache_set_state[s].read();
+      assert(state >= prio);
+      if(prio_upper >= state) break;
+      cache_set_state[s].wait();
+    }
+  }
+
+  virtual void reset_mt_state(uint32_t s, uint16_t prio) {
+    while(true) {
+      auto state = cache_set_state[s].read();
+      assert(state == state | prio);
+      if(cache_set_state[s].swap(state, state & (~prio), true)) break;
+    }
   }
 };
 
@@ -178,7 +213,7 @@ public:
     : CacheBase(name), loc_random(nullptr), data_buffer_state(MSHR), meta_buffer_pool(MSHR), meta_buffer_state(MSHR)
   {
     arrays.resize(P+extra_par);
-    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT>(extra_way);
+    for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT,EnMT>(extra_way);
     CacheMonitorSupport::monitors = new CacheMonitorImp<DLY, EnMon>(CacheBase::id);
 
     if constexpr (P>1) loc_random = cm_alloc_rand32();
