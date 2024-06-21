@@ -26,7 +26,6 @@ struct addr_info{
   uint32_t s;
   uint32_t w;
   std::mutex* mtx;
-  std::mutex* cmtx; // cacheline mutex
   std::condition_variable* cv;
   std::vector<uint32_t>* status;
 };
@@ -120,7 +119,7 @@ public:
 
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, 
-          std::condition_variable*, std::vector<uint32_t>*, bool, std::mutex*>
+          std::condition_variable*, std::vector<uint32_t>*, bool>
           access_line_multithread(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) = 0;
 };
 
@@ -138,13 +137,12 @@ public:
   {
     outer_cmd.id = coh_id;
     /** When issuing an acquire request to the lower-level cache, need to unlock the cacheline mutex. */
-    auto cmtx = (static_cast<CT*>(cache))->get_cacheline_mutex(ai, s, w);
-    cmtx->unlock();
+    cache->unlock_line(ai, s, w);
 
     coh->acquire_resp(addr, data, meta->get_outer_meta(), outer_cmd, delay);
     
     /**  When receiving an acquire response from the lower-level cache, re-lock the cacheline mutex. */
-    cmtx->lock();
+    cache->lock_line(ai, s, w);
     policy->meta_after_fetch(outer_cmd, meta, addr);
   }
 
@@ -181,13 +179,12 @@ public:
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::probe);
     if(hit){
       auto [status, mtx, cv] = cache->get_set_control(ai, s);
-      auto cmtx = cache->get_cacheline_mutex(ai, s, w);
-      cmtx->lock();
+      cache->lock_line(ai, s, w);
       std::unique_lock lk(*mtx, std::defer_lock);
       std::tie(meta, data) = cache->access_line(ai, s, w);
       /** It is possible that higher priority behaviors have caused the meta to change, so need check again */
       if(!meta->is_valid() || meta->addr(s) != addr){
-        cmtx->unlock();
+        cache->unlock_line(ai, s, w);
         hit = false;
       }else{
         auto sync = OPUC::policy->probe_need_sync(outer_cmd, meta);
@@ -201,7 +198,7 @@ public:
         }
         OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
 
-        cmtx->unlock();
+        cache->unlock_line(ai, s, w);
       }
 
       lk.lock();
@@ -228,7 +225,7 @@ class InnerCohPortMultiThreadUncached : public InnerCohPortUncached<true>, publi
 {
 protected:
   InnerAddressDataBase* database;
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool, std::mutex*>
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool>
   access_line_multithread(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { 
     uint32_t ai, s, w;
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
@@ -236,8 +233,7 @@ protected:
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::acquire, true);
     auto [status, mtx, cv] = cache->get_set_control(ai, s);
     auto [meta, data] = cache->access_line(ai, s, w);
-    auto cmtx = cache->get_cacheline_mutex(ai, s, w);
-    cmtx->lock();
+    cache->lock_line(ai, s, w);
     if(hit){
       auto sync = policy->access_need_sync(cmd, meta);
       if(sync.first) {
@@ -253,7 +249,7 @@ protected:
       if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
       (static_cast<OT *>(outer))->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay, ai, s, w); // fetch the missing block
     }
-    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit, cmtx);
+    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit);
   }
   virtual void evict(CMMetadataBase *meta, CMDataBase *data, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
@@ -363,7 +359,7 @@ public:
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
     auto p_policy = std::static_pointer_cast<CPT>(policy);
-    auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line_multithread(addr, cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line_multithread(addr, cmd, delay);
     if(meta->is_valid() && meta->addr(s) == addr){
       policy->meta_after_grant(cmd, meta, meta_inner);
       if(data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
@@ -380,7 +376,7 @@ public:
      */
     bool unlock = p_policy->acquire_need_unlock(cmd);
     if(unlock){
-      cmtx->unlock();
+      cache->unlock_line(ai, s, w);
       std::unique_lock lk(*mtx, std::defer_lock);
       lk.lock();
       (*status)[s] = (*status)[s] & (~Priority::acquire);
@@ -388,7 +384,7 @@ public:
       cv->notify_all();
     }else{
       /** store relevant locks in the database and wait for the upper-level cache to issue an ack request */
-      database->add(cmd.id, addr, addr_info{ai, s, w, mtx, cmtx, cv, status});
+      database->add(cmd.id, addr, addr_info{ai, s, w, mtx, cv, status});
     }
   }
   
@@ -396,8 +392,8 @@ public:
     /** query whether the information of this address exists in the database */
     auto info = database->query(cmd.id, addr);
     if(info.first){
-      auto [ai, s, w, mtx, cmtx, cv, status] = info.second;
-      cmtx->unlock();
+      auto [ai, s, w, mtx, cv, status] = info.second;
+      cache->unlock_line(ai, s, w);
       std::unique_lock lk(*mtx, std::defer_lock);
       lk.lock();
       (*status)[s] = (*status)[s] & (~Priority::acquire);
@@ -466,7 +462,7 @@ public:
     auto policy = std::static_pointer_cast<CPT>(InnerT::policy);
     addr = normalize(addr);
     auto cmd = policy->cmd_for_read();
-    auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line_multithread(addr, cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line_multithread(addr, cmd, delay);
 
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
 
@@ -474,7 +470,7 @@ public:
     auto ack = policy->acquire_need_ack(outer->is_uncached());
     if(ack.first) (static_cast<OT *>(outer))->acquire_ack_req(addr, ack.second, delay);
 
-    cmtx->unlock();
+    cache->unlock_line(ai, s, w);
     std::unique_lock lk(*mtx, std::defer_lock);
     lk.lock();
     (*status)[s] = (*status)[s] & (~Priority::read);
@@ -488,7 +484,7 @@ public:
     auto policy = std::static_pointer_cast<CPT>(InnerT::policy);
     addr = normalize(addr);
     auto cmd = policy->cmd_for_write();
-    auto [meta, data, ai, s, w, mtx, cv, status, hit, cmtx] = access_line_multithread(addr, cmd, delay);
+    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line_multithread(addr, cmd, delay);
 
     meta->to_dirty();
     if(data) data->copy(m_data);
@@ -497,7 +493,7 @@ public:
     auto ack = policy->acquire_need_ack(outer->is_uncached());
     if(ack.first) (static_cast<OT *>(outer))->acquire_ack_req(addr, ack.second, delay);
 
-    cmtx->unlock();
+    cache->unlock_line(ai, s, w);
     std::unique_lock lk(*mtx, std::defer_lock);
     lk.lock();
     (*status)[s] = (*status)[s] & (~Priority::read);

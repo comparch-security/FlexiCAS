@@ -164,10 +164,13 @@ public:
     return arrays[ai]->get_data(s, w);
   }
 
+  // methods for supporting multithread execution
   virtual CMDataBase *data_copy_buffer() = 0;               // allocate a copy buffer, needed by exclusive cache with extended meta
   virtual void data_return_buffer(CMDataBase *buf) = 0;     // return a copy buffer, used to detect conflicts in copy buffer
   virtual CMMetadataBase *meta_copy_buffer() = 0;           // allocate a copy buffer, needed by exclusive cache with extended meta
   virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
+  __always_inline void lock_line(uint32_t ai, uint32_t s, uint32_t w)   { access(ai, s, w)->lock();   }
+  __always_inline void unlock_line(uint32_t ai, uint32_t s, uint32_t w) { access(ai, s, w)->unlock(); }
 
   virtual std::tuple<int, int, int> size() const = 0;           // return the size parameters of the cache
   uint32_t get_id() const { return id; }
