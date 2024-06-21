@@ -1,5 +1,5 @@
 
-MODE ?=
+MODE ?= debug
 NCORE ?= `nproc`
 
 MAKE = make
@@ -25,10 +25,11 @@ endif
 
 UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
+REPLAYER_HEADERS = $(wildcard replayer/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 CACHE_OBJS    = cache/metadata.o
-UTIL_OBJS     = util/random.o util/query.o util/monitor.o
+UTIL_OBJS     = util/random.o util/query.o util/monitor.o util/zfstream.o
 
 all: libflexicas.a
 
@@ -55,7 +56,7 @@ REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))
 REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(REGRESSION_TESTS))
 
 $(REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -lz -o $@
 
 $(REGRESSION_TESTS_LOG): %.log:%
 	$< > $@
@@ -69,7 +70,7 @@ PARALLEL_REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(PARALLEL_REGRESSIO
 PARALLEL_REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(PARALLEL_REGRESSION_TESTS))
 
 $(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -lz -o $@
 
 $(PARALLEL_REGRESSION_TESTS_RST): %.out: %
 	$< 2>$@
@@ -83,11 +84,14 @@ clean-regression:
 libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 	ar rvs $@ $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 
+syn: synchro_tester.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REPLAYER_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ -lz
+
 .PHONY: regression
 
 clean:
-	-$(MAKE) clean-regression
-	-$(MAKE) clean-parallel-regression
 	-rm $(UTIL_OBJS) $(CACHE_OBJS)
+	$(MAKE) clean-regression
+	$(MAKE) clean-parallel-regression
 
 .PHONY: clean
