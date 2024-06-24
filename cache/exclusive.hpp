@@ -587,7 +587,7 @@ public:
 };
 
 template<bool EnMT = false>
-using ExclusiveOuterCohPortBroadcast = ExclusiveOuterCohPortBroadcastT<OuterCohPortUncached<EnMT>, EnMT>;
+using ExclusiveOuterCohPortBroadcast = ExclusiveOuterCohPortBroadcastT<OuterCohPort<EnMT>, EnMT>;
 
 template<class OPUC, bool EnMT> requires C_DERIVE<OPUC, OuterCohPortUncached<EnMT> >
 class ExclusiveOuterCohPortDirectoryT : public OPUC
@@ -639,6 +639,6 @@ public:
 };
 
 template<bool EnMT = false>
-using ExclusiveOuterCohPortDirectory = ExclusiveOuterCohPortDirectoryT<OuterCohPortUncached<EnMT>, EnMT>;
+using ExclusiveOuterCohPortDirectory = ExclusiveOuterCohPortDirectoryT<OuterCohPort<EnMT>, EnMT>;
 
 #endif
