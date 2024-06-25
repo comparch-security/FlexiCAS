@@ -1,0 +1,80 @@
+thread : 1
+	IOPS  : 395449
+	FLOPS : 0
+	Reads : 58229
+	Writes: 15975
+	Barrier: 3182752
+		IOPs: 390058
+		FLOPs: 0
+		Instrs: 219620
+		MemAccesses: 72768
+		Communication: 57323
+		locks: 1
+		IOPs/Mem: 5.3603
+		FLOPs/Mem: 0
+		locks/OPs: 2.56372e-06
+	Lock: 69380456
+		IOPs: 127972
+		FLOPs: 0
+		Instrs: 60775
+		MemAccesses: 14859
+		Communication: 14684
+	Lock: 69380456
+		IOPs: 1158
+		FLOPs: 0
+		Instrs: 696
+		MemAccesses: 253
+		Communication: 175
+thread : 2
+	IOPS  : 4367
+	FLOPS : 0
+	Reads : 887
+	Writes: 410
+	Barrier: 3182752
+		IOPs: 4095
+		FLOPs: 0
+		Instrs: 2419
+		MemAccesses: 1162
+		Communication: 660
+		locks: 1
+		IOPs/Mem: 3.5241
+		FLOPs/Mem: 0
+		locks/OPs: 0.0002442
+	Lock: 3182688
+		IOPs: 43
+		FLOPs: 0
+		Instrs: 43
+		MemAccesses: 29
+		Communication: 12
+thread : 3
+	IOPS  : 6799
+	FLOPS : 0
+	Reads : 1270
+	Writes: 546
+	Barrier: 3182752
+		IOPs: 224
+		FLOPs: 0
+		Instrs: 212
+		MemAccesses: 132
+		Communication: 43
+		locks: 1
+		IOPs/Mem: 1.69697
+		FLOPs/Mem: 0
+		locks/OPs: 0.00446429
+	Lock: 3182688
+		IOPs: 43
+		FLOPs: 0
+		Instrs: 43
+		MemAccesses: 29
+		Communication: 11
+Barrier statistics for all threads:
+Barrier: 
+	IOPs: 
+	FLOPs: 
+	Instrs: 
+	MemAccesses: 
+	locks: 
+	IOPs/Mem: 
+	FLOPs/Mem: 
+	locks/OPs: 
+Total instructions for all threads: 229721
