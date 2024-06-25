@@ -1,0 +1,39 @@
+thread : 1
+	IOPS  : 3993421
+	FLOPS : 0
+	Reads : 618913
+	Writes: 174407
+	Lock: 69380456
+		IOPs: 128217
+		FLOPs: 0
+		Instrs: 60912
+		MemAccesses: 14910
+		Communication: 14728
+	Lock: 69380456
+		IOPs: 2620
+		FLOPs: 0
+		Instrs: 1658
+		MemAccesses: 568
+		Communication: 432
+thread : 2
+	IOPS  : 981742
+	FLOPS : 0
+	Reads : 322184
+	Writes: 320833
+thread : 3
+	IOPS  : 970403
+	FLOPS : 0
+	Reads : 320122
+	Writes: 320076
+thread : 4
+	IOPS  : 970403
+	FLOPS : 0
+	Reads : 320122
+	Writes: 320076
+thread : 5
+	IOPS  : 970403
+	FLOPS : 0
+	Reads : 320122
+	Writes: 320076
+Barrier statistics for all threads:
+Total instructions for all threads: 6083542

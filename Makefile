@@ -75,23 +75,36 @@ $(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LI
 $(PARALLEL_REGRESSION_TESTS_RST): %.out: %
 	$< 2>$@
 
-regression: $(REGRESSION_TESTS_RST) $(PARALLEL_REGRESSION_TESTS_RST)
+REPLAYER_REGRESSION_TESTS = barrier pthread_mutex pthread_spinlock
+
+REPLAYER_REGRESSION_TESTS_EXE = $(patsubst %, regression/replayer_regression/%, $(REPLAYER_REGRESSION_TESTS))
+REPLAYER_REGRESSION_TESTS_RST = $(patsubst %, regression/replayer_regression/%.out, $(REPLAYER_REGRESSION_TESTS))
+
+$(REPLAYER_REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REPLAYER_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ -lz
+
+$(REPLAYER_REGRESSION_TESTS_RST): %.out: %
+	$< 1>$@
+
+replayer-regression: $(REPLAYER_REGRESSION_TESTS_RST)
+
+regression: $(REGRESSION_TESTS_RST) $(PARALLEL_REGRESSION_TESTS_RST) $(REPLAYER_REGRESSION_TESTS_RST)
 
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 	-rm $(PARALLEL_REGRESSION_TESTS_EXE) $(PARALLEL_REGRESSION_TESTS_RST)
 
+clean-replayer-regression:
+	-rm $(REPLAYER_REGRESSION_TESTS_EXE) $(REPLAYER_REGRESSION_TESTS_RST)
+
 libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 	ar rvs $@ $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 
-syn: synchro_tester.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REPLAYER_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@ -lz
-
-.PHONY: regression
+.PHONY: regression replayer-regression
 
 clean:
 	-rm $(UTIL_OBJS) $(CACHE_OBJS)
 	$(MAKE) clean-regression
-	$(MAKE) clean-parallel-regression
+	$(MAKE) clean-replayer-regression
 
 .PHONY: clean
