@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <set>
+#include <string>
 #include "util/delay.hpp"
 #include "util/concept_macro.hpp"
 
@@ -170,6 +171,9 @@ class SimpleTracer : public MonitorBase
 {
   bool active;
   bool compact_data;
+
+  virtual void print(const std::string& msg);
+
 public:
   SimpleTracer(bool cd = false): active(true), compact_data(cd) {}
   virtual ~SimpleTracer() {}
