@@ -156,7 +156,7 @@ public:
     return true;
   }
 
-  static void cache_server(int core, ParallelRegressionSupport* prg, std::vector<CoreMultiThreadSupport *>* core_inst, std::vector<CoreMultiThreadSupport *>* core_data, bool* exit)
+  static void cache_server(int core, ParallelRegressionSupport* prg, std::vector<CoreInterfaceBase *>* core_inst, std::vector<CoreInterfaceBase *>* core_data, bool* exit)
   {
     while(true){
       auto act = prg->get_xact(core);
@@ -181,7 +181,7 @@ public:
     }
   }
 
-  void run(int test_num, std::vector<CoreMultiThreadSupport *>* core_inst, std::vector<CoreMultiThreadSupport *>* core_data){
+  void run(int test_num, std::vector<CoreInterfaceBase *>* core_inst, std::vector<CoreInterfaceBase *>* core_data){
     std::thread add_thread(cache_producer, test_num, this);
     std::vector<std::thread> server_thread;
     bool exit = false;
