@@ -5,6 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <memory>
+#include <chrono>
 
 template<typename T>
 class AtomicVar {
@@ -23,8 +24,9 @@ public:
     return var->load();
   }
 
-  __always_inline void write(T v) {
+  __always_inline void write(T v, bool notify = false) {
     var->store(v);
+    if(notify) cv.notify_all();
   }
 
   __always_inline bool swap(T& expect, T v, bool notify = false) {
@@ -39,6 +41,12 @@ public:
   __always_inline void wait() {
     std::unique_lock lk(mtx);
     cv.wait(lk);
+  }
+
+  __always_inline void wait_timeout() {
+    using namespace std::chrono_literals;
+    std::unique_lock lk(mtx);
+    cv.wait_for(lk, 10us);
   }
 };
 

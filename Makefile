@@ -72,7 +72,7 @@ $(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LI
 	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
 
 $(PARALLEL_REGRESSION_TESTS_RST): %.out: %
-	$< 2>$@
+	$< 2>$@ 1>temp.log
 
 regression: $(REGRESSION_TESTS_RST) $(PARALLEL_REGRESSION_TESTS_RST)
 
@@ -87,7 +87,7 @@ libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
 
 clean:
 	-$(MAKE) clean-regression
-	-$(MAKE) clean-parallel-regression
+	-$(MAKE) clean-parallel-regression temp.log
 	-rm $(UTIL_OBJS) $(CACHE_OBJS)
 
 .PHONY: clean
