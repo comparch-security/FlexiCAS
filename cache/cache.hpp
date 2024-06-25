@@ -363,4 +363,40 @@ public:
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
 
+// Dynamic-Randomized support for CacheBase
+class CacheBaseDRSupport
+{
+public:
+  CacheBaseDRSupport() {}
+  virtual ~CacheBaseDRSupport() {}
+
+  virtual void seed(std::vector<uint64_t>& seeds) = 0;
+};
+
+// Dynamic-Randomized Skewed Cache 
+// IW: index width, NW: number of ways, P: number of partitions
+// MT: metadata type, DT: data type (void if not in use)
+// IDX: indexer type, RPC: replacer type
+// EnMon: whether to enable monitoring
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
+  requires C_DERIVE<MT, CMMetadataBase> 
+        && C_DERIVE_OR_VOID<DT, CMDataBase>
+        && C_DERIVE<IDX, IndexSkewed<IW, 6, P>>
+        && C_DERIVE_OR_VOID<DLY, DelayBase>
+class CacheSkewedDR : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>, 
+                      public CacheBaseDRSupport
+{
+  typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheT;
+
+protected:
+  using CacheT::indexer;
+
+public:
+  CacheSkewedDR(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
+  : CacheT(name, extra_par, extra_way){}
+  virtual ~CacheSkewedDR() {}
+
+  virtual void seed(std::vector<uint64_t>& seeds) { indexer.seed(seeds);}
+};
+
 #endif
