@@ -21,9 +21,9 @@ inline std::vector<CoherentCacheBase *> cache_generator(int size, const std::str
 }
 
 inline auto get_l1_core_interface(std::vector<CoherentCacheBase *>& array) {
-  auto core = std::vector<CoreInterface *>(array.size());
+  auto core = std::vector<CoreInterfaceBase *>(array.size());
   for(unsigned int i=0; i<array.size(); i++)
-    core[i] = static_cast<CoreInterface *>(array[i]->inner);
+    core[i] = dynamic_cast<CoreInterfaceBase *>(array[i]->inner);
   return core;
 }
 
@@ -245,15 +245,5 @@ inline auto cache_gen_multi_thread_llc(int size, const std::string& name_prefix)
   return cache_multi_thread_type_compile<IW, WN, DT, MBT, RPT, CPT, false, true, false, DLY, EnMon>(size, name_prefix);
 }
 
-template<int IW, int WN, typename DT, typename MBT,
-         template <int, int, bool> class RPT,
-         template <typename, bool, bool> class CPT,
-         bool uncache, typename DLY, bool EnMon>
-inline auto get_l1_multithread_core_interface(std::vector<CoherentCacheBase *>& array) {
-  auto core = std::vector<CoreMultiThreadSupport *>(array.size());
-  for(unsigned int i=0; i<array.size(); i++)
-    core[i] = dynamic_cast<CoreMultiThreadSupport *>(array[i]->inner);
-  return core;
-}
 
 #endif

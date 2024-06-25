@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
+#include <thread>
 
 class SynchroTraceReplayerBase
 {
@@ -26,29 +27,37 @@ protected:
 
   /** Holds which threads currently wait for a lock */
   std::map<uint64_t, std::queue<ThreadID>> perMutexThread;
+  std::mutex mutexMtx;
 
   /** Holds spin locks in use */
   std::set<uint64_t> spinLocks;
-
-  /** Holds condition variables signaled by broadcasts and signals */
-  std::vector<std::map<uint64_t, int>> condSignals;
+  std::mutex spinLocksMtx;
 
   /** Holds which threads are waiting for a barrier */
   std::map<uint64_t, std::set<ThreadID>> threadBarrierMap;
+  std::mutex barrierMtx;
 
   /** Holds which threads currently possess a mutex lock */
   std::vector<std::vector<uint64_t>> perThreadLocksHeld;
 
   /** Holds which threads waiting for the thread to complete */
   std::vector<std::vector<ThreadID>> joinList;
+  std::mutex joinMtx;
 
   /** Directory of Sigil Traces and Pthread metadata file */
   std::string eventDir;
 
   /** data cache */
-  std::vector<CoreInterface *>& core_data;
+  std::vector<CoreInterfaceBase *>& core_data;
+  std::mutex cacheMtx;
 
-  virtual bool isCommDependencyBlocked(const MemoryRequest_ThreadCommunication& comm) const = 0;
+  /** mutex for cout */
+  std::mutex outputMtx;
+
+  /** threads for each core */
+  std::vector<std::thread> replayCore;
+
+  virtual bool isCommDependencyBlocked(const MemoryRequest_ThreadCommunication& comm) = 0;
   virtual uint64_t msgReqSend(CoreID coreId, uint64_t addr, uint32_t bytes, ReqType type) = 0;
 
   virtual void processEventMarker(ThreadContext& tcxt, CoreID coreId) = 0;
@@ -62,10 +71,10 @@ protected:
   virtual void replayComm(ThreadContext& tcxt, CoreID coreId) = 0;
   virtual void replayThreadAPI(ThreadContext& tcxt, CoreID coreId) = 0;
   virtual void wakeupCore(ThreadID threadId, CoreID coreId) = 0;
-  virtual void wakeupDebugLog() = 0;
+  virtual void wakeupDebugLog(CoreID coreId) = 0;
 
 public:
-  SynchroTraceReplayerBase(std::string eventDir, std::vector<CoreInterface *>& core_data) : 
+  SynchroTraceReplayerBase(std::string eventDir, std::vector<CoreInterfaceBase *>& core_data) : 
    eventDir(eventDir), core_data(core_data), pthMetadata(eventDir) {
 
   }
@@ -90,19 +99,21 @@ protected:
     * reasons, there are no 'dependencies' to enforce in the case of a system
     * call.
     */
-  virtual bool isCommDependencyBlocked(const MemoryRequest_ThreadCommunication& comm) const
+  virtual bool isCommDependencyBlocked(const MemoryRequest_ThreadCommunication& comm)
   {
     // If the producer thread's EventID is greater than the dependent event
     // then the dependency is satisfied
-    return (threadContexts[comm.sourceThreadId].currEventId > comm.sourceEventId);
+    return scheduler.checkEvent(comm.sourceThreadId) > comm.sourceEventId;
   }
 
   virtual uint64_t msgReqSend(CoreID coreId, uint64_t addr, uint32_t bytes, ReqType type){
     uint64_t delay = 0;
+
     if(type == ReqType::REQ_READ)
       core_data[coreId]->read(addr, &delay);
     else
       core_data[coreId]->write(addr, nullptr, &delay);
+
     return delay;
   }
 
@@ -120,13 +131,18 @@ protected:
   virtual void processEndMarker(ThreadContext& tcxt, CoreID coreId)
   {
     tcxt.evStream.pop();
+    scheduler.recordEvent(tcxt);
+
+    joinMtx.lock();
     scheduler.getBlocked(tcxt, ThreadStatus::COMPLETED);
     for (ThreadID threadId : joinList[tcxt.threadId])
-      scheduler.getReady(threadContexts[threadId]);
+      scheduler.sendReady(threadId);
+    joinMtx.unlock();
   }
 
   virtual void replayCompute(ThreadContext& tcxt, CoreID coreId)
   {
+
     assert(tcxt.evStream.peek().tag == Tag::COMPUTE);
     // simulate time for the iops/flops
     const ComputeOps& ops = tcxt.evStream.peek().computeOps;
@@ -142,6 +158,7 @@ protected:
     assert(tcxt.evStream.peek().tag == Tag::MEMORY);
     // Send the load/store
     const StEvent& ev = tcxt.evStream.peek();
+
     scheduler.schedule(tcxt, msgReqSend(coreId, 
                                       ev.memoryReq.addr, 
                                       ev.memoryReq.bytesRequested, 
@@ -175,29 +192,43 @@ protected:
     }
   }
 
-  virtual bool mutexTryLock(ThreadContext& tcxt, CoreID coreId, uint64_t pthaddr) {
+  virtual bool mutexTryLock(ThreadContext& tcxt, CoreID coreId, uint64_t pthaddr) 
+  {
+    mutexMtx.lock();
+
     auto it = perMutexThread.find(pthaddr);
     if (it != perMutexThread.end()) {
       if (tcxt.status != ThreadStatus::ACTIVE_TRYLOCK) {
         it->second.push(tcxt.threadId);
       }
-      return (tcxt.threadId == it->second.front());
+      bool getMutex = (tcxt.threadId == it->second.front());
+
+      mutexMtx.unlock();
+      return getMutex;
     } else {
       perMutexThread[pthaddr].push(tcxt.threadId);
+
+      mutexMtx.unlock();
       return true;
     }
   }
 
-  virtual void mutexUnlock(ThreadContext& tcxt, CoreID coreId, uint64_t pthaddr) {
+  virtual void mutexUnlock(ThreadContext& tcxt, CoreID coreId, uint64_t pthaddr) 
+  {
+    mutexMtx.lock();
+
     auto it = perMutexThread.find(pthaddr);
     assert(it != perMutexThread.end());
     assert(!(it->second.empty()));
     assert(it->second.front() == tcxt.threadId);
     it->second.pop();
-    assert(it->second.front() != tcxt.threadId);
+    assert(((!it->second.empty()) && (it->second.front() != tcxt.threadId))
+          || (it->second.empty()));
     if (!(it->second.empty())) {
-      scheduler.getReady(threadContexts[it->second.front()]);
+      scheduler.sendReady(it->second.front());
     }
+
+    mutexMtx.unlock();
   }
 
   virtual void replayThreadAPI(ThreadContext& tcxt, CoreID coreId) {
@@ -236,11 +267,15 @@ protected:
         assert(pthMetadata.addressToIdMap().find(pthAddr) != pthMetadata.addressToIdMap().cend());
 
         const ThreadID workerThreadID = {pthMetadata.addressToIdMap().at(pthAddr)};
+
+        outputMtx.lock();
         std::cout << "New Thread ID: " << workerThreadID << " " << threadContexts.size() << std::endl;
+        outputMtx.unlock();
+
         assert(workerThreadID < threadContexts.size());
         assert(threadContexts[workerThreadID].status == ThreadStatus::INACTIVE);
 
-        scheduler.getReady(threadContexts[workerThreadID]);
+        scheduler.sendReady(workerThreadID);
         
         tcxt.status = ThreadStatus::WAIT_THREAD;
         scheduler.schedule(tcxt, scheduler.pthCycles);
@@ -254,16 +289,31 @@ protected:
         assert(pthMetadata.addressToIdMap().find(pthAddr) != pthMetadata.addressToIdMap().cend());
 
         const ThreadContext& workertcxt = threadContexts[pthMetadata.addressToIdMap().at(pthAddr)];
+
+        joinMtx.lock();
+
         if(workertcxt.completed()) {
+
+          joinMtx.unlock();
+
           // reset to active, in case this thread was previously blocked
           tcxt.status = ThreadStatus::WAIT_THREAD;
+
+          outputMtx.lock();
           std::cout << "Thread " << workertcxt.threadId << " joined" << std::endl; 
+          outputMtx.unlock();
+
           tcxt.evStream.pop();
           scheduler.schedule(tcxt, scheduler.pthCycles);
-        } else if (workertcxt.running() || workertcxt.blocked()) {
+        } else if (workertcxt.running() || workertcxt.blocked() || scheduler.checkReady(workertcxt.threadId)) {
           joinList[workertcxt.threadId].push_back(tcxt.threadId);
+
+          joinMtx.unlock();
           scheduler.getBlocked(tcxt, ThreadStatus::BLOCKED_JOIN);
         } else {
+
+          joinMtx.unlock();
+
           // failed joined Thread
           assert(0);
         }
@@ -271,67 +321,35 @@ protected:
       }
       case EventType::BARRIER_WAIT:
       {
+        barrierMtx.lock();
+
         auto p = threadBarrierMap[pthAddr].insert(tcxt.threadId);
         // Check if this is the last thread to enter the barrier,
         // in which case, unblock all the threads.
         if(threadBarrierMap[pthAddr] == pthMetadata.barrierMap().at(pthAddr)) {
           for(auto tid : pthMetadata.barrierMap().at(pthAddr)) {
-            scheduler.getReady(threadContexts[tid]);
             threadContexts[tid].evStream.pop();
+            scheduler.sendReady(tid);
           }
           assert(threadBarrierMap.erase(pthAddr));
+
+          barrierMtx.unlock();
           tcxt.status = ThreadStatus::WAIT_THREAD;
           scheduler.schedule(tcxt, scheduler.pthCycles);
-        } else {
+        } else {          
+          barrierMtx.unlock();
           scheduler.getBlocked(tcxt, ThreadStatus::BLOCKED_BARRIER);
         }
-        break;
-      }
-      case EventType::COND_WAIT:
-      {
-        const uint64_t mtx = {ev.threadApi.mutexLockAddr};
-        if (tcxt.status != ThreadStatus::ACTIVE_TRYLOCK)
-          mutexUnlock(tcxt, coreId, mtx);
-
-        auto it = condSignals[tcxt.threadId].find(pthAddr);
-        if (it != condSignals[tcxt.threadId].end() && it->second > 0) {
-          // decrement signal and reactivate thread
-          if (mutexTryLock(tcxt, coreId, mtx)) {
-            scheduler.getBlocked(tcxt, ThreadStatus::BLOCKED_COND);
-          } else {
-            it->second--;
-            tcxt.evStream.pop();
-            tcxt.status = ThreadStatus::WAIT_THREAD;
-            scheduler.schedule(tcxt, scheduler.pthCycles);
-          }
-        } else {
-          scheduler.getBlocked(tcxt, ThreadStatus::BLOCKED_COND);
-        }
-        break;
-      }
-      case EventType::COND_SG:
-      case EventType::COND_BR:
-      {
-        assert(tcxt.status == ThreadStatus::ACTIVE || tcxt.status == ThreadStatus::ACTIVE_TRYLOCK);
-        // post condition signal to all threads
-        for (ThreadID tid = 0; tid < NT; tid++)
-        {
-          // If the condition doesn't exist yet for the thread,
-          // it will be inserted and value-initialized, so the
-          // mapped_type (Addr) will default to `0`.
-          condSignals[tid][pthAddr]++;
-          if (condSignals[tid][pthAddr] > 0 && threadContexts[tid].status == ThreadStatus::BLOCKED_COND)
-            scheduler.getReady(threadContexts[tid]);
-        }
-        tcxt.evStream.pop();
-        tcxt.status = ThreadStatus::WAIT_THREAD;
-        scheduler.schedule(tcxt, scheduler.pthCycles);
         break;
       }
       case EventType::SPIN_LOCK:
       {
         assert(tcxt.status == ThreadStatus::ACTIVE);
+
+        spinLocksMtx.lock();
         auto p = spinLocks.insert(pthAddr);
+        spinLocksMtx.unlock();
+
         if (p.second){
           tcxt.evStream.pop();
           perThreadLocksHeld[tcxt.threadId].push_back(pthAddr);
@@ -347,6 +365,8 @@ protected:
       {
         assert(tcxt.status == ThreadStatus::ACTIVE);
         
+        spinLocksMtx.lock();
+
         auto it = spinLocks.find(pthAddr);
         if (it != spinLocks.end()) {
           spinLocks.erase(it);
@@ -355,11 +375,17 @@ protected:
           assert(v_it != locksHeld.end());
           locksHeld.erase(v_it);
         }
+
+        spinLocksMtx.unlock();
+
         tcxt.evStream.pop();
         tcxt.status = ThreadStatus::WAIT_THREAD;
         scheduler.schedule(tcxt, scheduler.pthCycles);
         break;
       }
+      case EventType::COND_WAIT:
+      case EventType::COND_SG:
+      case EventType::COND_BR:
       case EventType::SEM_INIT:
       case EventType::SEM_WAIT:
       case EventType::SEM_POST:
@@ -405,30 +431,103 @@ protected:
     }
   }
 
-  virtual void wakeupDebugLog(){
-    printf("clock:%ld\n", scheduler.curClock());
+  virtual void wakeupDebugLog(CoreID coreId){
+    outputMtx.lock();
+    printf("CoreID<%d>:clock:%ld\n", coreId, scheduler.curClock(coreId));
     for(const auto & cxt : threadContexts){
+      if (scheduler.threadIdToCoreId(cxt.threadId) != coreId)
+        continue;
       printf("Thread<%d>:Event<%ld>:Status<%s>", cxt.threadId, cxt.currEventId, toString(cxt.status));
+
       if (scheduler.checkOnCore(cxt.threadId))
-        printf(" OnCore=True\n");
+        printf(" OnCore=True");
       else
-        printf(" OnCore=False\n");
+        printf(" OnCore=False");
+
+      if (cxt.waiting())
+        printf(" wakeupClock=%lu\n", cxt.wakeupClock);
+      else
+        printf("\n");
     }
+    outputMtx.unlock();
+  }
+
+  static void replay(CoreID coreId, SynchroTraceReplayer* replayer) {
+    while(true){
+      if (std::all_of(replayer->threadContexts.cbegin(), replayer->threadContexts.cend(),
+                      [replayer, coreId](const ThreadContext& tcxt)
+                      { return (replayer->scheduler.threadIdToCoreId(tcxt.threadId) != coreId) ||
+                                tcxt.completed(); })) 
+        break;
+      
+      for(auto &tcxt : replayer->threadContexts) {
+        if (replayer->scheduler.threadIdToCoreId(tcxt.threadId) != coreId)
+          continue;
+        
+        switch (tcxt.status) 
+        {
+          case ThreadStatus::WAIT_LOCK:
+            if(replayer->scheduler.curClock(coreId) == tcxt.wakeupClock) {
+              tcxt.status = ThreadStatus::ACTIVE_TRYLOCK;
+            }
+            break;
+          case ThreadStatus::WAIT_COMPUTE:
+          case ThreadStatus::WAIT_MEMORY:
+          case ThreadStatus::WAIT_THREAD:
+          case ThreadStatus::WAIT_SCHED:
+          case ThreadStatus::WAIT_COMM:
+            if(replayer->scheduler.curClock(coreId) == tcxt.wakeupClock) {
+              tcxt.status = ThreadStatus::ACTIVE;
+            }
+            break;
+          case ThreadStatus::ACTIVE:
+          case ThreadStatus::ACTIVE_TRYLOCK: 
+            break;
+          case ThreadStatus::BLOCKED_MUTEX:
+          case ThreadStatus::BLOCKED_BARRIER:
+          case ThreadStatus::BLOCKED_JOIN:
+          case ThreadStatus::INACTIVE:
+            if (replayer->scheduler.curClock(coreId) % 10 == 0 && replayer->scheduler.checkReady(tcxt.threadId))
+              replayer->scheduler.getReady(tcxt, coreId);
+            break;
+          case ThreadStatus::COMPLETED:
+          default:
+            break;
+        }
+
+        if (replayer->scheduler.curClock(coreId) % 10 == 0) {
+          replayer->scheduler.recordEvent(tcxt);
+        }
+      }
+
+      ThreadID tid = replayer->scheduler.findActive(coreId);
+      if (tid >= 0) {
+        replayer->wakeupCore(tid, coreId);
+      }
+
+      if(replayer->scheduler.nextClock(coreId) % 1000000 == 0) {
+        replayer->wakeupDebugLog(coreId);
+      } 
+    }
+
+    replayer->outputMtx.lock();
+    std::cout << "All threads on Core " << coreId << " completed at " << replayer->scheduler.curClock(coreId) << ".\n" << std::endl;
+    replayer->outputMtx.unlock();
   }
 
 public:
   SynchroTraceReplayer(std::string eventDir, float CPI_IOPS, float CPI_FLOPS, uint32_t cxtSwitchCycles, 
-    uint32_t pthCycles, uint32_t schedSliceCycles, std::vector<CoreInterface *>& core_data) 
+    uint32_t pthCycles, uint32_t schedSliceCycles, std::vector<CoreInterfaceBase *>& core_data) 
   : SynchroTraceReplayerBase(eventDir, core_data),
     scheduler(CPI_IOPS, CPI_FLOPS, cxtSwitchCycles, pthCycles, schedSliceCycles)
   {
     perThreadLocksHeld.resize(NT);
     joinList.resize(NT);
-    condSignals.resize(NT);
+    replayCore.resize(NC);
   }
 
   virtual void init() {
-    for(ThreadID i = 0; i < NT; i++){
+    for (ThreadID i = 0; i < NT; i++){
       threadContexts.emplace_back(i, eventDir);
     }
 
@@ -439,60 +538,22 @@ public:
     // Schedule first tick of the initial core.
     // (the other cores begin 'inactive', and
     //  expect the master thread to start them)
-    scheduler.getReady(threadContexts[0]);
+    threadContexts[0].restSliceCycles = scheduler.schedSliceCycles;
+    scheduler.sendReady(0);
   }
 
-  virtual void start(){
-    while(true){
-      if (std::all_of(threadContexts.cbegin(), threadContexts.cend(),
-                      [](const ThreadContext& tcxt)
-                      { return tcxt.completed(); })) 
-        break;
-      
-      for(auto &tcxt : threadContexts) {
-        switch (tcxt.status) 
-        {
-          case ThreadStatus::WAIT_LOCK:
-            if(scheduler.curClock() == tcxt.wakeupClock){
-              tcxt.status = ThreadStatus::ACTIVE_TRYLOCK;
-            }
-            break;
-          case ThreadStatus::WAIT_COMM:
-          case ThreadStatus::WAIT_COMPUTE:
-          case ThreadStatus::WAIT_MEMORY:
-          case ThreadStatus::WAIT_THREAD:
-          case ThreadStatus::WAIT_SCHED:
-            if(scheduler.curClock() == tcxt.wakeupClock){
-              tcxt.status = ThreadStatus::ACTIVE;
-            }
-            break;
-          case ThreadStatus::ACTIVE:
-          case ThreadStatus::ACTIVE_TRYLOCK:  
-          case ThreadStatus::BLOCKED_MUTEX:
-          case ThreadStatus::BLOCKED_BARRIER:
-          case ThreadStatus::BLOCKED_COND:
-          case ThreadStatus::BLOCKED_JOIN:
-          case ThreadStatus::INACTIVE:
-          case ThreadStatus::COMPLETED:
-            break;
-          default:
-            break;
-        }
-      }
-      for (CoreID i = 0; i < NC; i++) {
-        ThreadID tid = scheduler.findActive(i);
-        if (tid >= 0)
-          wakeupCore(tid, i);
-      }
-
-      if(scheduler.nextClock() % 100000 == 0) 
-        wakeupDebugLog(); 
+  virtual void start() {
+    // the main thread
+    for (CoreID i = 0; i < NC; i++) {
+      replayCore[i] = std::thread(std::bind(&(this->replay), i, this));
     }
 
-    std::cout << "All threads completed at " << scheduler.curClock() << ".\n" << std::endl;
+    for (auto &c : replayCore) {
+      c.join();
+    }
+
+    std::cout << "Replay Completed!" << std::endl;
   }
-
-
 };
 
 
