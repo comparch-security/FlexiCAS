@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <set>
 #include <string>
+#include <thread>
 #include "util/delay.hpp"
 #include "util/concept_macro.hpp"
+#include "util/print.hpp"
 
 class CMDataBase;
 class CMMetadataBase;
@@ -172,7 +174,7 @@ class SimpleTracer : public MonitorBase
   bool active;
   bool compact_data;
 
-  virtual void print(const std::string& msg);
+  virtual void print(std::string& msg);
 
 public:
   SimpleTracer(bool cd = false): active(true), compact_data(cd) {}
@@ -189,6 +191,20 @@ public:
   virtual void pause() { active = false; }
   virtual void resume() { active = true; }
   virtual void reset() { active = false; }
+};
+
+// multithread version of simple tracer
+class SimpleTracerMT : public SimpleTracer
+{
+  PrintPool pool;
+  std::thread print_thread;
+  virtual void print(std::string& msg) { pool.add(msg); }
+
+public:
+  SimpleTracerMT(bool cd = false): SimpleTracer(cd), pool(256) {
+    print_thread = std::thread(&PrintPool::print, &pool);
+  }
+  virtual void stop() { pool.stop(); print_thread.join(); }
 };
 
 #endif
