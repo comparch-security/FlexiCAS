@@ -76,21 +76,6 @@ public:
 
 
 /////////////////////////////////
-// Multi-thread support for outer ports
-class OuterCohPortMultiThreadSupport
-{
-public:
-  OuterCohPortMultiThreadSupport() {}
-  virtual ~OuterCohPortMultiThreadSupport() {}
-
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, 
-                           uint64_t *delay, uint32_t ai, uint32_t s, uint32_t w) = 0;
-  // Compared to single thread, multi-threaded adds an 'acquire ack' mechanism
-  virtual void acquire_ack_req(uint64_t addr, coh_cmd_t cmd, uint64_t* delay) {} 
-  
-};
-
-/////////////////////////////////
 // Multi-thread support for inner ports
 class InnerCohPortMultiThreadSupport
 {
@@ -98,36 +83,9 @@ public:
   InnerCohPortMultiThreadSupport() {}
   virtual ~InnerCohPortMultiThreadSupport() {}
 
-  virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) = 0;
-
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
           access_line_multithread(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) = 0;
-};
-
-// common behvior for multi-thread uncached outer ports
-template <typename CT>
-  requires C_DERIVE<CT, CacheBase>
-class OuterCohPortMultiThreadUncached : public OuterCohPortUncached<true>, public OuterCohPortMultiThreadSupport
-{
-public:
-  OuterCohPortMultiThreadUncached(policy_ptr policy) : OuterCohPortUncached<true>(policy), OuterCohPortMultiThreadSupport() {}
-  virtual ~OuterCohPortMultiThreadUncached() {}
-
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, 
-                           uint64_t *delay, uint32_t ai, uint32_t s, uint32_t w)
-  {
-    outer_cmd.id = coh_id;
-    /** When issuing an acquire request to the lower-level cache, need to unlock the cacheline mutex. */
-    cache->unlock_line(ai, s, w);
-
-    coh->acquire_resp(addr, data, meta->get_outer_meta(), outer_cmd, delay);
-    
-    /**  When receiving an acquire response from the lower-level cache, re-lock the cacheline mutex. */
-    cache->lock_line(ai, s, w);
-    policy->meta_after_fetch(outer_cmd, meta, addr);
-  }
-
 };
 
 // common behavior for cached outer ports
@@ -146,9 +104,9 @@ public:
   OuterCohPortMultiThreadT(policy_ptr policy) : OPUC(policy) {}
   virtual ~OuterCohPortMultiThreadT() {}
 
-  virtual void acquire_ack_req(uint64_t addr, coh_cmd_t outer_cmd, uint64_t* delay){
-    outer_cmd.id = coh_id;
-    (static_cast<IT*>(coh))->acquire_ack_resp(addr, outer_cmd, delay);
+  virtual void finish_req(uint64_t addr){
+    assert(!this->is_uncached());
+    OuterCohPortBase::coh->finish_resp(addr, this->policy->cmd_for_finish(coh_id));
   }
   
   virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay){
@@ -160,9 +118,10 @@ public:
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::probe);
     if(hit){
       std::tie(meta, data) = cache->access_line(ai, s, w);
+      meta->lock();
       /** It is possible that higher priority behaviors have caused the meta to change, so need check again */
       if(!meta->is_valid() || meta->addr(s) != addr){
-        cache->unlock_line(ai, s, w);
+        meta->unlock();
         hit = false;
       }else{
         auto sync = OPUC::policy->probe_need_sync(outer_cmd, meta);
@@ -176,7 +135,7 @@ public:
         }
         OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
 
-        cache->unlock_line(ai, s, w);
+        meta->unlock();
       }
 
       cache->reset_mt_state(ai, s, Priority::probe);
@@ -189,12 +148,10 @@ public:
 
 template <typename IT, typename CT> 
   requires C_DERIVE<IT, InnerCohPortBase, InnerCohPortMultiThreadSupport>
-using OuterCohMultiThreadPort = OuterCohPortMultiThreadT<OuterCohPortMultiThreadUncached<CT>, IT, CT>;
+using OuterCohMultiThreadPort = OuterCohPortMultiThreadT<OuterCohPortUncached<true>, IT, CT>;
 
-template <typename OT, typename CT, typename CPT> 
-  requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
-        && C_DERIVE<CT, CacheBase> 
-        && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
+template <typename CT, typename CPT>
+  requires C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
 class InnerCohPortMultiThreadUncached : public InnerCohPortUncached<true>, public InnerCohPortMultiThreadSupport
 {
 protected:
@@ -206,7 +163,7 @@ protected:
     /** true indicates that replace is desired */
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::acquire, true);
     auto [meta, data] = cache->access_line(ai, s, w);
-    cache->lock_line(ai, s, w);
+    meta->lock();
     if(hit){
       auto sync = policy->access_need_sync(cmd, meta);
       if(sync.first) {
@@ -214,13 +171,13 @@ protected:
         if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
       }
       auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
-      if(promote) { (static_cast<OT *>(outer))->acquire_req(addr, meta, data, promote_cmd, delay, ai, s, w); hit = false; } // promote permission if needed
+      if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
       else if(promote_local) {
         meta->to_modified(-1);
       }
     } else{
       if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
-      (static_cast<OT *>(outer))->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay, ai, s, w); // fetch the missing block
+      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
   }
@@ -315,7 +272,7 @@ public:
     }
 
     /** After the upper-level cache modifies the meta, an acquire_ack request is sent to the lower-level cache */
-    (static_cast<OT *>(outer))->acquire_ack_req(addr, (p_policy->cmd_for_acquire_ack()), delay);
+    outer->finish_req(addr);
 
     /**
      * If the upper-level cache is uncached, the lower-level cache can modify the state  
@@ -324,7 +281,7 @@ public:
      */
     bool unlock = p_policy->acquire_need_unlock(cmd);
     if(unlock){
-      cache->unlock_line(ai, s, w);
+      meta->unlock();
       cache->reset_mt_state(ai, s, Priority::acquire);
     }else{
       /** store relevant locks in the database and wait for the upper-level cache to issue an ack request */
@@ -332,12 +289,12 @@ public:
     }
   }
   
-  virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t cmd, uint64_t* delay){
+  virtual void finish_resp(uint64_t addr, coh_cmd_t cmd){
     /** query whether the information of this address exists in the database */
     auto info = database->query(cmd.id, addr);
     if(info.first){
       auto [ai, s, w] = info.second;
-      cache->unlock_line(ai, s, w);
+      cache->access(ai,s,w)->unlock();
       cache->reset_mt_state(ai, s, Priority::acquire);
       database->erase(cmd.id, addr);
     }
@@ -374,19 +331,15 @@ public:
   }
 };
 
-template <typename OT, typename CT, typename CPT> 
-  requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
-        && C_DERIVE<CT, CacheBase> 
-        && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
-using InnerCohMultiThreadPort = InnerCohPortMultiThreadT<InnerCohPortMultiThreadUncached<OT, CT, CPT> >;
+template <typename CT, typename CPT>
+  requires C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
+using InnerCohMultiThreadPort = InnerCohPortMultiThreadT<InnerCohPortMultiThreadUncached<CT, CPT> >;
 
-template <typename OT, typename CT, typename CPT> 
-  requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
-        && C_DERIVE<CT, CacheBase> 
-        && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
-class CoreMultiThreadInterface : public InnerCohPortMultiThreadUncached<OT, CT, CPT>, public CoreInterfaceBase
+template <typename CT, typename CPT>
+  requires C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
+class CoreMultiThreadInterface : public InnerCohPortMultiThreadUncached<CT, CPT>, public CoreInterfaceBase
 {
-  typedef InnerCohPortMultiThreadUncached<OT, CT, CPT> InnerT;
+  typedef InnerCohPortMultiThreadUncached<CT, CPT> InnerT;
 
 protected:
   using InnerT::cache;
@@ -408,9 +361,9 @@ public:
 
     /** Uncached cache will not issue an ack request */
     auto ack = policy->acquire_need_ack(outer->is_uncached());
-    if(ack.first) (static_cast<OT *>(outer))->acquire_ack_req(addr, ack.second, delay);
+    outer->finish_req(addr);
 
-    cache->unlock_line(ai, s, w);
+    meta->unlock();
     cache->reset_mt_state(ai, s, Priority::read);
 
     return data;
@@ -427,9 +380,9 @@ public:
     cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
 
     auto ack = policy->acquire_need_ack(outer->is_uncached());
-    if(ack.first) (static_cast<OT *>(outer))->acquire_ack_req(addr, ack.second, delay);
+    outer->finish_req(addr);
 
-    cache->unlock_line(ai, s, w);
+    meta->unlock();
     cache->reset_mt_state(ai, s, Priority::read);
   }
 
