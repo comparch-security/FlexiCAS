@@ -198,7 +198,6 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
            MSHR >= 2 // 2 buffers are required even for single-thread simulation
 class CacheSkewed : public CacheBase
 {
-  typedef typename std::conditional<EnMT, AtomicVar<uint16_t>, uint16_t>::type buffer_state_t;
 protected:
   IDX indexer;      // index resolver
   RPC replacer[P];  // replacer
@@ -206,11 +205,15 @@ protected:
 
   std::unordered_set<CMDataBase *> data_buffer_pool_set;
   std::vector<CMDataBase *>        data_buffer_pool;
-  buffer_state_t                   data_buffer_state;
+  uint16_t                         data_buffer_state;
+  std::mutex                       data_buffer_mutex;
+  std::condition_variable          data_buffer_cv;
 
   std::unordered_set<CMMetadataBase *> meta_buffer_pool_set;
   std::vector<CMMetadataBase *>        meta_buffer_pool;
-  buffer_state_t                       meta_buffer_state;
+  uint16_t                             meta_buffer_state;
+  std::mutex                           meta_buffer_mutex;
+  std::condition_variable              meta_buffer_cv;
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
@@ -281,63 +284,58 @@ public:
 
   virtual CMDataBase *data_copy_buffer() {
     if (data_buffer_pool_set.empty()) return nullptr;
-    uint16_t index;
-    if constexpr (EnMT) { // when multithread
-      while(true) {
-        index = data_buffer_state.read();
-        if(index == 0) { data_buffer_state.wait(); continue; } // pool empty
-        if(!data_buffer_state.swap(index, index-1)) continue;  // atomic write
-        index--; break;
-      }
+    if constexpr (EnMT) {
+      std::unique_lock lk(data_buffer_mutex);
+      while(data_buffer_state == 0) data_buffer_cv.wait(lk);
+      return data_buffer_pool[--data_buffer_state];
     } else {
       assert(data_buffer_state > 0);
-      index = --data_buffer_state;
+      return data_buffer_pool[--data_buffer_state];
     }
-    return data_buffer_pool[index];
   }
 
   virtual void data_return_buffer(CMDataBase *buf) {
     if (!buf) return;
     if(data_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
-      uint16_t index;
-      if constexpr (EnMT) { // when multithread
-        while(true) {
-          index = data_buffer_state.read();
-          if(data_buffer_state.swap(index, index+1, true)) break;  // atomic write
+      if constexpr (EnMT) {
+        {
+          std::lock_guard lk(data_buffer_mutex);
+          data_buffer_pool[data_buffer_state] = buf;
+          data_buffer_state++;
         }
-      } else
-        index = data_buffer_state++;
-      data_buffer_pool[index] = buf;
+        data_buffer_cv.notify_one();
+      } else {
+        data_buffer_pool[data_buffer_state] = buf;
+        data_buffer_state++;
+      }
     }
   }
 
   virtual CMMetadataBase *meta_copy_buffer() {
-    uint16_t index;
-    if constexpr (EnMT) { // when multithread
-      while(true) {
-        index = meta_buffer_state.read();
-        if(index == 0) { meta_buffer_state.wait(); continue; } // pool empty
-        if(!meta_buffer_state.swap(index, index-1)) continue;  // atomic write
-        index--; break;
-      }
+    if (meta_buffer_pool_set.empty()) return nullptr;
+    if constexpr (EnMT) {
+      std::unique_lock lk(meta_buffer_mutex);
+      while(meta_buffer_state == 0) meta_buffer_cv.wait(lk);
+      return meta_buffer_pool[--meta_buffer_state];
     } else {
       assert(meta_buffer_state > 0);
-      index = --meta_buffer_state;
+      return meta_buffer_pool[--meta_buffer_state];
     }
-    return meta_buffer_pool[index];
   }
 
   virtual void meta_return_buffer(CMMetadataBase *buf) {
     if(meta_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
-      uint16_t index;
-      if constexpr (EnMT) { // when multithread
-        while(true) {
-          index = meta_buffer_state.read();
-          if(meta_buffer_state.swap(index, index+1, true)) break;  // atomic write
+      if constexpr (EnMT) {
+        {
+          std::lock_guard lk(meta_buffer_mutex);
+          meta_buffer_pool[meta_buffer_state] = buf;
+          meta_buffer_state++;
         }
-      } else
-        index = meta_buffer_state++;
-      meta_buffer_pool[index] = buf;
+        meta_buffer_cv.notify_one();
+      } else {
+        meta_buffer_pool[meta_buffer_state] = buf;
+        meta_buffer_state++;
+      }
     }
   }
 
