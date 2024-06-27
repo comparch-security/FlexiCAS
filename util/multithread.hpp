@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <memory>
 #include <chrono>
+#include <iostream>
 
 template<typename T>
 class AtomicVar {
@@ -38,15 +39,12 @@ public:
     return rv;
   }
 
-  __always_inline void wait() {
-    std::unique_lock lk(mtx);
-    cv.wait(lk);
-  }
-
-  __always_inline void wait_timeout() {
+  __always_inline void wait(bool report = false) {
     using namespace std::chrono_literals;
     std::unique_lock lk(mtx);
-    cv.wait_for(lk, 10us);
+    auto result = cv.wait_for(lk, 100us);
+    if(report && std::cv_status::timeout == result)
+      std::cerr << "cv [" << std::hex << this << "] waits timeout once ..." << std::endl;
   }
 };
 

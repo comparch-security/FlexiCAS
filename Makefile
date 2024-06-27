@@ -28,7 +28,7 @@ CACHE_HEADERS = $(wildcard cache/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 CACHE_OBJS    = cache/metadata.o
-UTIL_OBJS     = util/random.o util/query.o util/monitor.o
+UTIL_OBJS     = util/random.o util/query.o
 
 all: libflexicas.a
 
