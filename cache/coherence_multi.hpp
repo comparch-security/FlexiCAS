@@ -11,23 +11,20 @@
 // the higher the value, the higher the priority.
 class Priority{
 public:
-  static const uint16_t acquire       = 0x001;
-  static const uint16_t flush         = 0x001;
-  static const uint16_t read          = 0x001;
-  static const uint16_t write         = 0x001;
-  static const uint16_t probe         = 0x010; // acquire miss, requiring lower cahce which back-probe this cache
-  static const uint16_t evict         = 0x010;
-  static const uint16_t evict_cv_wait = 0x100;
-  static const uint16_t release       = 0x100; // acquire hit but need back probe and writeback from inner
+  static const uint16_t acquire       = 0x0001;
+  static const uint16_t flush         = 0x0001;
+  static const uint16_t read          = 0x0001;
+  static const uint16_t write         = 0x0001;
+  static const uint16_t probe         = 0x0010; // acquire miss, requiring lower cahce which back-probe this cache
+  static const uint16_t evict         = 0x0100;
+  //static const uint16_t evict_cv_wait = 0x100;
+  static const uint16_t release       = 0x1000; // acquire hit but need back probe and writeback from inner
 };
 
 struct addr_info{
   uint32_t ai;
   uint32_t s;
   uint32_t w;
-  std::mutex* mtx;
-  std::condition_variable* cv;
-  std::vector<uint32_t>* status;
 };
 
 struct info{
@@ -37,28 +34,14 @@ struct info{
 
 /////////////////////////////////
 // database for store inner acquire address
-class InnerAddressDataBase
-{
-public:
-  /** add acquire address infomation to database */
-  virtual void add(int64_t id, uint64_t addr, addr_info loc) = 0;
-  /** erase address infomation */
-  virtual void erase(int64_t id, uint64_t addr) = 0;
-  /** query address infomation */
-  virtual std::pair<bool, addr_info> query(int64_t id, uint64_t addr) = 0;
-  virtual void resize(uint32_t size) = 0;
-
-  virtual ~InnerAddressDataBase() {}
-};
-
-class InnerAddressDataMap : public InnerAddressDataBase
+class InnerAddressDataMap
 {
 protected:
   std::vector<std::mutex *>  mtx; // mutex for protecting record
   std::vector<std::unordered_map<uint64_t, addr_info> > map;
 public:
 
-  InnerAddressDataMap() : InnerAddressDataBase() {}
+  InnerAddressDataMap() {}
 
   void add(int64_t id, uint64_t addr, addr_info loc){
     std::unique_lock lk(*mtx[id]);
@@ -118,14 +101,13 @@ public:
   virtual void acquire_ack_resp(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) = 0;
 
 protected:
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, 
-          std::condition_variable*, std::vector<uint32_t>*, bool>
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
           access_line_multithread(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) = 0;
 };
 
 // common behvior for multi-thread uncached outer ports
 template <typename CT>
-  requires C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport>
+  requires C_DERIVE<CT, CacheBase>
 class OuterCohPortMultiThreadUncached : public OuterCohPortUncached<true>, public OuterCohPortMultiThreadSupport
 {
 public:
@@ -151,7 +133,6 @@ public:
 // common behavior for cached outer ports
 template <class OPUC, typename IT, typename CT> 
   requires C_DERIVE<IT, InnerCohPortMultiThreadSupport, InnerCohPortBase>
-        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport>
 class OuterCohPortMultiThreadT : public OPUC
 {
 protected:
@@ -178,9 +159,6 @@ public:
     CMDataBase *data = nullptr;
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::probe);
     if(hit){
-      auto [status, mtx, cv] = cache->get_set_control(ai, s);
-      cache->lock_line(ai, s, w);
-      std::unique_lock lk(*mtx, std::defer_lock);
       std::tie(meta, data) = cache->access_line(ai, s, w);
       /** It is possible that higher priority behaviors have caused the meta to change, so need check again */
       if(!meta->is_valid() || meta->addr(s) != addr){
@@ -201,10 +179,7 @@ public:
         cache->unlock_line(ai, s, w);
       }
 
-      lk.lock();
-      (*status)[s] &= (~Priority::probe);
-      lk.unlock();
-      cv->notify_all();
+      cache->reset_mt_state(ai, s, Priority::probe);
     }
     cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
     return std::make_pair(hit, writeback);
@@ -214,24 +189,22 @@ public:
 
 template <typename IT, typename CT> 
   requires C_DERIVE<IT, InnerCohPortBase, InnerCohPortMultiThreadSupport>
-        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport>
 using OuterCohMultiThreadPort = OuterCohPortMultiThreadT<OuterCohPortMultiThreadUncached<CT>, IT, CT>;
 
 template <typename OT, typename CT, typename CPT> 
   requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
-        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport> 
+        && C_DERIVE<CT, CacheBase> 
         && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
 class InnerCohPortMultiThreadUncached : public InnerCohPortUncached<true>, public InnerCohPortMultiThreadSupport
 {
 protected:
-  InnerAddressDataBase* database;
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, std::mutex*, std::condition_variable*, std::vector<uint32_t>*, bool>
+  InnerAddressDataMap* database;
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line_multithread(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { 
     uint32_t ai, s, w;
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
     /** true indicates that replace is desired */
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::acquire, true);
-    auto [status, mtx, cv] = cache->get_set_control(ai, s);
     auto [meta, data] = cache->access_line(ai, s, w);
     cache->lock_line(ai, s, w);
     if(hit){
@@ -249,7 +222,7 @@ protected:
       if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
       (static_cast<OT *>(outer))->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay, ai, s, w); // fetch the missing block
     }
-    return std::make_tuple(meta, data, ai, s, w, mtx, cv, status, hit);
+    return std::make_tuple(meta, data, ai, s, w, hit);
   }
   virtual void evict(CMMetadataBase *meta, CMDataBase *data, uint32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
@@ -261,22 +234,12 @@ protected:
     }
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first){
-      auto [status, mtx, cv] = cache->get_set_control(ai, s);
-      /** evict can ignore probe, so the evict_cv_wait value is 0x100, if changed to 0x10 will cause deadlock! */
-      uint16_t evict_cv_wait = Priority::evict_cv_wait;
-      std::unique_lock lk(*mtx, std::defer_lock);
-      lk.lock();
-      cv->wait(lk, [s, status, evict_cv_wait] { return ((*status)[s] < evict_cv_wait);} );
-      (*status)[s] |= Priority::evict;
-      lk.unlock();
+      cache->set_mt_state(ai, s, Priority::evict);
 
       auto writeback_r = policy->writeback_need_writeback(meta, outer->is_uncached());
       if(writeback_r.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
-      lk.lock();
-      (*status)[s] &= ~(Priority::evict);
-      lk.unlock();
-      cv->notify_all();
+      cache->reset_mt_state(ai, s, Priority::evict);
     }
     policy->meta_after_evict(meta);
     cache->hook_manage(addr, ai, s, w, true, true, writeback.first, meta, data, delay);
@@ -287,18 +250,13 @@ protected:
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::release);
     if(hit){
-      auto [status, mtx, cv] = cache->get_set_control(ai, s);
       auto [meta, data] = cache->access_line(ai, s, w);
       if(data_inner) data->copy(data_inner);
       policy->meta_after_release(cmd, meta, meta_inner);
       assert(meta_inner); // assume meta_inner is valid for all writebacks
       cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
 
-      std::unique_lock lk(*mtx, std::defer_lock);
-      lk.lock();
-      (*status)[s] = (*status)[s] & (~Priority::release);
-      lk.unlock();
-      cv->notify_all();
+      cache->reset_mt_state(ai, s, Priority::release);
     }
   }
 
@@ -317,12 +275,7 @@ protected:
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
     if(!flush) {
       if(hit){
-        std::tie(status, mtx, cv) = cache->get_set_control(ai, s);
-        std::unique_lock lk(*mtx, std::defer_lock);
-        lk.lock();
-        (*status)[s] = (*status)[s] & (~Priority::flush);
-        lk.unlock();
-        cv->notify_all();
+        cache->reset_mt_state(ai, s, Priority::flush);
       }
       // do not handle flush at this level, and send it to the outer cache
       outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay);
@@ -331,7 +284,6 @@ protected:
 
     if(!hit) return;
 
-    std::tie(status, mtx, cv) = cache->get_set_control(ai, s);
     if(probe) {
       auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
       if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
@@ -343,11 +295,7 @@ protected:
     policy->meta_after_flush(cmd, meta);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, meta, data, delay);
 
-    std::unique_lock lk(*mtx, std::defer_lock);
-    lk.lock();
-    (*status)[s] = (*status)[s] & (~Priority::flush);
-    lk.unlock();
-    cv->notify_all();
+    cache->reset_mt_state(ai, s, Priority::flush);
   }
 
 public:
@@ -359,7 +307,7 @@ public:
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
     auto p_policy = std::static_pointer_cast<CPT>(policy);
-    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line_multithread(addr, cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line_multithread(addr, cmd, delay);
     if(meta->is_valid() && meta->addr(s) == addr){
       policy->meta_after_grant(cmd, meta, meta_inner);
       if(data_inner) data_inner->copy(this->cache->get_data(ai, s, w));
@@ -377,14 +325,10 @@ public:
     bool unlock = p_policy->acquire_need_unlock(cmd);
     if(unlock){
       cache->unlock_line(ai, s, w);
-      std::unique_lock lk(*mtx, std::defer_lock);
-      lk.lock();
-      (*status)[s] = (*status)[s] & (~Priority::acquire);
-      lk.unlock();
-      cv->notify_all();
+      cache->reset_mt_state(ai, s, Priority::acquire);
     }else{
       /** store relevant locks in the database and wait for the upper-level cache to issue an ack request */
-      database->add(cmd.id, addr, addr_info{ai, s, w, mtx, cv, status});
+      database->add(cmd.id, addr, addr_info{ai, s, w});
     }
   }
   
@@ -392,13 +336,9 @@ public:
     /** query whether the information of this address exists in the database */
     auto info = database->query(cmd.id, addr);
     if(info.first){
-      auto [ai, s, w, mtx, cv, status] = info.second;
+      auto [ai, s, w] = info.second;
       cache->unlock_line(ai, s, w);
-      std::unique_lock lk(*mtx, std::defer_lock);
-      lk.lock();
-      (*status)[s] = (*status)[s] & (~Priority::acquire);
-      lk.unlock();
-      cv->notify_all();
+      cache->reset_mt_state(ai, s, Priority::acquire);
       database->erase(cmd.id, addr);
     }
   }
@@ -436,13 +376,13 @@ public:
 
 template <typename OT, typename CT, typename CPT> 
   requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
-        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport> 
+        && C_DERIVE<CT, CacheBase> 
         && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
 using InnerCohMultiThreadPort = InnerCohPortMultiThreadT<InnerCohPortMultiThreadUncached<OT, CT, CPT> >;
 
 template <typename OT, typename CT, typename CPT> 
   requires C_DERIVE<OT, OuterCohPortBase, OuterCohPortMultiThreadSupport>
-        && C_DERIVE<CT, CacheBase, CacheBaseMultiThreadSupport> 
+        && C_DERIVE<CT, CacheBase> 
         && C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
 class CoreMultiThreadInterface : public InnerCohPortMultiThreadUncached<OT, CT, CPT>, public CoreInterfaceBase
 {
@@ -462,7 +402,7 @@ public:
     auto policy = std::static_pointer_cast<CPT>(InnerT::policy);
     addr = normalize(addr);
     auto cmd = policy->cmd_for_read();
-    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line_multithread(addr, cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line_multithread(addr, cmd, delay);
 
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
 
@@ -471,11 +411,7 @@ public:
     if(ack.first) (static_cast<OT *>(outer))->acquire_ack_req(addr, ack.second, delay);
 
     cache->unlock_line(ai, s, w);
-    std::unique_lock lk(*mtx, std::defer_lock);
-    lk.lock();
-    (*status)[s] = (*status)[s] & (~Priority::read);
-    lk.unlock();
-    cv->notify_all();
+    cache->reset_mt_state(ai, s, Priority::read);
 
     return data;
   }
@@ -484,7 +420,7 @@ public:
     auto policy = std::static_pointer_cast<CPT>(InnerT::policy);
     addr = normalize(addr);
     auto cmd = policy->cmd_for_write();
-    auto [meta, data, ai, s, w, mtx, cv, status, hit] = access_line_multithread(addr, cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line_multithread(addr, cmd, delay);
 
     meta->to_dirty();
     if(data) data->copy(m_data);
@@ -494,11 +430,7 @@ public:
     if(ack.first) (static_cast<OT *>(outer))->acquire_ack_req(addr, ack.second, delay);
 
     cache->unlock_line(ai, s, w);
-    std::unique_lock lk(*mtx, std::defer_lock);
-    lk.lock();
-    (*status)[s] = (*status)[s] & (~Priority::read);
-    lk.unlock();
-    cv->notify_all();
+    cache->reset_mt_state(ai, s, Priority::read);
   }
 
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)

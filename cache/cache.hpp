@@ -171,6 +171,9 @@ public:
   virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
   __always_inline void lock_line(uint32_t ai, uint32_t s, uint32_t w)   { access(ai, s, w)->lock();   }
   __always_inline void unlock_line(uint32_t ai, uint32_t s, uint32_t w) { access(ai, s, w)->unlock(); }
+  __always_inline void set_mt_state(uint32_t ai, uint32_t s, uint16_t prio)   { arrays[ai]->set_mt_state(s, prio);   }
+  __always_inline void check_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->check_mt_state(s, prio); }
+  __always_inline void reset_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->reset_mt_state(s, prio); }
 
   virtual std::tuple<int, int, int> size() const = 0;           // return the size parameters of the cache
   uint32_t get_id() const { return id; }
