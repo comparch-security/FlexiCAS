@@ -7,17 +7,15 @@
 
 
 /////////////////////////////////
-// Priority of acquire、probe、release
-// the higher the value, the higher the priority.
-class Priority{
-public:
+// Priority of transactions:
+// transactions with higher priority can pre-empt transactions with lower priority on the same cache set
+struct XactPrio{
   static const uint16_t acquire       = 0x0001;
   static const uint16_t flush         = 0x0001;
   static const uint16_t read          = 0x0001;
   static const uint16_t write         = 0x0001;
   static const uint16_t probe         = 0x0010; // acquire miss, requiring lower cahce which back-probe this cache
   static const uint16_t evict         = 0x0100;
-  //static const uint16_t evict_cv_wait = 0x100;
   static const uint16_t release       = 0x1000; // acquire hit but need back probe and writeback from inner
 };
 
@@ -115,7 +113,7 @@ public:
     bool writeback = false;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w, Priority::probe);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe);
     if(hit){
       std::tie(meta, data) = cache->access_line(ai, s, w);
       meta->lock();
@@ -138,7 +136,7 @@ public:
         meta->unlock();
       }
 
-      cache->reset_mt_state(ai, s, Priority::probe);
+      cache->reset_mt_state(ai, s, XactPrio::probe);
     }
     cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
     return std::make_pair(hit, writeback);
@@ -161,7 +159,7 @@ protected:
     uint32_t ai, s, w;
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
     /** true indicates that replace is desired */
-    bool hit = cache->hit(addr, &ai, &s, &w, Priority::acquire, true);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::acquire, true);
     auto [meta, data] = cache->access_line(ai, s, w);
     meta->lock();
     if(hit){
@@ -191,12 +189,12 @@ protected:
     }
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
     if(writeback.first){
-      cache->set_mt_state(ai, s, Priority::evict);
+      cache->set_mt_state(ai, s, XactPrio::evict);
 
       auto writeback_r = policy->writeback_need_writeback(meta, outer->is_uncached());
       if(writeback_r.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
-      cache->reset_mt_state(ai, s, Priority::evict);
+      cache->reset_mt_state(ai, s, XactPrio::evict);
     }
     policy->meta_after_evict(meta);
     cache->hook_manage(addr, ai, s, w, true, true, writeback.first, meta, data, delay);
@@ -205,7 +203,7 @@ protected:
   virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
     uint32_t ai, s, w;
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
-    bool hit = cache->hit(addr, &ai, &s, &w, Priority::release);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::release);
     if(hit){
       auto [meta, data] = cache->access_line(ai, s, w);
       if(data_inner) data->copy(data_inner);
@@ -213,7 +211,7 @@ protected:
       assert(meta_inner); // assume meta_inner is valid for all writebacks
       cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
 
-      cache->reset_mt_state(ai, s, Priority::release);
+      cache->reset_mt_state(ai, s, XactPrio::release);
     }
   }
 
@@ -226,13 +224,13 @@ protected:
     std::condition_variable* cv;
     std::vector<uint32_t>* status;
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
-    bool hit = cache->hit(addr, &ai, &s, &w, Priority::flush);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush);
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
     if(!flush) {
       if(hit){
-        cache->reset_mt_state(ai, s, Priority::flush);
+        cache->reset_mt_state(ai, s, XactPrio::flush);
       }
       // do not handle flush at this level, and send it to the outer cache
       outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay);
@@ -252,7 +250,7 @@ protected:
     policy->meta_after_flush(cmd, meta);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, meta, data, delay);
 
-    cache->reset_mt_state(ai, s, Priority::flush);
+    cache->reset_mt_state(ai, s, XactPrio::flush);
   }
 
 public:
@@ -282,7 +280,7 @@ public:
     bool unlock = p_policy->acquire_need_unlock(cmd);
     if(unlock){
       meta->unlock();
-      cache->reset_mt_state(ai, s, Priority::acquire);
+      cache->reset_mt_state(ai, s, XactPrio::acquire);
     }else{
       /** store relevant locks in the database and wait for the upper-level cache to issue an ack request */
       database->add(cmd.id, addr, addr_info{ai, s, w});
@@ -295,7 +293,7 @@ public:
     if(info.first){
       auto [ai, s, w] = info.second;
       cache->access(ai,s,w)->unlock();
-      cache->reset_mt_state(ai, s, Priority::acquire);
+      cache->reset_mt_state(ai, s, XactPrio::acquire);
       database->erase(cmd.id, addr);
     }
   }
@@ -364,7 +362,7 @@ public:
     outer->finish_req(addr);
 
     meta->unlock();
-    cache->reset_mt_state(ai, s, Priority::read);
+    cache->reset_mt_state(ai, s, XactPrio::read);
 
     return data;
   }
@@ -383,7 +381,7 @@ public:
     outer->finish_req(addr);
 
     meta->unlock();
-    cache->reset_mt_state(ai, s, Priority::read);
+    cache->reset_mt_state(ai, s, XactPrio::read);
   }
 
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
