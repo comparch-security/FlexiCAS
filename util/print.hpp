@@ -7,6 +7,8 @@
 #include <iostream>
 #include "util/multithread.hpp"
 
+
+// can be implemented using std::osyncstream after C++20
 class PrintPool {
   const int pool_size;
   AtomicVar<int> pw, pr;
@@ -42,7 +44,7 @@ public:
   void print() { // start print the pool
     auto index = pr.read();
     while(!finish.read()) {
-      if(!valid[index].read()) { valid[index].wait_timeout(); continue; }
+      if(!valid[index].read()) { valid[index].wait(); continue; }
       std::cout << pool[index] << std::endl;
       valid[index].write(false, true);
       index = (index + 1) % pool_size;

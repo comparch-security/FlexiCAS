@@ -5,9 +5,12 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <boost/format.hpp>
 #include "util/delay.hpp"
 #include "util/concept_macro.hpp"
 #include "util/print.hpp"
+#include "cache/metadata.hpp"
+#include "util/random.hpp"
 
 class CMDataBase;
 class CMMetadataBase;
@@ -174,7 +177,7 @@ class SimpleTracer : public MonitorBase
   bool active;
   bool compact_data;
 
-  virtual void print(std::string& msg);
+  virtual void print(std::string& msg) { std::cout << msg << std::endl; }
 
 public:
   SimpleTracer(bool cd = false): active(true), compact_data(cd) {}
@@ -182,9 +185,48 @@ public:
 
   virtual bool attach(uint64_t cache_id) { return true; }
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data);
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data);
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data);
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) {
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s read  %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) {
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s write %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) {
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s evict %016x %02d %04d %02d  ") % UniqueID::name(cache_id) % addr % ai % s % w).str() ;
+
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
 
   virtual void start() { active = true;  }
   virtual void stop()  { active = false; }
@@ -198,7 +240,12 @@ class SimpleTracerMT : public SimpleTracer
 {
   PrintPool pool;
   std::thread print_thread;
-  virtual void print(std::string& msg) { pool.add(msg); }
+  virtual void print(std::string& msg) {
+    std::hash<std::thread::id> hasher;
+    uint16_t id = hasher(std::this_thread::get_id());
+    std::string msg_ext = (boost::format("thread %04x: %s") % id % msg).str();
+    pool.add(msg_ext);
+  }
 
 public:
   SimpleTracerMT(bool cd = false): SimpleTracer(cd), pool(256) {
