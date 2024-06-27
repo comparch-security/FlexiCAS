@@ -368,47 +368,7 @@ public:
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
-          CMMetadataBase *meta = nullptr;
-          CMDataBase *data = nullptr; 
-          std::tie(meta, data) = cache->access_line(ai, idx, way);
-          auto c_meta = cache->meta_copy_buffer();
-          c_meta->init(meta->addr(idx));
-          c_meta->copy(meta);
-          auto c_data = cache->data_copy_buffer();
-          if(data) c_data->copy(data);
-          uint64_t c_addr = c_meta->addr(idx);
-          if(meta->is_valid() && !remapped.count(c_addr)){
-            meta->to_invalid();
-            cache->hook_manage(c_addr, ai, idx, way, true, true, false, c_meta, c_data, nullptr);
-            while(c_meta->is_valid() && !remapped.count(c_addr)){
-              uint32_t new_idx, new_way;
-              cache->replace(c_addr, &ai, &new_idx, &new_way);
-              CMMetadataBase *m_meta = nullptr;
-              CMDataBase *m_data = nullptr; 
-              std::tie(m_meta, m_data) = cache->access_line(ai, new_idx, new_way);
-              uint64_t m_addr = m_meta->addr(new_idx); 
-              auto c_m_meta = cache->meta_copy_buffer();
-              c_m_meta->init(m_addr);
-              c_m_meta->copy(m_meta);
-              auto c_m_data = cache->data_copy_buffer();
-              if(m_data) c_m_data->copy(m_data);
-              if(remapped.count(m_addr) && c_m_meta->is_valid()) this->evict(m_meta, m_data, ai, new_idx, new_way, nullptr);
-              else cache->hook_manage(m_addr, ai, new_idx, new_way, true, true, false, c_m_meta, c_m_data, nullptr);
-              m_meta->init(c_addr); 
-              m_meta->copy(c_meta);
-              if(c_data) m_data->copy(c_data);
-              cache->hook_read(c_addr, ai, new_idx, new_way, true, m_meta, m_data, nullptr);
-              remapped.insert(c_addr);
-              c_addr = m_addr;
-              c_meta->init(m_addr);
-              c_meta->copy(c_m_meta);
-              if(c_m_data) c_data->copy(c_m_data);
-              cache->meta_return_buffer(c_m_meta);
-              cache->data_return_buffer(c_m_data);
-            }
-          }
-          cache->meta_return_buffer(c_meta);
-          cache->data_return_buffer(c_data);
+          multi_relocation(cache, ai, idx, way, remapped);
         }
       }
     }
@@ -420,6 +380,57 @@ public:
     // TODO: If the monitor identifies a remap, do it.
     // if(cache->monitors->remap_monitor()) remap();
     InnerT::finish_resp(addr, outer_cmd);
+  }
+
+protected:
+  void copy(CMMetadataBase* meta, CMDataBase* data, CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t addr) {
+    c_meta->init(addr);
+    c_meta->copy(meta);
+    if(data) c_data->copy(data);
+  }
+
+  void relocation(CT* cache, CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai, std::unordered_set<uint64_t>& remapped) {
+    uint32_t new_idx, new_way;
+    cache->replace(c_addr, &ai, &new_idx, &new_way);
+    auto[m_meta, m_data] = cache->access_line(ai, new_idx, new_way);
+    uint64_t m_addr = m_meta->addr(new_idx); 
+    auto c_m_meta = cache->meta_copy_buffer();
+    auto c_m_data = m_data ? cache->data_copy_buffer() : nullptr;
+
+    copy(m_meta, m_data, c_m_meta, c_m_data, m_addr);
+
+    if (c_m_meta->is_valid()) {
+      if (remapped.count(m_addr)) this->evict(m_meta, m_data, ai, new_idx, new_way, nullptr);
+      else cache->hook_manage(m_addr, ai, new_idx, new_way, true, true, false, c_m_meta, c_m_data, nullptr);
+    }
+
+    copy(c_meta, c_data, m_meta, m_data, c_addr);
+    cache->hook_read(c_addr, ai, new_idx, new_way, true, m_meta, m_data, nullptr);
+
+    remapped.insert(c_addr);
+    c_addr = m_addr;
+    copy(c_m_meta, c_m_data, c_meta, c_data, m_addr);
+
+    cache->meta_return_buffer(c_m_meta);
+    cache->data_return_buffer(c_m_data);
+  }
+
+  void multi_relocation(CT* cache, uint32_t ai, uint32_t idx, uint32_t way, std::unordered_set<uint64_t>& remapped) {
+    auto[meta, data] = cache->access_line(ai, idx, way);
+    uint64_t c_addr = meta->addr(idx);
+    if (!meta->is_valid() || remapped.count(c_addr)) return;
+    auto c_meta = cache->meta_copy_buffer();
+    auto c_data = data ? cache->data_copy_buffer() : nullptr;
+    copy(meta, data, c_meta, c_data, c_addr);
+
+    meta->to_invalid();
+    cache->hook_manage(c_addr, ai, idx, way, true, true, false, c_meta, c_data, nullptr);
+
+    while(c_meta->is_valid() && !remapped.count(c_addr)){
+      relocation(cache, c_meta, c_data, c_addr, ai, remapped);
+    }
+    cache->meta_return_buffer(c_meta);
+    cache->data_return_buffer(c_data);
   }
 };
 
