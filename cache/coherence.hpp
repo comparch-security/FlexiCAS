@@ -302,16 +302,13 @@ template<class IPUC, bool EnMT> requires C_DERIVE<IPUC, InnerCohPortUncached<EnM
 class InnerCohPortT : public IPUC
 {
 private:
-  // record the pending finish message from inner caches
-  // replace the single storage to a set in multi-thread sim
-  uint64_t addr_pending_finish;
-  int32_t  id_pending_finish;
+  PendingXact<EnMT> pending_xact; // record the pending finish message from inner caches
 protected:
   using InnerCohPortBase::coh;
   using InnerCohPortBase::outer;
   using InnerCohPortBase::policy;
 public:
-  InnerCohPortT(policy_ptr policy) : IPUC(policy), addr_pending_finish(0) {}
+  InnerCohPortT(policy_ptr policy) : IPUC(policy) {}
   virtual ~InnerCohPortT() {}
 
   virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
@@ -329,16 +326,14 @@ public:
 
   // record pending finish
   virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd) {
-    addr_pending_finish = addr;
-    id_pending_finish = outer_cmd.id;
+    pending_xact.insert(addr, outer_cmd.id);
   }
 
   // only forward the finish message recorded by previous acquire
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) {
-    assert(addr_pending_finish == 0 || (addr_pending_finish == addr && id_pending_finish == outer_cmd.id));
-    if(addr_pending_finish == addr && id_pending_finish == outer_cmd.id) {
+    if(pending_xact.count(addr, outer_cmd.id)) {
       outer->finish_req(addr);
-      addr_pending_finish = 0;
+      pending_xact.remove(addr, outer_cmd.id);
     }
   }
 };

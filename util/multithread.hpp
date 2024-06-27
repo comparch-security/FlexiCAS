@@ -1,6 +1,9 @@
 #ifndef CM_UTIL_MULTITHREAD_HPP
 #define CM_UTIL_MULTITHREAD_HPP
 
+#include <unordered_map>
+#include <cstdint>
+#include <cassert>
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
@@ -47,5 +50,63 @@ public:
       std::cerr << "cv [" << std::hex << this << "] waits timeout once ..." << std::endl;
   }
 };
+
+// a database for recoridng the pending transactions
+template<bool EnMT>
+class PendingXact {
+  std::unordered_map<uint64_t, uint64_t> db;
+  std::mutex mtx;
+public:
+  PendingXact() {}
+  virtual ~PendingXact() {}
+
+  void insert(uint64_t addr, uint32_t id) {
+    std::lock_guard lk(mtx);
+    if(!db.count(addr)) db[addr] = 0;
+    assert(0ull == (db[addr] & (1ull << id)) || 0 ==
+           "The to be inserted <addr, id> pair has already been inserted in the database!");
+    db[addr] |= (1ull << id);
+  }
+
+  void remove(uint64_t addr, uint32_t id) {
+    std::lock_guard lk(mtx);
+    if(db.count(addr)) {
+      db[addr] &= ~(1ull << id);
+      if(db[addr] == 0) db.erase(addr);
+    }
+  }
+
+  bool count(uint64_t addr, uint32_t id) {
+    std::lock_guard lk(mtx);
+    return db.count(addr) && (db[addr] & (1ull << id));
+  }
+};
+
+// specialization for non-multithread env
+template<>
+class PendingXact<false> {
+
+  uint64_t addr;
+  int32_t  id;
+
+public:
+  PendingXact(): addr(0), id(0) {}
+  virtual ~PendingXact() {}
+
+  void insert(uint64_t addr, uint32_t id) {
+    this->addr = addr;
+    this->id = id;
+  }
+
+  void remove(uint64_t addr, uint32_t id) {
+    if(count(addr, id)) this->addr = 0;
+  }
+
+  bool count(uint64_t addr, uint32_t id) {
+    return this->addr == addr && this->id == id;
+  }
+};
+
+
 
 #endif
