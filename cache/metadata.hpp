@@ -7,7 +7,6 @@
 #include <mutex>
 
 #ifndef NDEBUG
-#include <typeinfo>
 #include <cassert>
 #endif
 
@@ -110,9 +109,6 @@ public:
 
   virtual std::string to_string() const;
   virtual void copy(const CMMetadataBase *meta) {
-#ifndef NDEBUG
-    assert(typeid(*this) == typeid(*meta));
-#endif
     state  = meta->state;
     dirty  = meta->dirty;
   }
