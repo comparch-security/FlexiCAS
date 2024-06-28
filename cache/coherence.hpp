@@ -368,7 +368,7 @@ public:
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
-          multi_relocation(cache, ai, idx, way, remapped);
+          multi_relocation(ai, idx, way, remapped);
         }
       }
     }
@@ -389,7 +389,7 @@ protected:
     if(data) c_data->copy(data);
   }
 
-  void relocation(CT* cache, CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai, std::unordered_set<uint64_t>& remapped) {
+  void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai, std::unordered_set<uint64_t>& remapped) {
     uint32_t new_idx, new_way;
     cache->replace(c_addr, &ai, &new_idx, &new_way);
     auto[m_meta, m_data] = cache->access_line(ai, new_idx, new_way);
@@ -415,7 +415,7 @@ protected:
     cache->data_return_buffer(c_m_data);
   }
 
-  void multi_relocation(CT* cache, uint32_t ai, uint32_t idx, uint32_t way, std::unordered_set<uint64_t>& remapped) {
+  void multi_relocation(uint32_t ai, uint32_t idx, uint32_t way, std::unordered_set<uint64_t>& remapped) {
     auto[meta, data] = cache->access_line(ai, idx, way);
     uint64_t c_addr = meta->addr(idx);
     if (!meta->is_valid() || remapped.count(c_addr)) return;
@@ -427,7 +427,7 @@ protected:
     cache->hook_manage(c_addr, ai, idx, way, true, true, false, c_meta, c_data, nullptr);
 
     while(c_meta->is_valid() && !remapped.count(c_addr)){
-      relocation(cache, c_meta, c_data, c_addr, ai, remapped);
+      relocation(c_meta, c_data, c_addr, ai, remapped);
     }
     cache->meta_return_buffer(c_meta);
     cache->data_return_buffer(c_data);
