@@ -95,28 +95,34 @@ public:
   }
 
   virtual void set_mt_state(uint32_t s, uint16_t prio) {
-    while(true) {
-      auto state = cache_set_state[s].read();
-      if(prio <= state) { cache_set_state[s].wait(); continue; }
-      if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+    if constexpr (EnMT) {
+      while(true) {
+        auto state = cache_set_state[s].read();
+        if(prio <= state) { cache_set_state[s].wait(); continue; }
+        if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+      }
     }
   }
 
   virtual void check_mt_state(uint32_t s, uint16_t prio) {
-    auto prio_upper = (prio << 1) - 1;
-    while(true) {
-      auto state = cache_set_state[s].read();
-      assert(state >= prio);
-      if(prio_upper >= state) break;
-      cache_set_state[s].wait();
+    if constexpr (EnMT) {
+      auto prio_upper = (prio << 1) - 1;
+      while(true) {
+        auto state = cache_set_state[s].read();
+        assert(state >= prio);
+        if(prio_upper >= state) break;
+        cache_set_state[s].wait();
+      }
     }
   }
 
   virtual void reset_mt_state(uint32_t s, uint16_t prio) {
-    while(true) {
-      auto state = cache_set_state[s].read();
-      assert(state == state | prio);
-      if(cache_set_state[s].swap(state, state & (~prio), true)) break;
+    if constexpr (EnMT) {
+      while(true) {
+        auto state = cache_set_state[s].read();
+        assert(state == state | prio);
+        if(cache_set_state[s].swap(state, state & (~prio), true)) break;
+      }
     }
   }
 };
@@ -249,9 +255,10 @@ public:
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool check_and_set) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      if (EnMT && check_and_set) this->set_mt_state(*ai, *s, prio);
-      if(arrays[*ai]->hit(addr, *s, w)) return true;
-      if (EnMT && check_and_set) this->reset_mt_state(*ai, *s, prio);
+      if(arrays[*ai]->hit(addr, *s, w)) {
+        if(EnMT && check_and_set) this->set_mt_state(*ai, *s, prio);
+        return true;
+      }
     }
     return false;
   }

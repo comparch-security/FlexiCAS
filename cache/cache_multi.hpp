@@ -26,7 +26,7 @@ public:
   CacheSkewedMultiThread(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
     : CacheT(name, extra_par, extra_way) {}
 
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, 
+  virtual bool hit_replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, 
                    uint16_t priority, bool need_replace = false)
   {
     /**

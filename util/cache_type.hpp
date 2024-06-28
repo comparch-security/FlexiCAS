@@ -208,12 +208,10 @@ inline auto cache_multi_thread_type_compile(int size, const std::string& name_pr
 
   typedef CacheNormMultiThread<IW, WN, metadata_type, DT, index_type, replace_type, DLY, EnMon> cache_base_type;
 
-  typedef OuterCohPortUncached<true> uncached_output_type;
-
   typedef typename std::conditional<isL1, CoreMultiThreadInterface<cache_base_type, policy_type>,
                   InnerCohMultiThreadPort<cache_base_type, policy_type> >::type input_type;
   
-  typedef typename std::conditional<isLLC || uncache, uncached_output_type, OuterCohMultiThreadPort<input_type, cache_base_type>>::type output_type;
+  typedef typename std::conditional<isLLC || uncache, OuterCohPortUncached<true>, OuterCohPortT<OuterCohPortUncached<true>, true> >::type output_type;
 
   typedef CoherentCacheNorm<cache_base_type, output_type, input_type> cache_type;
 

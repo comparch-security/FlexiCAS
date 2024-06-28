@@ -72,68 +72,6 @@ protected:
           access_line_multithread(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) = 0;
 };
 
-// common behavior for cached outer ports
-template <class OPUC, typename IT, typename CT> 
-  requires C_DERIVE<IT, InnerCohPortMultiThreadSupport, InnerCohPortBase>
-class OuterCohPortMultiThreadT : public OPUC
-{
-protected:
-  using OuterCohPortBase::cache;
-  using OuterCohPortBase::coh_id;
-  using OuterCohPortBase::inner;
-  using OuterCohPortBase::coh;
-  using OPUC::writeback_req;
-
-public:
-  OuterCohPortMultiThreadT(policy_ptr policy) : OPUC(policy) {}
-  virtual ~OuterCohPortMultiThreadT() {}
-
-  virtual void finish_req(uint64_t addr){
-    assert(!this->is_uncached());
-    OuterCohPortBase::coh->finish_resp(addr, this->policy->cmd_for_finish(coh_id));
-  }
-  
-  virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay){
-    uint32_t ai, s, w;
-    auto cache = static_cast<CT *>(OuterCohPortBase::cache);
-    bool writeback = false;
-    CMMetadataBase *meta = nullptr;
-    CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe);
-    if(hit){
-      std::tie(meta, data) = cache->access_line(ai, s, w);
-      meta->lock();
-      /** It is possible that higher priority behaviors have caused the meta to change, so need check again */
-      if(!meta->is_valid() || meta->addr(s) != addr){
-        meta->unlock();
-        hit = false;
-      }else{
-        auto sync = OPUC::policy->probe_need_sync(outer_cmd, meta);
-        if(sync.first){
-          auto [phit, pwb] = inner->probe_req(addr, meta, data, sync.second, delay);
-          if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
-        }
-        // writeback if dirty
-        if((writeback = OPUC::policy->probe_need_writeback(outer_cmd, meta))) {
-          if(data_outer) data_outer->copy(data);
-        }
-        OPUC::policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-
-        meta->unlock();
-      }
-
-      cache->reset_mt_state(ai, s, XactPrio::probe);
-    }
-    cache->hook_manage(addr, ai, s, w, hit, OPUC::policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
-    return std::make_pair(hit, writeback);
-  }
-
-};
-
-template <typename IT, typename CT> 
-  requires C_DERIVE<IT, InnerCohPortBase, InnerCohPortMultiThreadSupport>
-using OuterCohMultiThreadPort = OuterCohPortMultiThreadT<OuterCohPortUncached<true>, IT, CT>;
-
 template <typename CT, typename CPT>
   requires C_DERIVE<CPT, CohPolicyBase, CohPolicyMultiThreadSupport>
 class InnerCohPortMultiThreadUncached : public InnerCohPortUncached<true>, public InnerCohPortMultiThreadSupport
@@ -145,7 +83,7 @@ protected:
     uint32_t ai, s, w;
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
     /** true indicates that replace is desired */
-    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::acquire, true);
+    bool hit = cache->hit_replace(addr, &ai, &s, &w, XactPrio::acquire, true);
     auto [meta, data] = cache->access_line(ai, s, w);
     meta->lock();
     if(hit){
@@ -189,7 +127,7 @@ protected:
   virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
     uint32_t ai, s, w;
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
-    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::release);
+    bool hit = cache->hit_replace(addr, &ai, &s, &w, XactPrio::release);
     if(hit){
       auto [meta, data] = cache->access_line(ai, s, w);
       if(data_inner) data->copy(data_inner);
@@ -210,7 +148,7 @@ protected:
     std::condition_variable* cv;
     std::vector<uint32_t>* status;
     auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
-    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush);
+    bool hit = cache->hit_replace(addr, &ai, &s, &w, XactPrio::flush);
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());

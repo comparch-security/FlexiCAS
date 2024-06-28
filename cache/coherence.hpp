@@ -165,21 +165,29 @@ public:
     CMDataBase *data = nullptr;
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w); // need c++17 for auto type infer
+      meta->lock();
+      hit = meta->match(addr); // double check as a transaction with a higher priority might invalidate the line
+      if(hit) {
+        // sync if necessary
+        auto sync = policy->probe_need_sync(outer_cmd, meta);
+        if(sync.first) {
+          auto [phit, pwb] = OuterCohPortBase::inner->probe_req(addr, meta, data, sync.second, delay);
+          if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
+        }
 
-      // sync if necessary
-      auto sync = policy->probe_need_sync(outer_cmd, meta);
-      if(sync.first) {
-        auto [phit, pwb] = OuterCohPortBase::inner->probe_req(addr, meta, data, sync.second, delay);
-        if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
+        // writeback if dirty
+        if((writeback = policy->probe_need_writeback(outer_cmd, meta))) {
+          if(data_outer) data_outer->copy(data);
+        }
       }
-
-      // writeback if dirty
-      if((writeback = policy->probe_need_writeback(outer_cmd, meta))) {
-        if(data_outer) data_outer->copy(data);
-      }
+      policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
+      cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
+      meta->unlock();
+      cache->reset_mt_state(ai, s, XactPrio::probe);
+    } else {
+      policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
+      cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
     }
-    policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-    cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
     return std::make_pair(hit, writeback);
   }
 
