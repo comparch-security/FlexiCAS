@@ -5,20 +5,6 @@
 #include "cache/policy_multi.hpp"
 #include "util/concept_macro.hpp"
 
-
-/////////////////////////////////
-// Priority of transactions:
-// transactions with higher priority can pre-empt transactions with lower priority on the same cache set
-struct XactPrio{
-  static const uint16_t acquire       = 0x0001;
-  static const uint16_t flush         = 0x0001;
-  static const uint16_t read          = 0x0001;
-  static const uint16_t write         = 0x0001;
-  static const uint16_t probe         = 0x0010; // acquire miss, requiring lower cahce which back-probe this cache
-  static const uint16_t evict         = 0x0100;
-  static const uint16_t release       = 0x1000; // acquire hit but need back probe and writeback from inner
-};
-
 struct addr_info{
   uint32_t ai;
   uint32_t s;

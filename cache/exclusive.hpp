@@ -246,7 +246,7 @@ protected:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
 
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::acquire, true);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
@@ -290,7 +290,8 @@ protected:
 
     bool probe_hit = false;
     bool probe_writeback = false;
-    assert(!cache->hit(addr, &ai, &s, &w)); // must not hit
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::release, true); // do we really need to lock even we know it should not?
+    assert(!hit); // must not hit
 
     // check whether there are other copies
     auto sync = policy->release_need_sync(cmd, meta, meta_inner);
@@ -315,7 +316,7 @@ protected:
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, false); // ToDo, here may be buggy do to concurrency
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
@@ -406,7 +407,7 @@ protected:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
 
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::acquire, true);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       if(!meta->is_extend()) { // hit on normal way
@@ -479,7 +480,7 @@ protected:
     } else {
       bool phit = false;
       bool pwb = false;
-      hit = cache->hit(addr, &ai, &s, &w); assert(hit);
+      hit = cache->hit(addr, &ai, &s, &w, XactPrio::release, true); assert(hit);
       std::tie(meta, data) = cache->access_line(ai, s, w); assert(meta->is_extend());
       data = cache->data_copy_buffer();
       auto sync = policy->access_need_sync(cmd, meta);
@@ -504,7 +505,7 @@ protected:
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, true);
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
@@ -552,7 +553,7 @@ public:
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     bool writeback = false;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
     bool probe_hit = false;
     bool probe_writeback = false;
     CMMetadataBase* meta = nullptr;
@@ -604,7 +605,7 @@ public:
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     bool writeback = false;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
     bool probe_hit = false;
     bool probe_writeback = false;
     CMMetadataBase* meta = nullptr;

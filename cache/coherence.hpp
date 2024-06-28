@@ -7,6 +7,19 @@
 #include <tuple>
 #include <memory>
 
+/////////////////////////////////
+// Priority of transactions (only useful for multithread simulation):
+// transactions with higher priority can pre-empt transactions with lower priority on the same cache set
+struct XactPrio{
+  static const uint16_t acquire       = 0x0001;
+  static const uint16_t flush         = 0x0001;
+  static const uint16_t read          = 0x0001;
+  static const uint16_t write         = 0x0001;
+  static const uint16_t probe         = 0x0010; // acquire miss, requiring lower cahce which back-probe this cache
+  static const uint16_t evict         = 0x0100;
+  static const uint16_t release       = 0x1000; // acquire hit but need back probe and writeback from inner
+};
+
 class OuterCohPortBase;
 class InnerCohPortBase;
 class CoherentCacheBase;
@@ -147,7 +160,7 @@ public:
   virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     bool writeback = false;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     if(hit) {
@@ -241,7 +254,7 @@ protected:
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::acquire, true);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto sync = policy->access_need_sync(cmd, meta);
@@ -272,7 +285,7 @@ protected:
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, true);
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());

@@ -146,12 +146,14 @@ public:
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
-                   uint32_t *s, uint32_t *w
+                   uint32_t *s, uint32_t *w,
+                   uint16_t prio, // transaction priority
+                   bool check_and_set // whether to check and set the priority if hit
                    ) = 0;
 
   bool hit(uint64_t addr) {
     uint32_t ai, s, w;
-    return hit(addr, &ai, &s, &w);
+    return hit(addr, &ai, &s, &w, 0, false);
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
@@ -244,11 +246,12 @@ public:
 
   virtual std::tuple<int, int, int> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
 
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool check_and_set) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      if(arrays[*ai]->hit(addr, *s, w))
-        return true;
+      if (EnMT && check_and_set) this->set_mt_state(*ai, *s, prio);
+      if(arrays[*ai]->hit(addr, *s, w)) return true;
+      if (EnMT && check_and_set) this->reset_mt_state(*ai, *s, prio);
     }
     return false;
   }
