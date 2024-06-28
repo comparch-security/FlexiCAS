@@ -5,10 +5,8 @@
 #include <string>
 #include "util/concept_macro.hpp"
 #include <mutex>
-
-#ifndef NDEBUG
+#include <atomic>
 #include <cassert>
-#endif
 
 class CMDataBase
 {
@@ -220,11 +218,33 @@ using MetadataDirectory = MetadataMixer<AW, IW, TOfst, MT>;
 template <typename MT> requires C_DERIVE<MT, CMMetadataCommon>
 class MetaLock : public MT {
   std::mutex mtx;
+
+#ifndef NDEBUG
+  // verify no double lock or unlock
+  std::atomic<bool> locked;
+#endif
+
 public:
   MetaLock() : MT() {}
   virtual ~MetaLock() {}
-  virtual void lock() { mtx.lock(); }
-  virtual void unlock() { mtx.unlock(); }
+  virtual void lock() {
+#ifndef NDEBUG
+    assert(!locked.load() || 0 ==
+           "This cache line has already be locked and should not be locked again!");
+#endif
+    mtx.lock();
+#ifndef NDEBUG
+    locked = true;
+#endif
+  }
+  virtual void unlock() {
+#ifndef NDEBUG
+    assert(locked.load() || 0 ==
+           "This cache line has already be unlocked and should not be unlocked again!");
+    locked = false;
+#endif
+    mtx.unlock();
+  }
 };
 
 #endif
