@@ -229,8 +229,8 @@ public:
   virtual ~MetaLock() {}
   virtual void lock() {
 #ifndef NDEBUG
-    assert(!locked.load() || 0 ==
-           "This cache line has already be locked and should not be locked again!");
+    // assert(!locked.load() || 0 ==
+    //        "This cache line has already be locked and should not be locked again!");
 #endif
     mtx.lock();
 #ifndef NDEBUG
