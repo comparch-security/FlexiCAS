@@ -6,6 +6,7 @@
 #include "util/concept_macro.hpp"
 #include <mutex>
 #include <atomic>
+#include <thread>
 #include <cassert>
 
 class CMDataBase
@@ -221,7 +222,8 @@ class MetaLock : public MT {
 
 #ifndef NDEBUG
   // verify no double lock or unlock
-  std::atomic<bool> locked;
+  std::hash<std::thread::id> hasher;
+  std::atomic<uint64_t> locked;
 #endif
 
 public:
@@ -229,19 +231,20 @@ public:
   virtual ~MetaLock() {}
   virtual void lock() {
 #ifndef NDEBUG
-    // assert(!locked.load() || 0 ==
-    //        "This cache line has already be locked and should not be locked again!");
+    uint64_t thread_id = hasher(std::this_thread::get_id());
+    assert(locked.load() != thread_id || 0 ==
+            "This cache line has already be locked by this thread and should not be locked by this thread again!");
 #endif
     mtx.lock();
 #ifndef NDEBUG
-    locked = true;
+    locked = thread_id;
 #endif
   }
   virtual void unlock() {
 #ifndef NDEBUG
-    assert(locked.load() || 0 ==
+    assert(locked.load() != 0 || 0 ==
            "This cache line has already be unlocked and should not be unlocked again!");
-    locked = false;
+    locked = 0;
 #endif
     mtx.unlock();
   }
