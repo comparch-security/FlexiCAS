@@ -345,30 +345,38 @@ public:
 template <typename IPUC, typename CT, bool EnMT = false> 
   requires C_DERIVE<IPUC, InnerCohPortUncached<EnMT>>
         && C_DERIVE<CT, CacheBase, CacheBaseDRSupport> 
-class InnerCohPortDRT : public InnerCohPortT<IPUC, EnMT>
+class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>
 {
   typedef InnerCohPortT<IPUC, EnMT> InnerT;
+  std::unordered_set<uint64_t> remapped;
+
+  // copy a cache line (both meta and data)
+  void copy(CMMetadataBase* meta, CMDataBase* data, CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t addr) {
+    c_meta->init(addr);
+    c_meta->copy(meta);
+    if(data) c_data->copy(data);
+  }
 
 protected:
   using InnerT::cache;
 
 public:
-  InnerCohPortDRT(policy_ptr policy) : InnerT(policy){}
-  virtual ~InnerCohPortDRT() {} 
+  InnerCohPortRemapT(policy_ptr policy) : InnerT(policy){}
+  virtual ~InnerCohPortRemapT() {} 
 
   void remap(){
     auto cache = static_cast<CT *>(InnerCohPortBase::cache);
     auto[P, nset, nway] = cache->size();
     // TODO: pause monitors.
     // cache->monitors->pause_monitor();
-    std::vector<uint64_t> newSeeds;
-    for(int i=0; i<P; i++) newSeeds.push_back(cm_get_random_uint64());
-    cache->seed(newSeeds);
-    std::unordered_set<uint64_t> remapped;
+    std::vector<uint64_t> seeds(P);
+    for(auto &s:seeds) s = cm_get_random_uint64();
+    cache->seed(seeds);
+    remapped.clear();
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
-          multi_relocation(ai, idx, way, remapped);
+          relocation_chain(ai, idx, way);
         }
       }
     }
@@ -383,13 +391,7 @@ public:
   }
 
 protected:
-  void copy(CMMetadataBase* meta, CMDataBase* data, CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t addr) {
-    c_meta->init(addr);
-    c_meta->copy(meta);
-    if(data) c_data->copy(data);
-  }
-
-  void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai, std::unordered_set<uint64_t>& remapped) {
+  void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai) {
     uint32_t new_idx, new_way;
     cache->replace(c_addr, &ai, &new_idx, &new_way);
     auto[m_meta, m_data] = cache->access_line(ai, new_idx, new_way);
@@ -415,7 +417,7 @@ protected:
     cache->data_return_buffer(c_m_data);
   }
 
-  void multi_relocation(uint32_t ai, uint32_t idx, uint32_t way, std::unordered_set<uint64_t>& remapped) {
+  void relocation_chain(uint32_t ai, uint32_t idx, uint32_t way) {
     auto[meta, data] = cache->access_line(ai, idx, way);
     uint64_t c_addr = meta->addr(idx);
     if (!meta->is_valid() || remapped.count(c_addr)) return;
@@ -427,7 +429,7 @@ protected:
     cache->hook_manage(c_addr, ai, idx, way, true, true, false, c_meta, c_data, nullptr);
 
     while(c_meta->is_valid() && !remapped.count(c_addr)){
-      relocation(c_meta, c_data, c_addr, ai, remapped);
+      relocation(c_meta, c_data, c_addr, ai);
     }
     cache->meta_return_buffer(c_meta);
     cache->data_return_buffer(c_data);
