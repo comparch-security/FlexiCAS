@@ -160,6 +160,7 @@ public:
     bool hit = cache->hit(addr, &ai, &s, &w, Priority::probe);
     if(hit){
       std::tie(meta, data) = cache->access_line(ai, s, w);
+      cache->lock_line(ai, s, w);
       /** It is possible that higher priority behaviors have caused the meta to change, so need check again */
       if(!meta->is_valid() || meta->addr(s) != addr){
         cache->unlock_line(ai, s, w);
