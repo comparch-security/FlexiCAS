@@ -255,10 +255,9 @@ public:
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool check_and_set) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      if(arrays[*ai]->hit(addr, *s, w)) {
-        if(EnMT && check_and_set) this->set_mt_state(*ai, *s, prio);
-        return true;
-      }
+      if(EnMT && check_and_set) this->set_mt_state(*ai, *s, prio);
+      if(arrays[*ai]->hit(addr, *s, w)) return true;
+      if(EnMT && check_and_set) this->reset_mt_state(*ai, *s, prio);
     }
     return false;
   }
