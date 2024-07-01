@@ -239,8 +239,8 @@ public:
 class SimpleTracerMT : public SimpleTracer
 {
   std::thread print_thread;
+  std::hash<std::thread::id> hasher;
   virtual void print(std::string& msg) {
-    std::hash<std::thread::id> hasher;
     uint16_t id = hasher(std::this_thread::get_id());
     std::string msg_ext = (boost::format("thread %04x: %s") % id % msg).str();
     globalPrinter->add(msg_ext);
