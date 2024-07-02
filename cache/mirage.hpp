@@ -251,7 +251,7 @@ public:
   MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
-  replace_line(uint64_t addr, uint64_t *delay) {
+  replace_line(uint64_t addr, uint16_t prio, uint64_t *delay) {
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;

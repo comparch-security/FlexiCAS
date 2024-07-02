@@ -204,7 +204,7 @@ public:
   virtual ~ExclusiveInnerCohPortUncachedBroadcast() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
 
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(cmd, meta, meta_inner);
@@ -241,12 +241,12 @@ protected:
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
-  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
+  access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
 
-    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::acquire, true);
+    bool hit = cache->hit(addr, &ai, &s, &w, prio, true);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
@@ -263,7 +263,7 @@ protected:
       data = cache->data_copy_buffer();
       auto probe_hit = fetch_line(addr, meta, data, cmd, delay);
       if(cmd.id == -1 && !probe_hit) { // need to reserve a place in the normal way if there no cached copy
-        auto [mmeta, mdata, mai, ms, mw] = this->replace_line(addr, delay);
+        auto [mmeta, mdata, mai, ms, mw] = this->replace_line(addr, prio, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(mdata) mdata->copy(data);
         cache->hook_write(addr, mai, ms, mw, false, false, mmeta, mdata, delay); // a write occurred during the probe
@@ -305,7 +305,7 @@ protected:
     }
 
     if(!probe_hit) { // exclusive cache handles a release only when there is no other sharer
-      std::tie(meta, data, ai, s, w) = this->replace_line(addr, delay);
+      std::tie(meta, data, ai, s, w) = this->replace_line(addr, XactPrio::release, delay);
       if(data_inner && data) data->copy(data_inner);
       meta->init(addr); policy->meta_after_release(cmd, meta, meta_inner);
       cache->hook_write(addr, ai, s, w, false, false, meta, data, delay);
@@ -376,7 +376,7 @@ public:
   virtual ~ExclusiveInnerCohPortUncachedDirectory() {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, delay);
+    auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, XactPrio::acquire, delay);
 
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(outer_cmd, meta, meta_inner);
@@ -391,7 +391,7 @@ public:
 
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
-  replace_line_ext(uint64_t addr, uint64_t *delay) {
+  replace_line_ext(uint64_t addr, uint16_t prio, uint64_t *delay) {
     uint32_t ai, s, w;
     cache->replace(addr, &ai, &s, &w, true);
     auto [meta, data] = cache->access_line(ai, s, w);
@@ -402,12 +402,12 @@ protected:
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
-  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
+  access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
 
-    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::acquire, true);
+    bool hit = cache->hit(addr, &ai, &s, &w, prio, true);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       if(!meta->is_extend()) { // hit on normal way
@@ -422,7 +422,7 @@ protected:
         else { // normal request, move it to an extended way
           if(meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
             outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
-          auto [mmeta, mdata, mai, ms, mw] = replace_line_ext(addr, delay);
+          auto [mmeta, mdata, mai, ms, mw] = replace_line_ext(addr, prio, delay);
           mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
           return std::make_tuple(mmeta, data, mai, ms, mw, hit);
         }
@@ -453,9 +453,9 @@ protected:
       }
     } else { // miss
       if(cmd.id == -1) // request from an uncached inner, fetch to a normal way
-        std::tie(meta, data, ai, s, w) = this->replace_line(addr, delay);
+        std::tie(meta, data, ai, s, w) = this->replace_line(addr, prio, delay);
       else { // normal request, fetch to an extended way
-        std::tie(meta, data, ai, s, w) = replace_line_ext(addr, delay);
+        std::tie(meta, data, ai, s, w) = replace_line_ext(addr, prio, delay);
         data = cache->data_copy_buffer();
       }
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
@@ -470,7 +470,7 @@ protected:
     bool hit;
 
     if(cmd.id == -1) { // request from an uncached inner
-      std::tie(meta, data, ai, s, w, hit) = access_line(addr, cmd, delay);
+      std::tie(meta, data, ai, s, w, hit) = access_line(addr, cmd, XactPrio::release, delay);
       if(data_inner) data->copy(data_inner);
       policy->meta_after_release(cmd, meta, meta_inner);
       if(meta->is_extend()) outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay); // writeback if dirty
@@ -491,7 +491,7 @@ protected:
       if(data_inner) data->copy(data_inner);
       if(!phit) { // exclusive cache handles a release only when there is no other sharer
         // move it to normal meta
-        auto [mmeta, mdata, mai, ms, mw] = this->replace_line(addr, delay);
+        auto [mmeta, mdata, mai, ms, mw] = this->replace_line(addr, XactPrio::release, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(data_inner && mdata) mdata->copy(data);
         policy->meta_after_release(cmd, mmeta, meta_inner);
