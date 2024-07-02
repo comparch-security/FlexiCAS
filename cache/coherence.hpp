@@ -174,16 +174,24 @@ public:
         }
 
         // writeback if dirty
+        if constexpr (EnMT) meta_outer->lock();
         if((writeback = policy->probe_need_writeback(outer_cmd, meta))) {
           if(data_outer) data_outer->copy(data);
         }
-      } else meta = nullptr;
-
-      policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
+        policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
+        if constexpr (EnMT) meta_outer->unlock();
+      } else {
+        meta = nullptr;
+        if constexpr (EnMT) meta_outer->lock();
+        policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
+        if constexpr (EnMT) meta_outer->unlock();
+      }
       cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
       if constexpr (EnMT) { if(hit) meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
     } else {
+      if constexpr (EnMT) meta_outer->lock();
       policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
+      if constexpr (EnMT) meta_outer->unlock();
       cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
     }
     return std::make_pair(hit, writeback);
@@ -354,6 +362,7 @@ public:
 
   virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
     bool hit = false, writeback = false;
+    if constexpr (EnMT) meta->unlock();
     for(uint32_t i=0; i<coh.size(); i++) {
       auto probe = policy->probe_need_probe(cmd, meta, i);
       if(probe.first) {
@@ -362,6 +371,7 @@ public:
         writeback |= pwb;
       }
     }
+    if constexpr (EnMT) meta->lock();
     return std::make_pair(hit, writeback);
   }
 
