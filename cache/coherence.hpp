@@ -164,9 +164,9 @@ public:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     if(hit) {
-      std::tie(meta, data) = cache->access_line(ai, s, w); // need c++17 for auto type infer
-      meta->lock();
-      hit = meta->match(addr); // double check as a transaction with a higher priority might invalidate the line
+      if constexpr (EnMT) std::tie(meta, data) = cache->access_line_lock(ai, s, w, addr, hit);
+      else                std::tie(meta, data) = cache->access_line(ai, s, w);
+
       if(hit) {
         // sync if necessary
         auto sync = policy->probe_need_sync(outer_cmd, meta);
@@ -179,11 +179,14 @@ public:
         if((writeback = policy->probe_need_writeback(outer_cmd, meta))) {
           if(data_outer) data_outer->copy(data);
         }
-      }
+      } else meta = nullptr;
+
       policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
       cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
-      meta->unlock();
-      cache->reset_mt_state(ai, s, XactPrio::probe);
+      if constexpr (EnMT) {
+        if(hit) meta->unlock();
+        cache->reset_mt_state(ai, s, XactPrio::probe);
+      }
     } else {
       policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
       cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
@@ -294,7 +297,16 @@ protected:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, true);
-    if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
+    if(hit) {
+      if constexpr (EnMT) {
+        std::tie(meta, data) = cache->access_line_lock(ai, s, w, addr, hit);
+        if(!hit) {
+          meta->unlock(); meta = nullptr; data = nullptr;
+          cache->reset_mt_state(ai, s, XactPrio::flush);
+        }
+      } else
+        std::tie(meta, data) = cache->access_line(ai, s, w);
+    }
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
     if(!flush) {
@@ -315,6 +327,11 @@ protected:
 
     policy->meta_after_flush(cmd, meta);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, meta, data, delay);
+
+    if constexpr (EnMT) {
+      meta->unlock();
+      cache->reset_mt_state(ai, s, XactPrio::flush);
+    }
   }
 
 };

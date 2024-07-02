@@ -139,44 +139,6 @@ protected:
     }
   }
 
-  virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay){
-    uint32_t ai, s, w;
-    CMMetadataBase *meta = nullptr;
-    CMDataBase *data = nullptr;
-    std::mutex* mtx;
-    std::mutex* wmtx;
-    std::condition_variable* cv;
-    std::vector<uint32_t>* status;
-    auto cache = static_cast<CT *>(InnerCohPortUncached<true>::cache);
-    bool hit = cache->hit_replace(addr, &ai, &s, &w, XactPrio::flush);
-    if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
-
-    auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
-    if(!flush) {
-      if(hit){
-        cache->reset_mt_state(ai, s, XactPrio::flush);
-      }
-      // do not handle flush at this level, and send it to the outer cache
-      outer->writeback_req(addr, nullptr, nullptr, policy->cmd_for_flush(), delay);
-      return;
-    }
-
-    if(!hit) return;
-
-    if(probe) {
-      auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
-      if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
-    }
-
-    auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
-    if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
-
-    policy->meta_after_flush(cmd, meta);
-    cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(cmd), writeback.first, meta, data, delay);
-
-    cache->reset_mt_state(ai, s, XactPrio::flush);
-  }
-
 public:
   InnerCohPortMultiThreadUncached(policy_ptr policy) : InnerCohPortUncached(policy), InnerCohPortMultiThreadSupport() {
     database = new InnerAddressDataMap();

@@ -188,6 +188,15 @@ public:
   // access both meta and data in one function call
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
+  // access and check whether it still hits (may unlock if becoming miss)
+  __always_inline std::pair<CMMetadataBase *, CMDataBase *> access_line_lock(uint32_t ai, uint32_t s, uint32_t w, uint64_t addr, bool &hit) {
+    // used in multithread env for lock and recheck the cache line
+    auto [meta, data] = access_line(ai, s, w);
+    meta->lock();
+    hit = meta->match(addr); // double check as a transaction with a higher priority might invalidate the line
+    return std::make_pair(meta, data);
+  }
+
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
   virtual LocInfo query_loc(uint64_t addr) { return LocInfo(id, this, addr); }
   virtual void query_fill_loc(LocInfo *loc, uint64_t addr) = 0;
