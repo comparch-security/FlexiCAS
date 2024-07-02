@@ -95,28 +95,34 @@ public:
   }
 
   virtual void set_mt_state(uint32_t s, uint16_t prio) {
-    while(true) {
-      auto state = cache_set_state[s].read();
-      if(prio <= state) { cache_set_state[s].wait(); continue; }
-      if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+    if constexpr (EnMT) {
+      while(true) {
+        auto state = cache_set_state[s].read();
+        if(prio <= state) { cache_set_state[s].wait(); continue; }
+        if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+      }
     }
   }
 
   virtual void check_mt_state(uint32_t s, uint16_t prio) {
-    auto prio_upper = (prio << 1) - 1;
-    while(true) {
-      auto state = cache_set_state[s].read();
-      assert(state >= prio);
-      if(prio_upper >= state) break;
-      cache_set_state[s].wait();
+    if constexpr (EnMT) {
+      auto prio_upper = (prio << 1) - 1;
+      while(true) {
+        auto state = cache_set_state[s].read();
+        assert(state >= prio);
+        if(prio_upper >= state) break;
+        cache_set_state[s].wait();
+      }
     }
   }
 
   virtual void reset_mt_state(uint32_t s, uint16_t prio) {
-    while(true) {
-      auto state = cache_set_state[s].read();
-      assert(state == state | prio);
-      if(cache_set_state[s].swap(state, state & (~prio), true)) break;
+    if constexpr (EnMT) {
+      while(true) {
+        auto state = cache_set_state[s].read();
+        assert(state == state | prio);
+        if(cache_set_state[s].swap(state, state & (~prio), true)) break;
+      }
     }
   }
 };
@@ -146,12 +152,14 @@ public:
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
-                   uint32_t *s, uint32_t *w
+                   uint32_t *s, uint32_t *w,
+                   uint16_t prio, // transaction priority
+                   bool check_and_set // whether to check and set the priority if hit
                    ) = 0;
 
   bool hit(uint64_t addr) {
     uint32_t ai, s, w;
-    return hit(addr, &ai, &s, &w);
+    return hit(addr, &ai, &s, &w, 0, false);
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
@@ -169,8 +177,6 @@ public:
   virtual void data_return_buffer(CMDataBase *buf) = 0;     // return a copy buffer, used to detect conflicts in copy buffer
   virtual CMMetadataBase *meta_copy_buffer() = 0;           // allocate a copy buffer, needed by exclusive cache with extended meta
   virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
-  __always_inline void lock_line(uint32_t ai, uint32_t s, uint32_t w)   { access(ai, s, w)->lock();   }
-  __always_inline void unlock_line(uint32_t ai, uint32_t s, uint32_t w) { access(ai, s, w)->unlock(); }
   __always_inline void set_mt_state(uint32_t ai, uint32_t s, uint16_t prio)   { arrays[ai]->set_mt_state(s, prio);   }
   __always_inline void check_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->check_mt_state(s, prio); }
   __always_inline void reset_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->reset_mt_state(s, prio); }
@@ -181,6 +187,15 @@ public:
 
   // access both meta and data in one function call
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
+
+  // access and check whether it still hits (may unlock if becoming miss)
+  __always_inline std::pair<CMMetadataBase *, CMDataBase *> access_line_lock(uint32_t ai, uint32_t s, uint32_t w, uint64_t addr, bool &hit) {
+    // used in multithread env for lock and recheck the cache line
+    auto [meta, data] = access_line(ai, s, w);
+    meta->lock();
+    hit = meta->match(addr); // double check as a transaction with a higher priority might invalidate the line
+    return std::make_pair(meta, data);
+  }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
   virtual LocInfo query_loc(uint64_t addr) { return LocInfo(id, this, addr); }
@@ -246,11 +261,12 @@ public:
 
   virtual std::tuple<int, int, int> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
 
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool check_and_set) {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      if(arrays[*ai]->hit(addr, *s, w))
-        return true;
+      if(EnMT && check_and_set) this->set_mt_state(*ai, *s, prio);
+      if(arrays[*ai]->hit(addr, *s, w)) return true;
+      if(EnMT && check_and_set) this->reset_mt_state(*ai, *s, prio);
     }
     return false;
   }
@@ -361,7 +377,7 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
-using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon, EF, EnMT, MSHR>;
 
 #endif

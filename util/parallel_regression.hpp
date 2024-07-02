@@ -12,7 +12,6 @@
 #include <queue>
 #include "cache/metadata.hpp"
 #include "util/regression.hpp"
-#include "cache/coherence_multi.hpp"
 #include <thread>
 
 class cache_xact 

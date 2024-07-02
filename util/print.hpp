@@ -7,7 +7,6 @@
 #include <iostream>
 #include "util/multithread.hpp"
 
-
 // can be implemented using std::osyncstream after C++20
 class PrintPool {
   const int pool_size;
@@ -52,5 +51,12 @@ public:
     }
   }
 };
+
+extern PrintPool *globalPrinter;
+
+inline void global_print(std::string msg) {
+  if(globalPrinter) globalPrinter->add(msg);
+  else std::cout << msg << std::endl;
+}
 
 #endif
