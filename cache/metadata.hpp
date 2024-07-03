@@ -6,8 +6,8 @@
 #include "util/concept_macro.hpp"
 #include <mutex>
 #include <atomic>
-#include <thread>
 #include <cassert>
+#include "util/print.hpp"
 
 class CMDataBase
 {
@@ -222,7 +222,6 @@ class MetaLock : public MT {
 
 #ifndef NDEBUG
   // verify no double lock or unlock
-  std::hash<std::thread::id> hasher;
   std::atomic<uint64_t> locked;
 #endif
 
@@ -230,22 +229,29 @@ public:
   MetaLock() : MT() {}
   virtual ~MetaLock() {}
   virtual void lock() {
-#ifndef NDEBUG
-    uint64_t thread_id = hasher(std::this_thread::get_id());
+#ifdef CHECK_MULTI
+    uint64_t thread_id = global_lock_checker->thread_id();
     assert(locked.load() != thread_id || 0 ==
             "This cache line has already be locked by this thread and should not be locked by this thread again!");
 #endif
     mtx.lock();
-#ifndef NDEBUG
+#ifdef CHECK_MULTI
+    global_lock_checker->push(this);
+    //global_print(std::to_string((uint64_t)(this)) + " locked by " + std::to_string(thread_id));
     locked = thread_id;
 #endif
   }
+
   virtual void unlock() {
-#ifndef NDEBUG
+#ifdef CHECK_MULTI
+    uint64_t thread_id = global_lock_checker->thread_id();
     assert(locked.load() != 0 || 0 ==
            "This cache line has already be unlocked and should not be unlocked again!");
     locked = 0;
+    //global_print(std::to_string((uint64_t)(this)) + " unlocked by " + std::to_string(thread_id));
+    global_lock_checker->pop(this);
 #endif
+    std::atomic_thread_fence(std::memory_order_acq_rel);
     mtx.unlock();
   }
 };

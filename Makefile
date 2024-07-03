@@ -11,16 +11,16 @@ CXXSTD = --std=c++17 -fconcepts
 
 ifeq ($(MODE), release)
     CXXFLAGS = $(CXXSTD) -O3 -DNDEBUG -I. -fPIC
+	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug)
-    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC
+    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC -DCHECK_MULTI
+	REGRESS_LD_FLAGS =
+else ifeq ($(MODE), debug-multi)
+    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC -DCHECK_MULTI -DBOOST_STACKTRACE_LINK -DBOOST_STACKTRACE_USE_BACKTRACE
+	REGRESS_LD_FLAGS = -lboost_stacktrace_backtrace -ldl -lbacktrace
 else
     CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
-endif
-
-ifeq ($(MODE), debug)
-    DSLCXXFLAGS = $(CXXSTD) -O1 -g -I. -fPIC
-else
-    DSLCXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
+	REGRESS_LD_FLAGS =
 endif
 
 UTIL_HEADERS  = $(wildcard util/*.hpp)
@@ -69,7 +69,7 @@ PARALLEL_REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(PARALLEL_REGRESSIO
 PARALLEL_REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(PARALLEL_REGRESSION_TESTS))
 
 $(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@
 
 $(PARALLEL_REGRESSION_TESTS_RST): %.out: %
 	timeout 1m $< 2>$@ 1>temp.log

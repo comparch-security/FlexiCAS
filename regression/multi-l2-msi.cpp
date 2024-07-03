@@ -21,6 +21,7 @@
 //#define TestN 512
 
 PrintPool *globalPrinter;
+LockCheck * global_lock_checker = new LockCheck;
 
 int main(){
   auto l1d = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIPolicy, false, false, void, true>(NCore, "l1d");

@@ -162,9 +162,13 @@ public:
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     if(hit) {
-      if constexpr (EnMT) std::tie(meta, data) = cache->access_line_lock(ai, s, w, addr, hit);
-      else                std::tie(meta, data) = cache->access_line(ai, s, w);
+      if constexpr (EnMT) {
+        std::tie(meta, data) = cache->access_line_lock(ai, s, w, addr, hit);
+        if(!hit) meta->unlock(); // if miss, the cache line is invalidate by other transactions, unlock the line
+      } else
+          std::tie(meta, data) = cache->access_line(ai, s, w);
 
+      if constexpr (EnMT) meta_outer->lock();
       if(hit) {
         // sync if necessary
         auto sync = policy->probe_need_sync(outer_cmd, meta);
@@ -174,25 +178,22 @@ public:
         }
 
         // writeback if dirty
-        if constexpr (EnMT) meta_outer->lock();
         if((writeback = policy->probe_need_writeback(outer_cmd, meta))) {
           if(data_outer) data_outer->copy(data);
         }
         policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-        if constexpr (EnMT) meta_outer->unlock();
       } else {
         meta = nullptr;
-        if constexpr (EnMT) meta_outer->lock();
         policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-        if constexpr (EnMT) meta_outer->unlock();
       }
       cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
+      if constexpr (EnMT) meta_outer->unlock();
       if constexpr (EnMT) { if(hit) meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
     } else {
       if constexpr (EnMT) meta_outer->lock();
       policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-      if constexpr (EnMT) meta_outer->unlock();
       cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
+      if constexpr (EnMT) meta_outer->unlock();
     }
     return std::make_pair(hit, writeback);
   }
@@ -432,7 +433,11 @@ public:
     auto [meta, data, ai, s, w, hit] = this->access_line(addr, cmd, XactPrio::acquire, delay);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     if(!hit) outer->finish_req(addr);
-    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
+    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);
+      #ifdef CHECK_MULTI
+        global_lock_checker->check();
+      #endif
+    }
     return data; // potentially dangerous and the data pointer is returned without lock
   }
 
@@ -444,7 +449,11 @@ public:
     if(data) data->copy(m_data);
     cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
     if(!hit) outer->finish_req(addr);
-    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
+    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);
+      #ifdef CHECK_MULTI
+        global_lock_checker->check();
+      #endif
+    }
   }
 
   virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); this->flush_line(addr, policy->cmd_for_flush(), delay); }
