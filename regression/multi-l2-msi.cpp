@@ -56,5 +56,5 @@ int main(){
   delete_caches(l1i);
   delete l2;
   delete mem;
-
+  delete globalPrinter;
 }
