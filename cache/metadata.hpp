@@ -1,13 +1,9 @@
 #ifndef CM_CACHE_METADATA_HPP
 #define CM_CACHE_METADATA_HPP
 
-#include <cstdint>
 #include <string>
 #include "util/concept_macro.hpp"
-#include <mutex>
-#include <atomic>
-#include <thread>
-#include <cassert>
+#include "util/multithread.hpp"
 
 class CMDataBase
 {
@@ -220,9 +216,8 @@ template <typename MT> requires C_DERIVE<MT, CMMetadataCommon>
 class MetaLock : public MT {
   std::mutex mtx;
 
-#ifndef NDEBUG
+#ifdef CHECK_MULTI
   // verify no double lock or unlock
-  std::hash<std::thread::id> hasher;
   std::atomic<uint64_t> locked;
 #endif
 
@@ -230,21 +225,25 @@ public:
   MetaLock() : MT() {}
   virtual ~MetaLock() {}
   virtual void lock() {
-#ifndef NDEBUG
-    uint64_t thread_id = hasher(std::this_thread::get_id());
+#ifdef CHECK_MULTI
+    uint64_t thread_id = global_lock_checker->thread_id();
     assert(locked.load() != thread_id || 0 ==
             "This cache line has already be locked by this thread and should not be locked by this thread again!");
 #endif
     mtx.lock();
-#ifndef NDEBUG
+#ifdef CHECK_MULTI
+    global_lock_checker->push(this);
     locked = thread_id;
 #endif
   }
+
   virtual void unlock() {
-#ifndef NDEBUG
+#ifdef CHECK_MULTI
+    uint64_t thread_id = global_lock_checker->thread_id();
     assert(locked.load() != 0 || 0 ==
            "This cache line has already be unlocked and should not be unlocked again!");
     locked = 0;
+    global_lock_checker->pop(this);
 #endif
     mtx.unlock();
   }

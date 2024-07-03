@@ -2,14 +2,21 @@
 #define CM_UTIL_MULTITHREAD_HPP
 
 #include <unordered_map>
+#include <stack>
 #include <cstdint>
 #include <cassert>
 #include <atomic>
 #include <mutex>
+#include <shared_mutex>
 #include <condition_variable>
 #include <memory>
 #include <chrono>
+#include <thread>
 #include <iostream>
+
+#ifdef BOOST_STACKTRACE_LINK
+#include <boost/stacktrace.hpp>
+#endif
 
 template<typename T>
 class AtomicVar {
@@ -107,5 +114,78 @@ public:
   }
 };
 
+class LockCheck {
+  std::hash<std::thread::id> hasher;
+  std::mutex hasher_mtx;
+
+  #ifdef BOOST_STACKTRACE_LINK
+    std::unordered_map<uint64_t, std::stack<std::pair<void *, std::string> > > lock_map; // lock should always behave like a stack
+  #else
+    std::unordered_map<uint64_t, std::stack<void *> > lock_map;
+  #endif
+
+  std::shared_mutex lock_map_mtx;
+
+public:
+  uint64_t thread_id() {
+    std::lock_guard lock(hasher_mtx);
+    return hasher(std::this_thread::get_id());
+  }
+
+  void push(void *p) {
+    bool hit;
+    auto id = thread_id();
+    {
+      std::shared_lock lock(lock_map_mtx);
+      hit = lock_map.count(id);
+      if(hit) {
+        #ifdef BOOST_STACKTRACE_LINK
+          lock_map[id].push(std::make_pair(p, boost::stacktrace::to_string(boost::stacktrace::stacktrace())));
+        #else
+          lock_map[id].push(p);
+        #endif
+      }
+    }
+
+    if(!hit) {
+      std::lock_guard lock(lock_map_mtx);
+      #ifdef BOOST_STACKTRACE_LINK
+        lock_map[id].push(std::make_pair(p, boost::stacktrace::to_string(boost::stacktrace::stacktrace())));
+      #else
+        lock_map[id].push(p);
+      #endif
+    }
+  }
+
+  void pop(void *p) {
+    auto id = thread_id();
+    std::shared_lock lock(lock_map_mtx);
+    assert(lock_map.count(id));
+    #ifdef BOOST_STACKTRACE_LINK
+      auto [pm, trace] = lock_map[id].top();
+      assert(p == pm);
+    #else
+      assert(p == lock_map[id].top());
+    #endif
+    lock_map[id].pop();
+  }
+
+  void check() {
+    auto id = thread_id();
+    std::shared_lock lock(lock_map_mtx);
+    #ifdef BOOST_STACKTRACE_LINK
+    if(lock_map.count(id) && lock_map[id].size()) {
+      auto [p, trace] = lock_map[id].top();
+      std::cout << "metadata: " << (uint64_t)(p) << " is kept locked by thread " << id << std::endl;
+      std::cout << trace << std::endl;
+    }
+    #endif
+    assert(!lock_map.count(id) || lock_map[id].size() == 0);
+  }
+};
+
+#ifdef CHECK_MULTI
+extern LockCheck * global_lock_checker;
+#endif
 
 #endif

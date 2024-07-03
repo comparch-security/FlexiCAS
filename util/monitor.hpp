@@ -238,20 +238,19 @@ public:
 // multithread version of simple tracer
 class SimpleTracerMT : public SimpleTracer
 {
-  PrintPool pool;
   std::thread print_thread;
   std::hash<std::thread::id> hasher;
   virtual void print(std::string& msg) {
     uint16_t id = hasher(std::this_thread::get_id());
     std::string msg_ext = (boost::format("thread %04x: %s") % id % msg).str();
-    pool.add(msg_ext);
+    globalPrinter->add(msg_ext);
   }
 
 public:
-  SimpleTracerMT(bool cd = false): SimpleTracer(cd), pool(256) {
-    print_thread = std::thread(&PrintPool::print, &pool);
+  SimpleTracerMT(bool cd = false): SimpleTracer(cd){
+    print_thread = std::thread(&PrintPool::print, globalPrinter);
   }
-  virtual void stop() { pool.stop(); print_thread.join(); }
+  virtual void stop() { globalPrinter->stop(); print_thread.join(); }
 };
 
 #endif
