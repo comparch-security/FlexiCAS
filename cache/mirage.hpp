@@ -101,7 +101,7 @@ template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<DTMT, MirageDataMeta>  && C_DERIVE<MIDX, IndexFuncBase>   && C_DERIVE<DIDX, IndexFuncBase> &&
-C_DERIVE<MRPC, ReplaceFuncBase<EF,false> > && C_DERIVE<DRPC, ReplaceFuncBase<EF,false> > && C_DERIVE_OR_VOID<DLY, DelayBase>
+           C_DERIVE<MRPC, ReplaceFuncBase<EF,false> > && C_DERIVE<DRPC, ReplaceFuncBase<EF,false> > && C_DERIVE_OR_VOID<DLY, DelayBase>
 class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
@@ -251,7 +251,7 @@ public:
   MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
-  replace_line(uint64_t addr, uint64_t *delay) {
+  replace_line(uint64_t addr, uint16_t prio, uint64_t *delay) {
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
