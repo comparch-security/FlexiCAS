@@ -23,6 +23,11 @@
 //#define SAddrN 64
 //#define TestN 512
 
+PrintPool *globalPrinter;
+#ifdef CHECK_MULTI
+  LockCheck * global_lock_checker = new LockCheck;
+#endif
+
 int main(){
   auto l1d = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIMultiThreadPolicy, false, false, void, true>(NCore, "l1d");
   auto core_data = get_l1_core_interface(l1d);
@@ -31,6 +36,7 @@ int main(){
 
   auto l2 = cache_gen_multi_thread_l2<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIMultiThreadPolicy, true, void, true>(1, "l2")[0];
   auto mem = new SimpleMemoryModel<Data64B, void, true, true>("mem");
+  globalPrinter = new PrintPool(256);
   SimpleTracerMT tracer(true);
 
   for(int i=0; i<NCore; i++) {
