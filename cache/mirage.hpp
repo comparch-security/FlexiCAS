@@ -246,39 +246,55 @@ template<typename MT, typename CT, bool EnMT>
 class MirageInnerPortUncached : public InnerCohPortUncached<EnMT>
 {
 protected:
-  typedef InnerCohPortUncached<EnMT> BaseT;
+  using InnerCohPortBase::policy;
+  using InnerCohPortBase::outer;
 public:
   MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
 protected:
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
-  replace_line(uint64_t addr, uint16_t prio, uint64_t *delay) {
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
+  access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
     auto cache = static_cast<CT *>(InnerCohPortBase::cache);
-    // get the way to be replaced
-    cache->replace(addr, &ai, &s, &w);
-    meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
-    std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > stack;
-    if(meta->is_valid()) cache->cuckoo_search(&ai, &s, &w, meta, stack);
-    if(meta->is_valid()) { // associative eviction!
-      BaseT::evict(meta, cache->get_data_data(static_cast<MT *>(meta)), ai, s, w, delay);
-      cache->get_data_meta(static_cast<MT *>(meta))->to_invalid();
+    bool hit = cache->hit(addr, &ai, &s, &w, prio, EnMT);
+    if(hit) {
+      std::tie(meta, data) = cache->access_line(ai, s, w);
+      auto sync = policy->access_need_sync(cmd, meta);
+      if(sync.first) {
+        auto [phit, pwb] = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+        if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
+      }
+      auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
+      if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
+      else if(promote_local) meta->to_modified(-1);
+    } else { // miss
+      // do the cuckoo replacement
+      cache->replace(addr, &ai, &s, &w);
+      meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
+      std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > stack;
+      if(meta->is_valid()) cache->cuckoo_search(&ai, &s, &w, meta, stack);
+      if(meta->is_valid()) { // associative eviction!
+        this->evict(meta, cache->get_data_data(static_cast<MT *>(meta)), ai, s, w, delay);
+        cache->get_data_meta(static_cast<MT *>(meta))->to_invalid();
+      }
+      while(!stack.empty()) cache->cuckoo_relocate(&ai, &s, &w, meta, stack, delay);
+      meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
+      auto data_pointer = cache->replace_data(addr);
+      auto data_meta = cache->get_data_meta(data_pointer);
+      data = cache->get_data_data(data_pointer);
+      if(data_meta->is_valid()) {
+        auto meta_pointer = data_meta->pointer();
+        auto replace_meta = cache->get_meta_meta(meta_pointer);
+        this->evict(replace_meta, data, std::get<0>(meta_pointer), std::get<1>(meta_pointer), std::get<2>(meta_pointer), delay);
+        replace_meta->to_invalid();
+      }
+      static_cast<MT *>(meta)->bind(data_pointer.first, data_pointer.second);
+      data_meta->bind(ai, s, w);
+
+      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
-    while(!stack.empty()) cache->cuckoo_relocate(&ai, &s, &w, meta, stack, delay);
-    meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
-    auto data_pointer = cache->replace_data(addr);
-    auto data_meta = cache->get_data_meta(data_pointer);
-    data = cache->get_data_data(data_pointer);
-    if(data_meta->is_valid()) {
-      auto meta_pointer = data_meta->pointer();
-      auto replace_meta = cache->get_meta_meta(meta_pointer);
-      BaseT::evict(replace_meta, data, std::get<0>(meta_pointer), std::get<1>(meta_pointer), std::get<2>(meta_pointer), delay);
-      replace_meta->to_invalid();
-    }
-    static_cast<MT *>(meta)->bind(data_pointer.first, data_pointer.second);
-    data_meta->bind(ai, s, w);
-    return std::make_tuple(meta, data, ai, s, w);
+    return std::make_tuple(meta, data, ai, s, w, hit);
   }
 };
 

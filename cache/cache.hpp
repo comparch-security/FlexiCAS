@@ -153,8 +153,8 @@ public:
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w,
-                   uint16_t prio, // transaction priority
-                   bool check_and_set // whether to check and set the priority if hit
+                   uint16_t prio = 0, // transaction priority
+                   bool check_and_set = false // whether to check and set the priority if hit
                    ) = 0;
 
   bool hit(uint64_t addr) {
@@ -163,6 +163,7 @@ public:
   }
 
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
+  virtual void replace_restore(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   virtual CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) {
     return arrays[ai]->get_meta(s, w);
@@ -187,15 +188,6 @@ public:
 
   // access both meta and data in one function call
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
-
-  // access and check whether it still hits (may unlock if becoming miss)
-  __always_inline std::pair<CMMetadataBase *, CMDataBase *> access_line_lock(uint32_t ai, uint32_t s, uint32_t w, uint64_t addr, bool &hit) {
-    // used in multithread env for lock and recheck the cache line
-    auto [meta, data] = access_line(ai, s, w);
-    meta->lock();
-    hit = meta->match(addr); // double check as a transaction with a higher priority might invalidate the line
-    return std::make_pair(meta, data);
-  }
 
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
   virtual LocInfo query_loc(uint64_t addr) { return LocInfo(id, this, addr); }
@@ -284,6 +276,10 @@ public:
     else                *ai = ((*loc_random)() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
+  }
+
+  virtual void replace_restore(uint32_t ai, uint32_t s, uint32_t w) {
+    replacer[ai].restore(s, w);
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {

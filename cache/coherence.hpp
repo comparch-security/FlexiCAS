@@ -14,7 +14,7 @@ struct XactPrio{
   static const uint16_t acquire       = 0x0001;
   static const uint16_t flush         = 0x0001;
   static const uint16_t probe         = 0x0010; // acquire miss, requiring lower cahce which back-probe this cache
-  static const uint16_t evict         = 0x0100;
+  static const uint16_t evict         = 0x0100; // do we still need this priority level?
   static const uint16_t release       = 0x1000; // acquire hit but need back probe and writeback from inner
 };
 
@@ -158,37 +158,43 @@ public:
   virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
     uint32_t ai, s, w;
     bool writeback = false;
-    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
+    bool hit;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    if(hit) {
-      if constexpr (EnMT) {
-        std::tie(meta, data) = cache->access_line_lock(ai, s, w, addr, hit);
-        if(!hit) meta->unlock(); // if miss, the cache line is invalidate by other transactions, unlock the line
-      } else
-          std::tie(meta, data) = cache->access_line(ai, s, w);
 
-      if constexpr (EnMT) meta_outer->lock();
-      if(hit) {
-        // sync if necessary
-        auto sync = policy->probe_need_sync(outer_cmd, meta);
-        if(sync.first) {
-          auto [phit, pwb] = OuterCohPortBase::inner->probe_req(addr, meta, data, sync.second, delay);
-          if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
+    if constexpr (EnMT) {
+      while(true) {
+        hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
+        if(hit) {
+          std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
+          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
+            meta->unlock(); meta = nullptr; data = nullptr;
+            cache->reset_mt_state(ai, s, XactPrio::probe); continue; // redo the hit check
+          }
         }
-
-        // writeback if dirty
-        if((writeback = policy->probe_need_writeback(outer_cmd, meta))) {
-          if(data_outer) data_outer->copy(data);
-        }
-        policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-      } else {
-        meta = nullptr;
-        policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
+        break;
       }
+    } else {
+      hit = cache->hit(addr, &ai, &s, &w);
+      if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
+    }
+
+    if(hit) {
+      if constexpr (EnMT) meta_outer->lock();
+      // sync if necessary
+      auto sync = policy->probe_need_sync(outer_cmd, meta);
+      if(sync.first) {
+        auto [phit, pwb] = OuterCohPortBase::inner->probe_req(addr, meta, data, sync.second, delay);
+        if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
+      }
+
+      // writeback if dirty
+      if((writeback = policy->probe_need_writeback(outer_cmd, meta))) {
+        if(data_outer) data_outer->copy(data);
+      }
+      policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
       cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
-      if constexpr (EnMT) meta_outer->unlock();
-      if constexpr (EnMT) { if(hit) meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
+      if constexpr (EnMT) { meta_outer->unlock(); meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
     } else {
       if constexpr (EnMT) meta_outer->lock();
       policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
@@ -254,31 +260,39 @@ protected:
     cache->hook_manage(addr, ai, s, w, true, true, writeback.first, meta, data, delay);
   }
 
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
-  replace_line(uint64_t addr, uint16_t prio, uint64_t *delay) {
-    uint32_t ai, s, w;
-    CMMetadataBase *meta;
-    CMDataBase *data;
-    cache->replace(addr, &ai, &s, &w);
-    if constexpr (EnMT) cache->set_mt_state(ai, s, prio);
-    std::tie(meta, data) = cache->access_line(ai, s, w);
-    if constexpr (EnMT) meta->lock();
-    if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
-    return std::make_tuple(meta, data, ai, s, w);
-  }
-
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta;
     CMDataBase *data;
-    bool hit = cache->hit(addr, &ai, &s, &w, prio, true);
-    if(hit) {
-      if constexpr (EnMT) {
-        std::tie(meta, data) = cache->access_line_lock(ai, s, w, addr, hit);
-        if(!hit) { meta->unlock(); cache->reset_mt_state(ai, s, prio); }
-      } else
-        std::tie(meta, data) = cache->access_line(ai, s, w);
+    bool hit;
+
+    if constexpr (EnMT) {
+      while(true) {
+        hit = cache->hit(addr, &ai, &s, &w, prio, true);
+        if(hit) {
+          std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
+          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
+            meta->unlock(); meta = nullptr; data = nullptr;
+            cache->reset_mt_state(ai, s, prio);
+            continue; // redo the hit check
+          }
+        } else { // do the replacement selection and recheck hit status
+          cache->replace(addr, &ai, &s, &w); cache->set_mt_state(ai, s, prio);
+          std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
+          if(cache->hit(addr)) { // cache line is re-inserted by other transactions
+            cache->replace_restore(ai, s, w);
+            meta->unlock(); meta = nullptr; data = nullptr;
+            cache->reset_mt_state(ai, s, prio);
+            continue; // redo the hit check
+          }
+        }
+        break;
+      }
+    } else {
+      hit = cache->hit(addr, &ai, &s, &w);
+      if(!hit) cache->replace(addr, &ai, &s, &w);
+      std::tie(meta, data) = cache->access_line(ai, s, w);
     }
 
     if(hit) {
@@ -291,7 +305,7 @@ protected:
       if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
       else if(promote_local) meta->to_modified(-1);
     } else { // miss
-      std::tie(meta, data, ai, s, w) = replace_line(addr, prio, delay);
+      if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
@@ -311,16 +325,23 @@ protected:
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, true);
-    if(hit) {
-      if constexpr (EnMT) {
-        std::tie(meta, data) = cache->access_line_lock(ai, s, w, addr, hit);
-        if(!hit) {
-          meta->unlock(); meta = nullptr; data = nullptr;
-          cache->reset_mt_state(ai, s, XactPrio::flush);
+    bool hit;
+
+    if constexpr (EnMT) {
+      while(true) {
+        hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, true);
+        if(hit) {
+          std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
+          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
+            meta->unlock(); meta = nullptr; data = nullptr;
+            cache->reset_mt_state(ai, s, XactPrio::flush); continue; // redo the hit check
+          }
         }
-      } else
-        std::tie(meta, data) = cache->access_line(ai, s, w);
+        break;
+      }
+    } else {
+      hit = cache->hit(addr, &ai, &s, &w);
+      if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
     }
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
