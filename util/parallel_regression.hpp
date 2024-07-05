@@ -118,7 +118,7 @@ public:
         for(int i = 0; i < NC; i++){
           std::unique_lock lk(*xact_mutux[i]);
           act.core = i;
-          xact_queue[core].push_back(act);
+          xact_queue[i].push_back(act);
         }
       }else{
         std::unique_lock lk(*xact_mutux[core]);
@@ -166,7 +166,7 @@ public:
         if(flush){
           if(flush == 3)  (*core_data)[core]->flush(addr, nullptr);
           else            (*core_inst)[core]->flush(addr, nullptr);
-          if(rw && act_core == core){
+          if(rw){
             (*core_data)[core]->write(addr, &data, nullptr);
             prg->write_dq(addr, &data);
           }
