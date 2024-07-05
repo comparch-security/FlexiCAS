@@ -213,7 +213,7 @@ public:
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
 
-    if(!hit) this->finish_record(addr, policy->cmd_for_finish(cmd.id));
+    this->finish_record(addr, policy->cmd_for_finish(cmd.id), !hit, meta, ai, s);
     if(cmd.id == -1) this->finish_resp(addr, policy->cmd_for_finish(cmd.id));
   }
 
@@ -390,7 +390,7 @@ public:
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
 
-    if(!hit) this->finish_record(addr, policy->cmd_for_finish(outer_cmd.id));
+    this->finish_record(addr, policy->cmd_for_finish(outer_cmd.id), !hit, meta, ai, s);
     if(outer_cmd.id == -1) this->finish_resp(addr, policy->cmd_for_finish(outer_cmd.id));
   }
 

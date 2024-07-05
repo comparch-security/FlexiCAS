@@ -89,7 +89,7 @@ public:
 
   // may not implement probe_req() and finish_resp() if the port is uncached
   virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); }
-  virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd) {};
+  virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) {}
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) {};
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) = 0;
@@ -227,9 +227,8 @@ public:
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
-    if(!hit) finish_record(addr, policy->cmd_for_finish(cmd.id));
+    finish_record(addr, policy->cmd_for_finish(cmd.id), !hit, meta, ai, s);
     if(cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(cmd.id));
-    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
@@ -375,6 +374,7 @@ class InnerCohPortT : public IPUC
 private:
   PendingXact<EnMT> pending_xact; // record the pending finish message from inner caches
 protected:
+  using InnerCohPortBase::cache;
   using InnerCohPortBase::coh;
   using InnerCohPortBase::outer;
   using InnerCohPortBase::policy;
@@ -398,14 +398,18 @@ public:
   }
 
   // record pending finish
-  virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd) {
-    pending_xact.insert(addr, outer_cmd.id);
+  virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) {
+    pending_xact.insert(addr, outer_cmd.id, forward, meta, ai, s);
   }
 
   // only forward the finish message recorded by previous acquire
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) {
-    if(pending_xact.count(addr, outer_cmd.id)) {
-      outer->finish_req(addr);
+    auto [valid, forward, meta, ai, s] = pending_xact.read(addr, outer_cmd.id);
+    if(valid) {
+      if(forward) outer->finish_req(addr);
+      // avoid probe to the same cache line happens between a grant and a finish,
+      // unlock the cache line until a finish is received (only needed for coherent inner cache)
+      if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
       pending_xact.remove(addr, outer_cmd.id);
     }
   }
@@ -453,12 +457,11 @@ public:
     auto cmd = policy->cmd_for_read();
     auto [meta, data, ai, s, w, hit] = this->access_line(addr, cmd, XactPrio::acquire, delay);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);}
     if(!hit) outer->finish_req(addr);
-    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);
-      #ifdef CHECK_MULTI
-        global_lock_checker->check();
-      #endif
-    }
+#ifdef CHECK_MULTI
+    if constexpr (EnMT) { global_lock_checker->check(); }
+#endif
     return data; // potentially dangerous and the data pointer is returned without lock
   }
 
@@ -469,12 +472,11 @@ public:
     meta->to_dirty();
     if(data) data->copy(m_data);
     cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
+    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);}
     if(!hit) outer->finish_req(addr);
-    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);
-      #ifdef CHECK_MULTI
-        global_lock_checker->check();
-      #endif
-    }
+#ifdef CHECK_MULTI
+    if constexpr (EnMT) { global_lock_checker->check(); }
+#endif
   }
 
   virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); this->flush_line(addr, policy->cmd_for_flush(), delay); }

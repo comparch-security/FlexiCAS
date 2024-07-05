@@ -2,6 +2,7 @@
 #define CM_UTIL_MULTITHREAD_HPP
 
 #include <unordered_map>
+#include <vector>
 #include <stack>
 #include <cstdint>
 #include <cassert>
@@ -59,33 +60,58 @@ public:
 };
 
 // a database for recoridng the pending transactions
-template<bool EnMT>
+
+class CMMetadataBase; // forward declaration
+
+template<bool EnMT, int MSHR = 16>
 class PendingXact {
-  std::unordered_map<uint64_t, uint64_t> db;
+  std::vector<std::tuple<uint64_t, bool, CMMetadataBase *, uint32_t, uint32_t> > xact;
+  std::vector<bool> valid;
   std::mutex mtx;
+
+  __always_inline uint64_t key(uint64_t addr, int32_t id) {
+    assert(id < 64 || 0 == "We do not support more than 64 coherent inner cache for any cache level!");
+    return addr | id;
+  }
+
+  __always_inline int find(uint64_t addr, int32_t id) {
+    auto k = key(addr, id);
+    for(int i=0; i<MSHR; i++) if(valid[i] && k == std::get<0>(xact[i])) return i;
+    return -1;
+  }
+
 public:
-  PendingXact() {}
+  PendingXact(): xact(MSHR), valid(MSHR, false) {}
   virtual ~PendingXact() {}
 
-  void insert(uint64_t addr, uint32_t id) {
+  void insert(uint64_t addr, int32_t id, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) {
     std::lock_guard lk(mtx);
-    if(!db.count(addr)) db[addr] = 0;
-    assert(0ull == (db[addr] & (1ull << id)) || 0 ==
-           "The to be inserted <addr, id> pair has already been inserted in the database!");
-    db[addr] |= (1ull << id);
+    int index = 0;
+#ifdef CHECK_MULTI
+    assert(-1 == find(addr, id) || "The transaction has already been inserted!");
+#endif
+    // get an empty place
+    for(int i=0; i<MSHR; i++) if(!valid[i]) { index = i; break; }
+    assert(index < MSHR || 0 == "Pending transaction queue for finish message overflow!");
+    valid[index] = true;
+    xact[index] = std::make_tuple(key(addr, id), forward, meta, ai, s);
   }
 
-  void remove(uint64_t addr, uint32_t id) {
+  void remove(uint64_t addr, int32_t id) {
     std::lock_guard lk(mtx);
-    if(db.count(addr)) {
-      db[addr] &= ~(1ull << id);
-      if(db[addr] == 0) db.erase(addr);
-    }
+    int index = find(addr, id);
+    if(index >= 0) valid[index] = false;
   }
 
-  bool count(uint64_t addr, uint32_t id) {
+  std::tuple<bool, bool, CMMetadataBase *, uint32_t, uint32_t>
+  read(uint64_t addr, int32_t id) {
     std::lock_guard lk(mtx);
-    return db.count(addr) && (db[addr] & (1ull << id));
+    auto index = find(addr, id);
+    if(index >= 0) {
+      auto [key, forward, meta, ai, s] = xact[index];
+      return std::make_tuple(true, forward, meta, ai, s);
+    } else
+      return std::make_tuple(false, false, nullptr, 0, 0);
   }
 };
 
@@ -95,22 +121,26 @@ class PendingXact<false> {
 
   uint64_t addr;
   int32_t  id;
+  bool     forward;
 
 public:
   PendingXact(): addr(0), id(0) {}
   virtual ~PendingXact() {}
 
-  void insert(uint64_t addr, uint32_t id) {
+  void insert(uint64_t addr, int32_t id, bool forward, CMMetadataBase *, uint32_t, uint32_t) {
     this->addr = addr;
     this->id = id;
+    this->forward = forward;
   }
 
-  void remove(uint64_t addr, uint32_t id) {
-    if(count(addr, id)) this->addr = 0;
+  void remove(uint64_t addr, int32_t id) {
+    if(this->addr == addr && this->id == id) this->addr = 0;
   }
 
-  bool count(uint64_t addr, uint32_t id) {
-    return this->addr == addr && this->id == id;
+  std::tuple<bool, bool, CMMetadataBase *, uint32_t, uint32_t>
+  read(uint64_t addr, int32_t id) {
+    if(this->addr == addr && this->id == id) return std::make_tuple(true,  forward, nullptr, 0, 0);
+    else                                     return std::make_tuple(false, false,   nullptr, 0, 0);
   }
 };
 
@@ -163,6 +193,11 @@ public:
     assert(lock_map.count(id));
     #ifdef BOOST_STACKTRACE_LINK
       auto [pm, trace] = lock_map[id].top();
+      if(p != pm) {
+        std::cout << "unlock violate the LIFO order." << std::endl;
+        std::cout << "metadata: " << (uint64_t)(pm) << " is at the top" << std::endl;
+        std::cout << trace << std::endl;
+      }
       assert(p == pm);
     #else
       assert(p == lock_map[id].top());
@@ -178,6 +213,8 @@ public:
       auto [p, trace] = lock_map[id].top();
       std::cout << "metadata: " << (uint64_t)(p) << " is kept locked by thread " << id << std::endl;
       std::cout << trace << std::endl;
+      std::cout << "\n the current trace:" << std::endl;
+      std::cout << boost::stacktrace::stacktrace() << std::endl;
     }
     #endif
     assert(!lock_map.count(id) || lock_map[id].size() == 0);
