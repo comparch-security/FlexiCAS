@@ -78,8 +78,8 @@ public:
       return std::make_pair(-1, policy);
     } else {
       coh.push_back(c);
-      assert(coh.size() <= 64 || 0 ==
-             "Only 64 coherent inner caches are supported for now as the directory in class MetadataDirectoryBase is implemented as a 64-bit  bitmap.");
+      assert(coh.size() <= 63 || 0 ==
+             "Only 63 coherent inner caches are supported for now as the directory in class MetadataDirectoryBase is implemented as a 64-bit bitmap.");
       return std::make_pair(coh.size()-1, policy);
     }
   }
