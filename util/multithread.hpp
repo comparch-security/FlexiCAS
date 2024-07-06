@@ -71,7 +71,7 @@ class PendingXact {
 
   __always_inline uint64_t key(uint64_t addr, int32_t id) {
     assert(id < 64 || 0 == "We do not support more than 64 coherent inner cache for any cache level!");
-    return addr | id;
+    return addr | (id & 0x3f);
   }
 
   __always_inline int find(uint64_t addr, int32_t id) {
