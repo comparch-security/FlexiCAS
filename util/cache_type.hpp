@@ -8,8 +8,6 @@
 #include "cache/mesi.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
-#include "cache/coherence_multi.hpp"
-#include "cache/policy_multi.hpp"
 
 
 template<typename CT, typename CPT>
@@ -183,17 +181,17 @@ inline auto cache_multi_thread_type_compile(int size, const std::string& name_pr
   typedef RPT<IW,WN,true> replace_type;
 
   constexpr bool isDir  = std::is_same_v<MBT, MetadataDirectoryBase>;
-  constexpr bool isMESI = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MESIMultiThreadPolicy<MetadataDirectoryBase, false, true> >;
-  constexpr bool isMSI  = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MSIMultiThreadPolicy<MetadataDirectoryBase, false, true> >;
+  constexpr bool isMESI = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MESIPolicy<MetadataDirectoryBase, false, true> >;
+  constexpr bool isMSI  = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MSIPolicy<MetadataDirectoryBase, false, true> >;
   constexpr bool isMI   = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MIPolicy<MetadataDirectoryBase, false, true> >;
 
   // MESI
   typedef MetadataMESIDirectory<48, IW, IW+6> mesi_metadata_type;
-  typedef MESIMultiThreadPolicy<mesi_metadata_type, false, isLLC> mesi_policy_type;
+  typedef MESIPolicy<mesi_metadata_type, false, isLLC> mesi_policy_type;
 
   // MSI
   typedef typename std::conditional<isDir, MetadataMSIDirectory<48, IW, IW+6>, MetadataMSIBroadcast<48, IW, IW+6> >::type msi_metadata_type;
-  typedef MSIMultiThreadPolicy<msi_metadata_type, isL1, isLLC> msi_policy_type;
+  typedef MSIPolicy<msi_metadata_type, isL1, isLLC> msi_policy_type;
 
   // MI
   typedef MetadataMIBroadcast<48, IW, IW+6> mi_metadata_type;
@@ -206,14 +204,11 @@ inline auto cache_multi_thread_type_compile(int size, const std::string& name_pr
           typename std::conditional<isMSI,  msi_policy_type,
                                             mi_policy_type>::type >::type policy_type;
 
-  typedef CacheNormMultiThread<IW, WN, metadata_type, DT, index_type, replace_type, DLY, EnMon> cache_base_type;
+  typedef CacheNorm<IW, WN, metadata_type, DT, index_type, replace_type, DLY, EnMon, true, true, 4> cache_base_type;
 
-  typedef OuterCohPortMultiThreadUncached<cache_base_type> uncached_output_type;
-
-  typedef typename std::conditional<isL1, CoreMultiThreadInterface<uncached_output_type, cache_base_type, policy_type>, 
-                  InnerCohMultiThreadPort<uncached_output_type, cache_base_type, policy_type>>::type input_type;
+  typedef typename std::conditional<isL1, CoreInterface<true>, InnerCohPort<true> >::type input_type;
   
-  typedef typename std::conditional<isLLC || uncache, uncached_output_type, OuterCohMultiThreadPort<input_type, cache_base_type>>::type output_type;
+  typedef typename std::conditional<isLLC || uncache, OuterCohPortUncached<true>, OuterCohPortT<OuterCohPortUncached<true>, true> >::type output_type;
 
   typedef CoherentCacheNorm<cache_base_type, output_type, input_type> cache_type;
 

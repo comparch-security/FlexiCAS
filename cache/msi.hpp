@@ -29,6 +29,7 @@ template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, MetadataBroad
   typedef MIPolicy<MT, isL1, isLLC> PolicT;
 protected:
   using CohPolicyBase::outer;
+  using CohPolicyBase::is_release;
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
   using CohPolicyBase::is_write;
@@ -51,6 +52,7 @@ public:
   }
 
   virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+    if(is_release(cmd))     return std::make_pair(false, cmd_for_null()); // assuming inclusive cache, release is always hit and exclusive/modified
     if(is_fetch_write(cmd)) return std::make_pair(true, cmd_for_probe_release(cmd.id));
     if(meta->is_shared())   return std::make_pair(false, cmd_for_null());
     return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
