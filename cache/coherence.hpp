@@ -55,7 +55,7 @@ public:
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); }
   virtual void finish_req(uint64_t addr) {}
 
-  bool is_uncached() const { return coh_id == -1; }
+  __always_inline bool is_uncached() const { return coh_id == -1; }
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) = 0;
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -72,6 +72,7 @@ protected:
   policy_ptr policy; // the coherence policy
 public:
   InnerCohPortBase(policy_ptr policy) : policy(policy) {}
+  virtual ~InnerCohPortBase() {}
 
   virtual std::pair<uint32_t, policy_ptr> connect(CohClientBase *c, bool uncached = false) {
     if(uncached) {
@@ -103,9 +104,9 @@ class OuterCohPortUncached : public OuterCohPortBase
 {
 public:
   OuterCohPortUncached(policy_ptr policy) : OuterCohPortBase(policy) {}
-  virtual ~OuterCohPortUncached() {}
+  virtual ~OuterCohPortUncached() override {}
 
-  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) override {
     outer_cmd.id = coh_id;
 
     // In the multithread env, an outer probe may invalidate the cache line during a fetch/promotion.
@@ -131,14 +132,14 @@ public:
     policy->meta_after_fetch(outer_cmd, meta, addr);
   }
 
-  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) override {
     outer_cmd.id = coh_id;
     CMMetadataBase *outer_meta = meta ? meta->get_outer_meta() : nullptr;
     coh->writeback_resp(addr, data, outer_meta, outer_cmd, delay);
     policy->meta_after_writeback(outer_cmd, meta);
   }
 
-  virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs){
+  virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) override {
     coh->query_loc_resp(addr, locs);
   }
 };
@@ -153,9 +154,9 @@ protected:
   using OuterCohPortBase::policy;
 public:
   OuterCohPortT(policy_ptr policy) : OPUC(policy) {}
-  virtual ~OuterCohPortT() {}
+  virtual ~OuterCohPortT() override {}
 
-  virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
     bool writeback = false;
     bool hit;
@@ -204,7 +205,7 @@ public:
     return std::make_pair(hit, writeback);
   }
 
-  virtual void finish_req(uint64_t addr){
+  virtual void finish_req(uint64_t addr) override {
     assert(!this->is_uncached());
     OuterCohPortBase::coh->finish_resp(addr, policy->cmd_for_finish(coh_id));
   }
@@ -219,9 +220,9 @@ class InnerCohPortUncached : public InnerCohPortBase
 {
 public:
   InnerCohPortUncached(policy_ptr policy) : InnerCohPortBase(policy) {}
-  virtual ~InnerCohPortUncached() {}
+  virtual ~InnerCohPortUncached() override {}
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
 
     if (data_inner && data) data_inner->copy(data);
@@ -231,14 +232,14 @@ public:
     if(cmd.id == -1) finish_resp(addr, policy->cmd_for_finish(cmd.id));
   }
 
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     if(policy->is_flush(cmd))
       flush_line(addr, cmd, delay);
     else
       write_line(addr, data_inner, meta_inner, cmd, delay);
   }
 
-  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
+  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) override {
     outer->query_loc_req(addr, locs);
     locs->push_front(cache->query_loc(addr));
   }
@@ -380,9 +381,9 @@ protected:
   using InnerCohPortBase::policy;
 public:
   InnerCohPortT(policy_ptr policy) : IPUC(policy) {}
-  virtual ~InnerCohPortT() {}
+  virtual ~InnerCohPortT() override {}
 
-  virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {
+  virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) override {
     bool hit = false, writeback = false;
     if constexpr (EnMT) meta->unlock();
     for(uint32_t i=0; i<coh.size(); i++) {
@@ -398,12 +399,12 @@ public:
   }
 
   // record pending finish
-  virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) {
+  virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) override {
     pending_xact.insert(addr, outer_cmd.id, forward, meta, ai, s);
   }
 
   // only forward the finish message recorded by previous acquire
-  virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) {
+  virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) override {
     auto [valid, forward, meta, ai, s] = pending_xact.read(addr, outer_cmd.id);
     if(valid) {
       if(forward) outer->finish_req(addr);
@@ -437,7 +438,7 @@ public:
 
   virtual void query_loc(uint64_t addr, std::list<LocInfo> *locs) = 0;
 
-  uint64_t normalize(uint64_t addr) const { return addr & ~0x3full; }
+  __always_inline uint64_t normalize(uint64_t addr) const { return addr & ~0x3full; }
 };
 
 // interface with the processing core is a special InnerCohPort
@@ -450,9 +451,9 @@ class CoreInterface : public InnerCohPortUncached<EnMT>, public CoreInterfaceBas
 
 public:
   CoreInterface(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
-  virtual ~CoreInterface() {}
+  virtual ~CoreInterface() override {}
 
-  virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) {
+  virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) override {
     addr = normalize(addr);
     auto cmd = policy->cmd_for_read();
     auto [meta, data, ai, s, w, hit] = this->access_line(addr, cmd, XactPrio::acquire, delay);
@@ -465,7 +466,7 @@ public:
     return data; // potentially dangerous and the data pointer is returned without lock
   }
 
-  virtual void write(uint64_t addr, const CMDataBase *m_data, uint64_t *delay) {
+  virtual void write(uint64_t addr, const CMDataBase *m_data, uint64_t *delay) override {
     addr = normalize(addr);
     auto cmd = policy->cmd_for_write();
     auto [meta, data, ai, s, w, hit] = this->access_line(addr, cmd, XactPrio::acquire, delay);
@@ -479,15 +480,11 @@ public:
 #endif
   }
 
-  virtual void flush(uint64_t addr, uint64_t *delay)     { addr = normalize(addr); this->flush_line(addr, policy->cmd_for_flush(), delay); }
+  virtual void flush(uint64_t addr, uint64_t *delay) override     { addr = normalize(addr); this->flush_line(addr, policy->cmd_for_flush(), delay); }
+  virtual void writeback(uint64_t addr, uint64_t *delay) override { addr = normalize(addr); this->flush_line(addr, policy->cmd_for_writeback(), delay); }
+  virtual void writeback_invalidate(uint64_t *delay) override     { assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!"); }
 
-  virtual void writeback(uint64_t addr, uint64_t *delay) { addr = normalize(addr); this->flush_line(addr, policy->cmd_for_writeback(), delay); }
-
-  virtual void writeback_invalidate(uint64_t *delay) {
-    assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!");
-  }
-
-  virtual void flush_cache(uint64_t *delay) {
+  virtual void flush_cache(uint64_t *delay) override {
     auto [npar, nset, nway] = cache->size();
     for(int ipar=0; ipar<npar; ipar++)
       for(int iset=0; iset < nset; iset++)
@@ -504,7 +501,7 @@ public:
         }
   }
 
-  virtual void query_loc(uint64_t addr, std::list<LocInfo> *locs){
+  virtual void query_loc(uint64_t addr, std::list<LocInfo> *locs) override {
     addr = normalize(addr);
     outer->query_loc_req(addr, locs);
     locs->push_front(cache->query_loc(addr));
@@ -512,9 +509,9 @@ public:
 
 private:
   // hide and prohibit calling these functions
-  virtual uint32_t connect(CohClientBase *c) { return 0;}
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {}
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) {}
+  virtual std::pair<uint32_t, policy_ptr> connect(CohClientBase *, bool) override { return std::make_pair(-1, policy); }
+  virtual void acquire_resp(uint64_t, CMDataBase *, CMMetadataBase *, coh_cmd_t, uint64_t *) override {}
+  virtual void writeback_resp(uint64_t, CMDataBase *, CMMetadataBase *, coh_cmd_t, uint64_t *) override {}
 };
 
 
@@ -561,7 +558,7 @@ class CoherentCacheNorm : public CoherentCacheBase
 public:
   CoherentCacheNorm(policy_ptr policy, std::string name = "")
     : CoherentCacheBase(new CacheT(name), new OuterT(policy), new InnerT(policy), policy, name) {}
-  virtual ~CoherentCacheNorm() {}
+  virtual ~CoherentCacheNorm() override {}
 };
 
 /////////////////////////////////
@@ -578,18 +575,18 @@ protected:
   HT hasher;
 public:
   SliceDispatcher(const std::string &n, int slice) : CohMasterBase(nullptr), name(n), hasher(slice) {}
-  virtual ~SliceDispatcher() {}
+  virtual ~SliceDispatcher() override {}
   void connect(CohMasterBase *c) { cohm.push_back(c); }
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     cohm[hasher(addr)]->acquire_resp(addr, data_inner, meta_inner, cmd, delay);
   }
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay){
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     cohm[hasher(addr)]->writeback_resp(addr, data, meta_inner, cmd, delay);
   }
-  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs){
+  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) override {
     cohm[hasher(addr)]->query_loc_resp(addr, locs);
   }
-  virtual void finish_resp(uint64_t addr, coh_cmd_t cmd){
+  virtual void finish_resp(uint64_t addr, coh_cmd_t cmd) override {
     cohm[hasher(addr)]->finish_resp(addr, cmd);
   }
 };
