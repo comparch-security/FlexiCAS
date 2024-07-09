@@ -175,17 +175,17 @@ public:
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
-      d_replacer.access(ds, dw, false);
+      d_replacer.access(ds, dw, true);
     }
     CacheT::hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
-      d_replacer.access(ds, dw, is_release);
+      d_replacer.access(ds, dw, demand_acc);
     }
-    CacheT::hook_write(addr, ai, s, w, hit, is_release, meta, data, delay);
+    CacheT::hook_write(addr, ai, s, w, hit, demand_acc, meta, data, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
@@ -255,7 +255,7 @@ protected:
       auto sync = policy->access_need_sync(cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-        if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
+        if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
       }
       auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
       if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
