@@ -12,14 +12,32 @@ template<typename DT, typename DLY, bool EnMon = false, bool EnMT = false>
   class SimpleMemoryModel : public InnerCohPortUncached<EnMT>, public CacheMonitorSupport
 {
   using InnerCohPortBase::policy;
+
+#ifdef CHECK_MULTI
+  std::unordered_set<uint64_t> active_addr_set;
+  std::mutex                   active_addr_mutex;
+
+  void active_addr_add(uint64_t addr) {
+    std::lock_guard lock(active_addr_mutex);
+    assert(!active_addr_set.count(addr) || 0 ==
+           "Two parallel memory accesses operating on the same memory location!");
+    active_addr_set.insert(addr);
+  }
+
+  void active_addr_remove(uint64_t addr) {
+    std::lock_guard lock(active_addr_mutex);
+    assert(active_addr_set.count(addr) || 0 ==
+           "memory access corrupted!");
+    active_addr_set.erase(addr);
+  }
+#endif
+
 protected:
   const uint32_t id;                    // a unique id to identify this memory
   const std::string name;
   std::unordered_map<uint64_t, char *> pages;
   DLY *timer;      // delay estimator
   std::shared_mutex         page_mtx;
-  std::vector<std::mutex *> write_mutex;
-  static const unsigned int write_max = 64; // allowing 64 parallel write
 
   __always_inline char * allocate(uint64_t ppn) {
     char *page;
@@ -55,20 +73,16 @@ public:
   {
     policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
     monitors = new CacheMonitorImp<DLY, EnMon>(id);
-    if constexpr (EnMT) {
-      write_mutex.resize(write_max);
-      for(auto &m: write_mutex) m = new std::mutex();
-    }
   }
 
   virtual ~SimpleMemoryModel() override {
     delete monitors;
-    if constexpr (EnMT) {
-      for(auto m: write_mutex) delete m;
-    }
   }
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
+#ifdef CHECK_MULTI
+    if constexpr (EnMT) active_addr_add(addr);
+#endif
     if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
@@ -79,23 +93,27 @@ public:
     }
     if(meta_inner) meta_inner->to_modified(-1);
     hook_read(addr, 0, 0, 0, true, meta_inner, data_inner, delay);
+#ifdef CHECK_MULTI
+    if constexpr (EnMT) active_addr_remove(addr);
+#endif
   }
 
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
+#ifdef CHECK_MULTI
+    if constexpr (EnMT) active_addr_add(addr);
+#endif
     if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
       char * page;
       bool hit = get_page(ppn, &page); assert(hit);
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(page + offset);
-      if constexpr (EnMT) {
-        auto lock_index = (addr >> 6) % write_max;
-        std::lock_guard<std::mutex> lock(*write_mutex[lock_index]);
-        for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
-      } else
-        for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
+      for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
     }
     hook_write(addr, 0, 0, 0, true, true, meta_inner, data_inner, delay);
+#ifdef CHECK_MULTI
+    if constexpr (EnMT) active_addr_remove(addr);
+#endif
   }
 
   // monitor related
