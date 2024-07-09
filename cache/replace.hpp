@@ -81,7 +81,7 @@ public:
     if constexpr (EnMT) unlock(s);
   }
 
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) = 0;
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) = 0;
 
   virtual void invalid(uint32_t s, uint32_t w) {
     if constexpr (EnMT) lock(s);
@@ -124,9 +124,9 @@ public:
   }
   virtual ~ReplaceFIFO() override {}
 
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) override {
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] && !release) {
+    if(alloc_map[s][w] && demand_acc) {
       alloc_map[s][w] = false; alloc_num[s]--;
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
@@ -157,14 +157,14 @@ public:
   ReplaceLRU() : ReplaceFIFO<IW, NW, EF, DUO, EnMT>() {}
   virtual ~ReplaceLRU() override {}
 
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) override {
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] || !DUO || !release) {
+    if(alloc_map[s][w] || !DUO || demand_acc) {
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
-    if(alloc_map[s][w] && !release) { alloc_map[s][w] = false; alloc_num[s]--; }
+    if(alloc_map[s][w] && demand_acc) { alloc_map[s][w] = false; alloc_num[s]--; }
     if constexpr (EnMT) RPT::unlock(s);
   }
 };
@@ -201,11 +201,11 @@ public:
   }
   virtual ~ReplaceSRRIP() override {}
 
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) override {
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] || !DUO || !release)
+    if(alloc_map[s][w] || !DUO || demand_acc)
       used_map[s][w] = (alloc_map[s][w]) ? 2 : 0;
-    if(alloc_map[s][w] && !release) { alloc_map[s][w] = false; alloc_num[s]--; }
+    if(alloc_map[s][w] && demand_acc) { alloc_map[s][w] = false; alloc_num[s]--; }
     if constexpr (EnMT) RPT::unlock(s);
   }
 
@@ -248,9 +248,9 @@ public:
   ReplaceRandom() : RPT(1ul << IW, NW), loc_random(cm_alloc_rand32()) {}
   virtual ~ReplaceRandom() override { delete loc_random; }
 
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) override {
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] && !release) { alloc_map[s][w] = false; alloc_num[s]--; }
+    if(alloc_map[s][w] && demand_acc) { alloc_map[s][w] = false; alloc_num[s]--; }
     if constexpr (EnMT) RPT::unlock(s);
   }
 };
