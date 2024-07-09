@@ -74,12 +74,12 @@ public:
     if constexpr (EnMT) cache_set_state.resize(nset);
   }
 
-  virtual ~CacheArrayNorm() {
+  virtual ~CacheArrayNorm() override {
     for(auto m:meta) delete m;
     if constexpr (!C_VOID<DT>) for(auto d:data) delete d;
   }
 
-  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
+  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const override {
     for(unsigned int i=0; i<way_num; i++)
       if(meta[s*way_num + i]->match(addr)) {
         *w = i;
@@ -88,13 +88,13 @@ public:
     return false;
   }
 
-  virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) { return meta[s*way_num + w]; }
+  virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) override { return meta[s*way_num + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
     if constexpr (C_VOID<DT>) return nullptr;
     else                      return data[s*NW + w];
   }
 
-  virtual void set_mt_state(uint32_t s, uint16_t prio) {
+  virtual void set_mt_state(uint32_t s, uint16_t prio) override {
     if constexpr (EnMT) {
       while(true) {
         auto state = cache_set_state[s].read();
@@ -104,7 +104,7 @@ public:
     }
   }
 
-  virtual void check_mt_state(uint32_t s, uint16_t prio) {
+  virtual void check_mt_state(uint32_t s, uint16_t prio) override {
     if constexpr (EnMT) {
       auto prio_upper = (prio << 1) - 1;
       while(true) {
@@ -116,7 +116,7 @@ public:
     }
   }
 
-  virtual void reset_mt_state(uint32_t s, uint16_t prio) {
+  virtual void reset_mt_state(uint32_t s, uint16_t prio) override {
     if constexpr (EnMT) {
       while(true) {
         auto state = cache_set_state[s].read();
@@ -157,7 +157,7 @@ public:
                    bool check_and_set = false // whether to check and set the priority if hit
                    ) = 0;
 
-  bool hit(uint64_t addr) {
+  __always_inline bool hit(uint64_t addr) {
     uint32_t ai, s, w;
     return hit(addr, &ai, &s, &w, 0, false);
   }
@@ -165,13 +165,8 @@ public:
   virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
   virtual void replace_restore(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
-  virtual CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) {
-    return arrays[ai]->get_meta(s, w);
-  }
-
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
-    return arrays[ai]->get_data(s, w);
-  }
+  __always_inline CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) { return arrays[ai]->get_meta(s, w); }
+  __always_inline CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) { return arrays[ai]->get_data(s, w); }
 
   // methods for supporting multithread execution
   virtual CMDataBase *data_copy_buffer() = 0;               // allocate a copy buffer, needed by exclusive cache with extended meta
@@ -244,16 +239,16 @@ public:
     }
   }
 
-  virtual ~CacheSkewed() {
+  virtual ~CacheSkewed() override {
     delete CacheMonitorSupport::monitors;
     if (!data_buffer_pool_set.empty()) for(auto b: data_buffer_pool_set) delete b;
     for(auto b: meta_buffer_pool_set) delete b;
     if constexpr (P>1) delete loc_random;
   }
 
-  virtual std::tuple<int, int, int> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
+  virtual std::tuple<int, int, int> size() const override { return std::make_tuple(P, 1ul<<IW, NW); }
 
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool check_and_set) {
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool check_and_set) override {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
       if(EnMT && check_and_set) this->set_mt_state(*ai, *s, prio);
@@ -263,7 +258,7 @@ public:
     return false;
   }
 
-  virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
+  virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) override {
     auto meta = static_cast<CMMetadataBase *>(arrays[ai]->get_meta(s, w));
     if constexpr (!C_VOID<DT>)
       return std::make_pair(meta, w < NW ? arrays[ai]->get_data(s, w) : nullptr);
@@ -271,33 +266,33 @@ public:
       return std::make_pair(meta, nullptr);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) override {
     if constexpr (P==1) *ai = 0;
     else                *ai = ((*loc_random)() % P);
     *s = indexer.index(addr, *ai);
     replacer[*ai].replace(*s, w);
   }
 
-  virtual void replace_restore(uint32_t ai, uint32_t s, uint32_t w) {
+  virtual void replace_restore(uint32_t ai, uint32_t s, uint32_t w) override {
     replacer[ai].restore(s, w);
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) replacer[ai].access(s, w, false);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) replacer[ai].access(s, w, is_release);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P && hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
   }
 
-  virtual CMDataBase *data_copy_buffer() {
+  virtual CMDataBase *data_copy_buffer() override {
     if (data_buffer_pool_set.empty()) return nullptr;
     if constexpr (EnMT) {
       std::unique_lock lk(data_buffer_mutex);
@@ -309,7 +304,7 @@ public:
     }
   }
 
-  virtual void data_return_buffer(CMDataBase *buf) {
+  virtual void data_return_buffer(CMDataBase *buf) override {
     if (!buf) return;
     if(data_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
       if constexpr (EnMT) {
@@ -326,7 +321,7 @@ public:
     }
   }
 
-  virtual CMMetadataBase *meta_copy_buffer() {
+  virtual CMMetadataBase *meta_copy_buffer() override {
     if (meta_buffer_pool_set.empty()) return nullptr;
     if constexpr (EnMT) {
       std::unique_lock lk(meta_buffer_mutex);
@@ -338,7 +333,7 @@ public:
     }
   }
 
-  virtual void meta_return_buffer(CMMetadataBase *buf) {
+  virtual void meta_return_buffer(CMMetadataBase *buf) override {
     if(meta_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
       if constexpr (EnMT) {
         {
@@ -354,14 +349,14 @@ public:
     }
   }
 
-  virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
+  virtual bool query_coloc(uint64_t addrA, uint64_t addrB) override {
     for(int i=0; i<P; i++) 
       if(indexer.index(addrA, i) == indexer.index(addrB, i)) 
         return true;
     return false;
   }
 
-  virtual void query_fill_loc(LocInfo *loc, uint64_t addr) {
+  virtual void query_fill_loc(LocInfo *loc, uint64_t addr) override {
     for(int i=0; i<P; i++){
       loc->insert(LocIdx(i, indexer.index(addr, i)), LocRange(0, NW-1));
     }
