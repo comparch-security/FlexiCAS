@@ -61,14 +61,14 @@ public:
     }
   }
 
-  virtual ~SimpleMemoryModel() {
+  virtual ~SimpleMemoryModel() override {
     delete monitors;
     if constexpr (EnMT) {
       for(auto m: write_mutex) delete m;
     }
   }
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
@@ -81,7 +81,7 @@ public:
     hook_read(addr, 0, 0, 0, true, meta_inner, data_inner, delay);
   }
 
-  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     if constexpr (!C_VOID<DT>) {
       auto ppn = addr >> 12;
       auto offset = addr & 0x0fffull;
@@ -103,20 +103,18 @@ public:
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors->detach_monitor(); }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
 private:
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {}
-  virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) {}
-  virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, uint32_t cmd, uint64_t *delay) {
-    return std::make_pair(false,false);
-  } // hidden
+  virtual void hook_manage(uint64_t, uint32_t, uint32_t, uint32_t, bool, bool, bool, const CMMetadataBase *, const CMDataBase *, uint64_t *) override {}
+  virtual void query_loc_resp(uint64_t, std::list<LocInfo> *) override {}
+  virtual std::pair<bool,bool> probe_req(uint64_t, CMMetadataBase *, CMDataBase *, coh_cmd_t, uint64_t *) override { return std::make_pair(false,false); }
 };
 
 #endif

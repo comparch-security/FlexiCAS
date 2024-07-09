@@ -24,7 +24,7 @@ extern RandomGen<uint64_t> *cm_alloc_rand64();
 
 // see https://cryptopp.com/wiki/Tiger
 
-class CMHasher {
+class CMHasher final {
   uint8_t msg[16];
   uint8_t result[8];
   CryptoPP::Tiger hasher;
@@ -50,7 +50,7 @@ public:
 };
 
 // record and generate a unique ID
-class UniqueID
+class UniqueID final
 {
 protected:
   static std::unordered_map<uint32_t, std::string> ids;
@@ -70,7 +70,7 @@ public:
 };
 
 // the XOR hash used by Intel comples address scheme
-class AddrXORHash
+class AddrXORHash final
 {
   std::vector<uint64_t> keys;
 
@@ -88,7 +88,6 @@ class AddrXORHash
 public:
   AddrXORHash() {}
   AddrXORHash(const std::vector<uint64_t>& keys) : keys(keys) {}
-  // virtual ~AddrXORHash() {}
 
   void key() {
     for(auto &k : keys) k = cm_get_random_uint64();

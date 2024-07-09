@@ -107,7 +107,7 @@ protected:
   using RPT::alloc_num;
   using RPT::used_map;
 
-  virtual uint32_t select(uint32_t s) {
+  virtual uint32_t select(uint32_t s) override {
     for(uint32_t i=0; i<NW; i++)
       if(used_map[s][i] <= alloc_num[s] && !alloc_map[s][i])
         return i;
@@ -122,9 +122,9 @@ public:
       for(uint32_t i=0; i<NW; i++) s[i] = i;
     }
   }
-  virtual ~ReplaceFIFO() {}
+  virtual ~ReplaceFIFO() override {}
 
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
+  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
     if(alloc_map[s][w] && !release) {
       alloc_map[s][w] = false; alloc_num[s]--;
@@ -155,9 +155,9 @@ protected:
 
 public:
   ReplaceLRU() : ReplaceFIFO<IW, NW, EF, DUO, EnMT>() {}
-  virtual ~ReplaceLRU() {}
+  virtual ~ReplaceLRU() override {}
 
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) {
+  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
     if(alloc_map[s][w] || !DUO || !release) {
       auto prio = used_map[s][w];
@@ -186,7 +186,7 @@ protected:
   using RPT::alloc_map;
   using RPT::alloc_num;
 
-  virtual uint32_t select(uint32_t s) {
+  virtual uint32_t select(uint32_t s) override {
     uint32_t max_prio = used_map[s][0];
     uint32_t max_i    = 0;
     for(uint32_t i=1; i<NW; i++) if(used_map[s][i] > max_prio && !alloc_map[s][i]) {max_prio = used_map[s][i]; max_i = i;}
@@ -199,9 +199,9 @@ public:
   ReplaceSRRIP() : RPT(1ul << IW, NW) {
     for (auto &s: used_map) s.resize(NW, 3);
   }
-  virtual ~ReplaceSRRIP() {}
+  virtual ~ReplaceSRRIP() override {}
 
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0){
+  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
     if(alloc_map[s][w] || !DUO || !release)
       used_map[s][w] = (alloc_map[s][w]) ? 2 : 0;
@@ -209,7 +209,7 @@ public:
     if constexpr (EnMT) RPT::unlock(s);
   }
 
-  virtual void invalid(uint32_t s, uint32_t w){
+  virtual void invalid(uint32_t s, uint32_t w) override {
     if constexpr (EnMT) RPT::lock(s);
     used_map[s][w] = 3;
     RPT::invalid(s, w);
@@ -235,7 +235,7 @@ protected:
 
   RandomGen<uint32_t> * loc_random; // a local randomizer for better thread parallelism
 
-  virtual uint32_t select(uint32_t s) {
+  virtual uint32_t select(uint32_t s) override {
     assert(alloc_num[s] < NW || 0 ==
            "Too many ways have been allocated without actual accesses!");
     while(true) {
@@ -246,12 +246,9 @@ protected:
 
 public:
   ReplaceRandom() : RPT(1ul << IW, NW), loc_random(cm_alloc_rand32()) {}
+  virtual ~ReplaceRandom() override { delete loc_random; }
 
-  virtual ~ReplaceRandom() {
-    delete loc_random;
-  }
-
-  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0){
+  virtual void access(uint32_t s, uint32_t w, bool release, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
     if(alloc_map[s][w] && !release) { alloc_map[s][w] = false; alloc_num[s]--; }
     if constexpr (EnMT) RPT::unlock(s);

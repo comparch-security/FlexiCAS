@@ -10,16 +10,16 @@ CXXSTD = --std=c++17 -fconcepts
 #CXXSTD = --std=c++20
 
 ifeq ($(MODE), release)
-    CXXFLAGS = $(CXXSTD) -O3 -DNDEBUG -I. -fPIC
+	CXXFLAGS = $(CXXSTD) -O3 -DNDEBUG -I. -fPIC
 	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug)
-    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC -DCHECK_MULTI
+	CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC -DCHECK_MULTI
 	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug-multi)
-    CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC -DCHECK_MULTI -DBOOST_STACKTRACE_LINK -DBOOST_STACKTRACE_USE_BACKTRACE
+	CXXFLAGS = $(CXXSTD) -O0 -g -I. -fPIC -DCHECK_MULTI -DBOOST_STACKTRACE_LINK -DBOOST_STACKTRACE_USE_BACKTRACE
 	REGRESS_LD_FLAGS = -lboost_stacktrace_backtrace -ldl -lbacktrace
 else
-    CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
+	CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
 	REGRESS_LD_FLAGS =
 endif
 
@@ -27,7 +27,6 @@ UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
-CACHE_OBJS    = cache/metadata.o
 UTIL_OBJS     = util/random.o util/query.o
 
 all: libflexicas.a
@@ -36,9 +35,6 @@ all: libflexicas.a
 
 $(CRYPTO_LIB):
 	CXXFLAGS="-g0" $(MAKE) -C cryptopp -j$(NCORE)
-
-$(CACHE_OBJS) : %o:%cpp $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(UTIL_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -54,8 +50,8 @@ REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(REGRESSION_TESTS))
 REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))
 REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(REGRESSION_TESTS))
 
-$(REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
+$(REGRESSION_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) -o $@
 
 $(REGRESSION_TESTS_LOG): %.log:%
 	$< > $@
@@ -68,8 +64,8 @@ PARALLEL_REGRESSION_TESTS = multi-l2-msi
 PARALLEL_REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(PARALLEL_REGRESSION_TESTS))
 PARALLEL_REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(PARALLEL_REGRESSION_TESTS))
 
-$(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@
+$(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@
 
 $(PARALLEL_REGRESSION_TESTS_RST): %.out: %
 	timeout 1m $< 2>$@ 1>temp.log
@@ -80,14 +76,14 @@ clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 	-rm $(PARALLEL_REGRESSION_TESTS_EXE) $(PARALLEL_REGRESSION_TESTS_RST)
 
-libflexicas.a: $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
-	ar rvs $@ $(CACHE_OBJS) $(UTIL_OBJS) $(CRYPTO_LIB)
+libflexicas.a: $(UTIL_OBJS) $(CRYPTO_LIB)
+	ar rvs $@ $(UTIL_OBJS) $(CRYPTO_LIB)
 
 .PHONY: regression
 
 clean:
 	-$(MAKE) clean-regression
 	-$(MAKE) clean-parallel-regression temp.log
-	-rm $(UTIL_OBJS) $(CACHE_OBJS)
+	-rm $(UTIL_OBJS)
 
 .PHONY: clean

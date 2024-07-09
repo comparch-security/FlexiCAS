@@ -8,7 +8,7 @@
 #include "util/multithread.hpp"
 
 // can be implemented using std::osyncstream after C++20
-class PrintPool {
+class PrintPool final {
   const int pool_size;
   AtomicVar<int> pw, pr;
   std::vector<std::string>      pool;
@@ -34,7 +34,7 @@ public:
 
   void stop() { finish.write(true); }
 
-  void sync(){ // wait until all existing messages are printed
+  void sync() { // wait until all existing messages are printed
   auto index = (pw.read() + pool_size - 1) % pool_size;
   while(index != pr.read()) pr.wait();
   while(valid[index].read() != false) valid[index].wait();

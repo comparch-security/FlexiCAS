@@ -10,10 +10,10 @@ class MetadataMESIBase : public BT
 {
 public:
   MetadataMESIBase(): BT() {}
-  virtual ~MetadataMESIBase() {}
+  virtual ~MetadataMESIBase() override {}
 
 private:
-  virtual void to_owned(int32_t coh_id) {}
+  virtual void to_owned(int32_t coh_id) override {}
 };
 
 template <int AW, int IW, int TOfst>
@@ -27,11 +27,11 @@ protected:
   using CohPolicyBase::is_fetch_write;
 
 public:
-  virtual ~MESIPolicy() {
+  virtual ~MESIPolicy() override {
     MT().to_exclusive(-1); // type check to make sure MT has a public to_exclusive() implementation
   }
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const {
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const override {
     int32_t id = cmd.id;
     if(is_fetch_read(cmd)) {
       meta->to_shared(id);

@@ -20,7 +20,7 @@
 #endif
 
 template<typename T>
-class AtomicVar {
+class AtomicVar final {
   std::unique_ptr<std::atomic<T> > var;
   std::mutex mtx;
   std::condition_variable cv;
@@ -64,7 +64,7 @@ public:
 class CMMetadataBase; // forward declaration
 
 template<bool EnMT, int MSHR = 16>
-class PendingXact {
+class PendingXact final {
   std::vector<std::tuple<uint64_t, bool, CMMetadataBase *, uint32_t, uint32_t> > xact;
   std::vector<bool> valid;
   std::mutex mtx;
@@ -82,7 +82,6 @@ class PendingXact {
 
 public:
   PendingXact(): xact(MSHR), valid(MSHR, false) {}
-  virtual ~PendingXact() {}
 
   void insert(uint64_t addr, int32_t id, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) {
     std::lock_guard lk(mtx);
@@ -117,7 +116,7 @@ public:
 
 // specialization for non-multithread env
 template<>
-class PendingXact<false> {
+class PendingXact<false> final {
 
   uint64_t addr;
   int32_t  id;
@@ -125,7 +124,6 @@ class PendingXact<false> {
 
 public:
   PendingXact(): addr(0), id(0) {}
-  virtual ~PendingXact() {}
 
   void insert(uint64_t addr, int32_t id, bool forward, CMMetadataBase *, uint32_t, uint32_t) {
     this->addr = addr;
@@ -144,7 +142,7 @@ public:
   }
 };
 
-class LockCheck {
+class LockCheck final {
   std::hash<std::thread::id> hasher;
   std::mutex hasher_mtx;
 
