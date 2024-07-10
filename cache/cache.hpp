@@ -200,7 +200,7 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
          bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF, EnMT> > && C_DERIVE_OR_VOID<DLY, DelayBase> &&
-           MSHR >= 2 // 2 buffers are required even for single-thread simulation
+           (MSHR >= 2) // 2 buffers are required even for single-thread simulation
 class CacheSkewed : public CacheBase
 {
 protected:
