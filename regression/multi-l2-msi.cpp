@@ -46,6 +46,7 @@ int main(){
 
   l2->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
+  tracer.start();
 
   ParallelRegressionGen<NCore, true, false, PAddrN, SAddrN, Data64B> tgen;
 
