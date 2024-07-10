@@ -33,10 +33,12 @@ int main() {
 
   l2->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
+  tracer.start();
 
   RegressionGen<NCore, true, false, PAddrN, SAddrN, Data64B> tgen;
   auto rv = tgen.run(TestN, core_inst, core_data);
 
+  tracer.stop();
   delete_caches(l1d);
   delete_caches(l1i);
   delete l2;
