@@ -22,6 +22,7 @@ static const uint64_t addr_mask = 0x0ffffffffffc0ull;
 template<int NC, bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
 class RegressionGen
 {
+protected:
   int64_t gi;
   CMHasher hasher;
   const unsigned int total;
@@ -101,7 +102,7 @@ public:
     return data_pool[index].read(0) == data->read(0);
   }
 
-  bool run(uint64_t TestN, std::vector<CoreInterface *>& core_inst, std::vector<CoreInterface *>& core_data) {
+  bool run(uint64_t TestN, std::vector<CoreInterfaceBase *>& core_inst, std::vector<CoreInterfaceBase *>& core_data) {
     for(int i=0; i<TestN; i++) {
       auto [addr, wdata, rw, nc, ic, flush] = gen();
       if(flush) {
@@ -120,5 +121,9 @@ public:
     return 0;
   }
 };
+
+inline void delete_caches(std::vector<CoherentCacheBase *> &caches) {
+  for(auto c : caches) delete c;
+}
 
 #endif

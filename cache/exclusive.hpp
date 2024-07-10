@@ -4,10 +4,9 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, CMMetadataBase)
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE<MT, CMMetadataBase>
 class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
 {
-  typedef MSIPolicy<MT, false, isLLC> PolicyT;
 protected:
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
@@ -19,12 +18,15 @@ protected:
   using CohPolicyBase::cmd_for_release;
 public:
 
-  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+  ExclusiveMSIPolicy() : MSIPolicy<MT, false, isLLC>() {}
+  virtual ~ExclusiveMSIPolicy() override {}
+
+  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
     if(is_fetch_write(cmd))    return std::make_pair(true, cmd_for_probe_release(cmd.id));
     else                       return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
   }
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const override { // after grant to inner
     int32_t id = cmd.id;
     if constexpr (EnDir) {
       if(is_fetch_read(cmd)) {
@@ -44,13 +46,13 @@ public:
     assert(!meta_inner->is_dirty());
   }
 
-  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const {
+  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const override {
     // for exclusive cache, no sync is needed for normal way, always sync for extended way
     return meta->is_extend() ? std::make_pair(true, cmd_for_probe_release()) : std::make_pair(false, cmd_for_null());
   }
 
-  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const {
-    if(cmd.id == -1) CohPolicyBase::meta_after_release(cmd, meta, meta_inner);
+  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const override {
+    if(cmd.id == -1) this->meta_after_release(cmd, meta, meta_inner);
     else {
       meta->get_outer_meta()->copy(meta_inner);
       meta_inner->to_invalid();
@@ -59,16 +61,16 @@ public:
     }
   }
 
-  virtual std::pair<bool, coh_cmd_t> release_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, const CMMetadataBase* meta_inner) const {
+  virtual std::pair<bool, coh_cmd_t> release_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, const CMMetadataBase* meta_inner) const override {
     // if the inner cache is not exclusive (M/O/E), probe to see whether there are other copies
     return std::make_pair(!meta_inner->allow_write(), cmd_for_probe_writeback(cmd.id));
   }
 
-  virtual std::pair<bool, coh_cmd_t> inner_need_release(){
+  virtual std::pair<bool, coh_cmd_t> inner_need_release() override {
     return std::make_pair(true, cmd_for_release());
   }
 
-  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const {
+  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const override {
     if (isLLC || uncached) {
       if(is_evict(cmd)) return std::make_tuple(true, true, cmd_for_probe_release());
       else if(meta && meta->is_shared())
@@ -80,16 +82,18 @@ public:
   }
 };
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE(MT, MetadataDirectoryBase) && EnDir
+template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE<MT, MetadataDirectoryBase> && EnDir
 class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
 {
-  typedef ExclusiveMSIPolicy<MT, true, isLLC> PolicyT;
 protected:
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
 public:
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const { // after grant to inner
+  ExclusiveMESIPolicy() : ExclusiveMSIPolicy<MT, true, isLLC>() {}
+  virtual ~ExclusiveMESIPolicy() override {}
+
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const override { // after grant to inner
     int32_t id = cmd.id;
     if(id != -1) { // inner cache is cached
       if(is_fetch_read(cmd)) {
@@ -124,59 +128,62 @@ template<int IW, int NW, int DW, int P, typename MT, typename DT, typename IDX, 
   requires !EnDir || DW > 0
 class CacheSkewedExclusive : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>
 {
-  typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheSkewedT;
+  typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheT;
+  using CacheT::indexer;
+  using CacheT::loc_random;
+  using CacheT::replacer;
+  using CacheMonitorSupport::monitors;
 protected:
   DRPC ext_replacer[P];
 public:
-  CacheSkewedExclusive(std::string name = "") : CacheSkewedT(name, 0, (EnDir ? DW : 0)) {}
+  CacheSkewedExclusive(std::string name = "") : CacheT(name, 0, (EnDir ? DW : 0)) {}
+  virtual ~CacheSkewedExclusive() override {}
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
-    if constexpr (!EnDir) CacheSkewedT::replace(addr, ai, s, w, 0);
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) override {
+    if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, 0);
     else {
-      if(0 == genre) CacheSkewedT::replace(addr, ai, s, w, 0);
+      if(0 == genre) CacheT::replace(addr, ai, s, w, 0);
       else {
         if constexpr (P==1) *ai = 0;
-        else                *ai = ((*CacheSkewedT::loc_random)() % P);
-        *s = CacheSkewedT::indexer.index(addr, *ai);
+        else                *ai = ((*loc_random)() % P);
+        *s = indexer.index(addr, *ai);
         ext_replacer[*ai].replace(*s, w);
         *w += NW;
       }
     }
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if(w >= NW) ext_replacer[ai].access(s, w-NW, false);
-      else        CacheSkewedT::replacer[ai].access(s, w, false);
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, true);
+      else        replacer[ai].access(s, w, true);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if(w >= NW) ext_replacer[ai].access(s, w-NW, is_release);
-      else        CacheSkewedT::replacer[ai].access(s, w, is_release);
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, demand_acc);
+      else        replacer[ai].access(s, w, demand_acc);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P){
       if(hit && evict) {
         if(w >= NW) ext_replacer[ai].invalid(s, w-NW);
-        else        CacheSkewedT::replacer[ai].invalid(s, w);
+        else        replacer[ai].invalid(s, w);
       }
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID(DLY)) CacheSkewedT::monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
     }
   }
-
-  virtual ~CacheSkewedExclusive(){}
 };
 
 // Norm Exclusive Cache
@@ -188,16 +195,21 @@ public:
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
 using CacheNormExclusiveBroadcast = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, ReplaceRandom<1,1>, DLY, EnMon, false>;
 
-class ExclusiveInnerCohPortUncachedBroadcast : public InnerCohPortUncached
+template<bool EnMT>
+class ExclusiveInnerCohPortUncachedBroadcast : public InnerCohPortUncached<EnMT>
 {
 protected:
+  typedef InnerCohPortUncached<EnMT> BaseT;
   using InnerCohPortBase::cache;
-public:
-  ExclusiveInnerCohPortUncachedBroadcast(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
-  virtual ~ExclusiveInnerCohPortUncachedBroadcast() {}
+  using InnerCohPortBase::policy;
+  using InnerCohPortBase::outer;
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, delay);
+public:
+  ExclusiveInnerCohPortUncachedBroadcast(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
+  virtual ~ExclusiveInnerCohPortUncachedBroadcast() override {}
+
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
+    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
 
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(cmd, meta, meta_inner);
@@ -205,6 +217,9 @@ public:
 
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
+
+    this->finish_record(addr, policy->cmd_for_finish(cmd.id), !hit, meta, ai, s);
+    if(cmd.id == -1) this->finish_resp(addr, policy->cmd_for_finish(cmd.id));
   }
 
 
@@ -214,7 +229,7 @@ protected:
     bool probe_writeback = false;
     auto sync = policy->access_need_sync(cmd, meta);
     if(sync.first) {
-      std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      std::tie(probe_hit, probe_writeback) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(probe_writeback) { // always writeback the line as it likely(always??) dirty
         assert(meta->is_dirty());
         outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
@@ -231,12 +246,12 @@ protected:
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
-  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
+  access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) override { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
 
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, prio, true);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
@@ -253,10 +268,13 @@ protected:
       data = cache->data_copy_buffer();
       auto probe_hit = fetch_line(addr, meta, data, cmd, delay);
       if(cmd.id == -1 && !probe_hit) { // need to reserve a place in the normal way if there no cached copy
-        auto [mmeta, mdata, mai, ms, mw] = InnerCohPortUncached::replace_line(addr, delay);
+        uint32_t mai, ms, mw;
+        cache->replace(addr, &mai, &ms, &mw);
+        auto [mmeta, mdata] = cache->access_line(mai, ms, mw);
+        if(mmeta->is_valid()) this->evict(mmeta, mdata, mai, ms, mw, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(mdata) mdata->copy(data);
-        cache->hook_write(addr, mai, ms, mw, false, false, mmeta, mdata, delay); // a write occurred during the probe
+        cache->hook_write(addr, mai, ms, mw, false, true, mmeta, mdata, delay); // a write occurred during the probe
         cache->meta_return_buffer(meta);
         cache->data_return_buffer(data);
         return std::make_tuple(mmeta, mdata, mai, ms, mw, hit);
@@ -266,13 +284,13 @@ protected:
     }
   }
 
-  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
 
     if(cmd.id == -1) { // request from an uncached inner
-      InnerCohPortUncached::write_line(addr, data_inner, meta_inner, cmd, delay);
+      BaseT::write_line(addr, data_inner, meta_inner, cmd, delay);
       cache->meta_return_buffer(meta);
       cache->data_return_buffer(data);
       return;
@@ -280,32 +298,35 @@ protected:
 
     bool probe_hit = false;
     bool probe_writeback = false;
-    assert(!cache->hit(addr, &ai, &s, &w)); // must not hit
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::release, true); // do we really need to lock even we know it should not?
+    assert(!hit); // must not hit
 
     // check whether there are other copies
     auto sync = policy->release_need_sync(cmd, meta, meta_inner);
     if(sync.first) {
       meta = cache->meta_copy_buffer();
       data = cache->data_copy_buffer();
-      std::tie(probe_hit, probe_writeback) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+      std::tie(probe_hit, probe_writeback) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       assert(!probe_writeback); // there should be no probe writeback
       cache->meta_return_buffer(meta);
       cache->data_return_buffer(data);
     }
 
     if(!probe_hit) { // exclusive cache handles a release only when there is no other sharer
-      std::tie(meta, data, ai, s, w) = InnerCohPortUncached::replace_line(addr, delay);
+      cache->replace(addr, &ai, &s, &w);
+      std::tie(meta, data) = cache->access_line(ai, s, w);
+      if(meta->is_valid()) this->evict(meta, data, ai, s, w, delay);
       if(data_inner && data) data->copy(data_inner);
       meta->init(addr); policy->meta_after_release(cmd, meta, meta_inner);
       cache->hook_write(addr, ai, s, w, false, true, meta, data, delay);
     }
   }
 
-  virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay){
+  virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, false); // ToDo, here may be buggy do to concurrency
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
@@ -321,8 +342,8 @@ protected:
     }
 
     if(probe) {
-      auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
-      if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
+      auto [phit, pwb] = this->probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
+      if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
     }
 
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
@@ -339,7 +360,8 @@ protected:
 
 };
 
-typedef InnerCohPortT<ExclusiveInnerCohPortUncachedBroadcast> ExclusiveInnerCohPortBroadcast;
+template<bool EnMT = false>
+using ExclusiveInnerCohPortBroadcast = InnerCohPortT<ExclusiveInnerCohPortUncachedBroadcast<EnMT>, EnMT>;
 
 // Norm Exclusive Cache with Extened Directory
 // Assume extended directory meta is always supported when directory is used
@@ -350,16 +372,21 @@ typedef InnerCohPortT<ExclusiveInnerCohPortUncachedBroadcast> ExclusiveInnerCohP
 template<int IW, int NW, int DW, typename MT, typename DT, typename IDX, typename RPC, typename DRPC, typename DLY, bool EnMon>
 using CacheNormExclusiveDirectory = CacheSkewedExclusive<IW, NW, DW, 1, MT, DT, IDX, RPC, DRPC, DLY, EnMon, true>;
 
-class ExclusiveInnerCohPortUncachedDirectory : public InnerCohPortUncached
+template<bool EnMT>
+class ExclusiveInnerCohPortUncachedDirectory : public InnerCohPortUncached<EnMT>
 {
 protected:
+  typedef InnerCohPortUncached<EnMT> BaseT;
   using InnerCohPortBase::cache;
-public:
-  ExclusiveInnerCohPortUncachedDirectory(CohPolicyBase *policy) : InnerCohPortUncached(policy) {}
-  virtual ~ExclusiveInnerCohPortUncachedDirectory() {}
+  using InnerCohPortBase::policy;
+  using InnerCohPortBase::outer;
 
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, delay);
+public:
+  ExclusiveInnerCohPortUncachedDirectory(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
+  virtual ~ExclusiveInnerCohPortUncachedDirectory() override {}
+
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) override {
+    auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, XactPrio::acquire, delay);
 
     if (data_inner && data) data_inner->copy(data);
     policy->meta_after_grant(outer_cmd, meta, meta_inner);
@@ -367,27 +394,30 @@ public:
 
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
+
+    this->finish_record(addr, policy->cmd_for_finish(outer_cmd.id), !hit, meta, ai, s);
+    if(outer_cmd.id == -1) this->finish_resp(addr, policy->cmd_for_finish(outer_cmd.id));
   }
 
 protected:
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
+  std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
   replace_line_ext(uint64_t addr, uint64_t *delay) {
     uint32_t ai, s, w;
     cache->replace(addr, &ai, &s, &w, true);
     auto [meta, data] = cache->access_line(ai, s, w);
     data = cache->data_copy_buffer();
-    if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
+    if(meta->is_valid()) this->evict(meta, data, ai, s, w, delay);
     cache->data_return_buffer(data);
     return std::make_tuple(meta, nullptr, ai, s, w);
   }
 
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
-  access_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) { // common function for access a line in the cache
+  access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) override { // common function for access a line in the cache
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
 
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, prio, true);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
       if(!meta->is_extend()) { // hit on normal way
@@ -412,7 +442,7 @@ protected:
         data = cache->data_copy_buffer();
         auto sync = policy->access_need_sync(cmd, meta);
         if(sync.first) {
-          std::tie(phit, pwb) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+          std::tie(phit, pwb) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
           if(pwb) { // a write occurred during the probe, always write it back as it likely (always??) dirty
             assert(meta->is_dirty());
             outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
@@ -432,9 +462,11 @@ protected:
         return std::make_tuple(meta, data, ai, s, w, hit);
       }
     } else { // miss
-      if(cmd.id == -1) // request from an uncached inner, fetch to a normal way
-        std::tie(meta, data, ai, s, w) = InnerCohPortUncached::replace_line(addr, delay);
-      else { // normal request, fetch to an extended way
+      if(cmd.id == -1) { // request from an uncached inner, fetch to a normal way
+        cache->replace(addr, &ai, &s, &w);
+        std::tie(meta, data) = cache->access_line(ai, s, w);
+        if(meta->is_valid()) this->evict(meta, data, ai, s, w, delay);
+      } else { // normal request, fetch to an extended way
         std::tie(meta, data, ai, s, w) = replace_line_ext(addr, delay);
         data = cache->data_copy_buffer();
       }
@@ -443,14 +475,14 @@ protected:
     }
   }
 
-  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) {
+  virtual void write_line(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
     bool hit;
 
     if(cmd.id == -1) { // request from an uncached inner
-      std::tie(meta, data, ai, s, w, hit) = access_line(addr, cmd, delay);
+      std::tie(meta, data, ai, s, w, hit) = access_line(addr, cmd, XactPrio::release, delay);
       if(data_inner) data->copy(data_inner);
       policy->meta_after_release(cmd, meta, meta_inner);
       if(meta->is_extend()) outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay); // writeback if dirty
@@ -460,18 +492,21 @@ protected:
     } else {
       bool phit = false;
       bool pwb = false;
-      hit = cache->hit(addr, &ai, &s, &w); assert(hit);
+      hit = cache->hit(addr, &ai, &s, &w, XactPrio::release, true); assert(hit);
       std::tie(meta, data) = cache->access_line(ai, s, w); assert(meta->is_extend());
       data = cache->data_copy_buffer();
       auto sync = policy->access_need_sync(cmd, meta);
       if(sync.first) {
-        std::tie(phit, pwb) = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
+        std::tie(phit, pwb) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         assert(!pwb); // there should be no probe writeback
       }
       if(data_inner) data->copy(data_inner);
       if(!phit) { // exclusive cache handles a release only when there is no other sharer
         // move it to normal meta
-        auto [mmeta, mdata, mai, ms, mw] = InnerCohPortUncached::replace_line(addr, delay);
+        uint32_t mai, ms, mw;
+        cache->replace(addr, &mai, &ms, &mw);
+        auto [mmeta, mdata] = cache->access_line(mai, ms, mw);
+        if(mmeta->is_valid()) this->evict(mmeta, mdata, mai, ms, mw, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(data_inner && mdata) mdata->copy(data);
         policy->meta_after_release(cmd, mmeta, meta_inner);
@@ -481,11 +516,11 @@ protected:
     }
   }
 
-  virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay){
+  virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
     CMMetadataBase *meta = nullptr;
     CMDataBase *data = nullptr;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, true);
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
     auto [flush, probe, probe_cmd] = policy->flush_need_sync(cmd, meta, outer->is_uncached());
@@ -500,8 +535,8 @@ protected:
     if(meta->is_extend()) data = cache->data_copy_buffer();
 
     if(probe) {
-      auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
-      if(pwb) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay); // a write occurred during the probe
+      auto [phit, pwb] = this->probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
+      if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
     }
 
     auto writeback = policy->writeback_need_writeback(meta, outer->is_uncached());
@@ -515,24 +550,25 @@ protected:
 
 };
 
-typedef InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory> ExclusiveInnerCohPortDirectory;
+template<bool EnMT = false>
+using ExclusiveInnerCohPortDirectory = InnerCohPortT<ExclusiveInnerCohPortUncachedDirectory<EnMT>, EnMT>;
 
-
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
+template<class OPUC, bool EnMT> requires C_DERIVE<OPUC, OuterCohPortUncached<EnMT> >
 class ExclusiveOuterCohPortBroadcastT : public OPUC
 {
 protected:
-  using OPUC::cache;
-  using OPUC::inner;
-  using OPUC::policy;
+  using OuterCohPortBase::cache;
+  using OuterCohPortBase::inner;
+  using OuterCohPortBase::policy;
+  using OuterCohPortBase::coh_id;
 public:
-  ExclusiveOuterCohPortBroadcastT(CohPolicyBase *policy) : OPUC(policy) {}
-  virtual ~ExclusiveOuterCohPortBroadcastT() {}
+  ExclusiveOuterCohPortBroadcastT(policy_ptr policy) : OPUC(policy) {}
+  virtual ~ExclusiveOuterCohPortBroadcastT() override {}
 
-  virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
     bool writeback = false;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
     bool probe_hit = false;
     bool probe_writeback = false;
     CMMetadataBase* meta = nullptr;
@@ -545,7 +581,7 @@ public:
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
       data = cache->data_copy_buffer();
       std::tie(probe_hit, probe_writeback) = inner->probe_req(addr, meta, data, sync.second, delay);
-      if(probe_writeback) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
+      if(probe_writeback) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
     }
 
     if(hit || probe_writeback) {
@@ -553,7 +589,7 @@ public:
         if(data_outer) data_outer->copy(data);
     }
 
-    policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id, writeback);
+    policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
 
     if(!hit) {
@@ -566,24 +602,25 @@ public:
 
 };
 
-typedef ExclusiveOuterCohPortBroadcastT<OuterCohPortUncached> ExclusiveOuterCohPortBroadcast;
+template<bool EnMT = false>
+using ExclusiveOuterCohPortBroadcast = ExclusiveOuterCohPortBroadcastT<OuterCohPort<EnMT>, EnMT>;
 
-
-template<class OPUC> requires C_DERIVE(OPUC, OuterCohPortUncached)
+template<class OPUC, bool EnMT> requires C_DERIVE<OPUC, OuterCohPortUncached<EnMT> >
 class ExclusiveOuterCohPortDirectoryT : public OPUC
 {
 protected:
-  using OPUC::cache;
-  using OPUC::inner;
-  using OPUC::policy;
+  using OuterCohPortBase::cache;
+  using OuterCohPortBase::inner;
+  using OuterCohPortBase::policy;
+  using OuterCohPortBase::coh_id;
 public:
-  ExclusiveOuterCohPortDirectoryT(CohPolicyBase *policy) : OPUC(policy) {}
-  virtual ~ExclusiveOuterCohPortDirectoryT() {}
+  ExclusiveOuterCohPortDirectoryT(policy_ptr policy) : OPUC(policy) {}
+  virtual ~ExclusiveOuterCohPortDirectoryT() override {}
 
-  virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) {
+  virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
     bool writeback = false;
-    bool hit = cache->hit(addr, &ai, &s, &w);
+    bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
     bool probe_hit = false;
     bool probe_writeback = false;
     CMMetadataBase* meta = nullptr;
@@ -597,7 +634,7 @@ public:
         if(sync.first) {
           data = cache->data_copy_buffer();
           std::tie(probe_hit, probe_writeback) = inner->probe_req(addr, meta, data, sync.second, delay);
-          if(probe_writeback) cache->hook_write(addr, ai, s, w, true, true, meta, data, delay);
+          if(probe_writeback) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
         }
       }
 
@@ -605,7 +642,7 @@ public:
         if(data_outer) data_outer->copy(data);
     }
 
-    policy->meta_after_probe(outer_cmd, meta, meta_outer, OPUC::coh_id, writeback);
+    policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
     cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
 
     if(hit && meta->is_extend()) {
@@ -617,18 +654,7 @@ public:
 
 };
 
-typedef ExclusiveOuterCohPortDirectoryT<OuterCohPortUncached> ExclusiveOuterCohPortDirectory;
-
-template<typename CT>
-using ExclusiveL2CacheBroadcast = CoherentCacheNorm<CT, ExclusiveOuterCohPortBroadcast, ExclusiveInnerCohPortBroadcast>;
-
-template<typename CT>
-using ExclusiveLLCBroadcast = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerCohPortBroadcast>;
-
-template<typename CT>
-using ExclusiveL2CacheDirectory = CoherentCacheNorm<CT, ExclusiveOuterCohPortDirectory, ExclusiveInnerCohPortDirectory>;
-
-template<typename CT>
-using ExclusiveLLCDirectory = CoherentCacheNorm<CT, OuterCohPortUncached, ExclusiveInnerCohPortDirectory>;
+template<bool EnMT = false>
+using ExclusiveOuterCohPortDirectory = ExclusiveOuterCohPortDirectoryT<OuterCohPort<EnMT>, EnMT>;
 
 #endif

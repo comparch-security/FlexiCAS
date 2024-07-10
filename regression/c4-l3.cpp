@@ -40,5 +40,12 @@ int main() {
   mem->attach_monitor(&tracer);
 
   RegressionGen<NCore, true, false, PAddrN, SAddrN, Data64B> tgen;
-  return tgen.run(TestN, core_inst, core_data);
+  auto rv = tgen.run(TestN, core_inst, core_data);
+
+  delete_caches(l1d);
+  delete_caches(l1i);
+  delete_caches(l2);
+  delete l3;
+  delete mem;
+  return rv;
 }
