@@ -46,6 +46,7 @@ public:
       for(auto &m: mtxs) m = new std::mutex();
     }
   }
+
   virtual ~ReplaceFuncBase() {
     if constexpr (EnMT) {
       for(auto m : mtxs) delete m;

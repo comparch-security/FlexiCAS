@@ -37,7 +37,7 @@
 #define XACT_QUEUE_LOW     10
 
 namespace {
-  static std::vector<CoreInterface *> core_data, core_inst;
+  static std::vector<CoreInterfaceBase *> core_data, core_inst;
   static std::vector<uint64_t> core_cycle; // record the cycle time in each core
   static MonitorBase *tracer;
   static int NC = 0;
