@@ -27,14 +27,18 @@
 #define L3IW (11+1)
 #define L3WN 16
 
+// multithread support
+#define ENABLE_FLEXICAS_THREAD
+
 #define CACHE_OP_READ        0
 #define CACHE_OP_WRITE       1
 #define CACHE_OP_FLUSH       2
 #define CACHE_OP_WRITEBACK   3
 #define CACHE_OP_FLUSH_CACHE 4
 
-#define XACT_QUEUE_HIGH    100
-#define XACT_QUEUE_LOW     10
+#define XACT_QUEUE_HIGH    320
+#define XACT_QUEUE_LOW     240
+#define XACT_QUEUE_BURST   32
 
 namespace {
   static std::vector<CoreInterfaceBase *> core_data, core_inst;
@@ -57,9 +61,12 @@ namespace {
     uint64_t addr;
   };
 
-  std::deque<cache_xact> xact_queue;
+  std::vector<cache_xact> xact_input(XACT_QUEUE_BURST);
+  std::deque<cache_xact>  xact_queue;
+  std::vector<cache_xact> xact_output(XACT_QUEUE_BURST);
+  int input_index = 0, output_index = 0;
 
-  void xact_queue_add(cache_xact xact) {
+  void xact_queue_flush() {
     std::unique_lock queue_full_lock(xact_queue_full_mutex, std::defer_lock);
     while(true) {
       xact_queue_op_mutex.lock();
@@ -68,55 +75,66 @@ namespace {
         xact_queue_op_mutex.unlock();
         xact_non_full_notify.wait(queue_full_lock);
       } else {
-        xact_queue.push_back(xact);
+        for(int i=0; i<XACT_QUEUE_BURST; i++) xact_queue.push_back(xact_input[i]);
         xact_non_empty_notify.notify_all();
         xact_queue_op_mutex.unlock();
+        input_index = 0;
         break;
       }
     }
   }
 
+  void xact_queue_add(cache_xact xact) {
+    xact_input[input_index++] = xact;
+    if(input_index == XACT_QUEUE_BURST) xact_queue_flush();
+  }
+
+  inline void read_detailed(uint64_t addr, int core, bool ic) {
+    if(ic) core_inst[core]->read(addr, nullptr);
+    else   core_data[core]->read(addr, nullptr);
+  }
+
+  inline void write_detailed(uint64_t addr, int core) {
+    core_data[core]->write(addr, nullptr, nullptr);
+  }
+
+  inline void flush_detailed(uint64_t addr, int core) {
+    core_data[core]->flush(addr, nullptr);
+  }
+
+  inline void writeback_detailed(uint64_t addr, int core) {
+    core_data[core]->writeback(addr, nullptr);
+  }
+
+  inline void flush_icache_detailed(int core) {
+    core_inst[core]->flush_cache(nullptr);
+  }
+
   void cache_server() {
     std::unique_lock queue_empty_lock(xact_queue_empty_mutex, std::defer_lock);
-    cache_xact xact;
-    bool busy;
+    int burst_size = 0;
     while(!exit_flag) {
       // get the next xact
       xact_queue_op_mutex.lock();
-      busy = !xact_queue.empty();
-      if(busy) {
-        xact = xact_queue.front();
-        xact_queue.pop_front();
-        if(xact_queue.size() <= XACT_QUEUE_LOW)
-          xact_non_full_notify.notify_all();
-      }
+      burst_size = xact_queue.size();
+      for(int i=0; i<burst_size; i++) { xact_output[i] = xact_queue.front(); xact_queue.pop_front(); }
+      if(xact_queue.size() <= XACT_QUEUE_LOW)
+        xact_non_full_notify.notify_all();
       xact_queue_op_mutex.unlock();
 
-      if(busy) {
+      for(int i=0; i<burst_size; i++) {
+        cache_xact &xact = xact_output[i];
         switch(xact.op_t) {
-        case CACHE_OP_READ: // read
-          if(xact.ic)
-            core_inst[xact.core]->read(xact.addr, nullptr);
-          else
-            core_data[xact.core]->read(xact.addr, nullptr);
-          break;
-        case CACHE_OP_WRITE: //write
-          core_data[xact.core]->write(xact.addr, nullptr, nullptr);
-          break;
-        case CACHE_OP_FLUSH: // flush
-          core_data[xact.core]->flush(xact.addr, nullptr);
-          break;
-        case CACHE_OP_WRITEBACK: // writeback
-          core_data[xact.core]->writeback(xact.addr, nullptr);
-          break;
-        case CACHE_OP_FLUSH_CACHE: // flush the whole cache
-          assert(xact.ic); // only happens to IC
-          core_inst[xact.core]->flush_cache(nullptr);
-          break;
-        default:
-          assert(0 == "unknown op type!");
+        case CACHE_OP_READ:        read_detailed(xact.addr, xact.core, xact.ic); break; // read
+        case CACHE_OP_WRITE:       write_detailed(xact.addr, xact.core); break;         // write
+        case CACHE_OP_FLUSH:       flush_detailed(xact.addr, xact.core); break;         // flush
+        case CACHE_OP_WRITEBACK:   writeback_detailed(xact.addr, xact.core); break;     // writeback
+        case CACHE_OP_FLUSH_CACHE: flush_icache_detailed(xact.core); break;             // flush the whole cache
+        default: assert(0 == "unknown op type!");
         }
-      } else {
+      }
+
+      if(burst_size == 0) {
         using namespace std::chrono_literals;
         cache_idle = true;
         xact_non_empty_notify.wait_for(queue_empty_lock, 1ms);
@@ -126,8 +144,11 @@ namespace {
   }
 
   void cache_sync() {
+#ifdef ENABLE_FLEXICAS_THREAD
     using namespace std::chrono_literals;
+    xact_queue_flush();
     while(!cache_idle) std::this_thread::sleep_for(1ms);
+#endif
   }
 
   static std::list<LocInfo> query_locs;
@@ -195,9 +216,11 @@ namespace flexicas {
 
     mem->attach_monitor(tracer);
 
+#ifdef ENABLE_FLEXICAS_THREAD
     // set up the cache server
     std::thread t(cache_server);
     t.detach();
+#endif
   }
 
   void exit() {
@@ -206,26 +229,46 @@ namespace flexicas {
 
   void read(uint64_t addr, int core, bool ic) {
     assert(core < NC);
+#ifdef ENABLE_FLEXICAS_THREAD
     xact_queue_add({CACHE_OP_READ, ic, core, addr});
+#else
+    read_detailed(addr, core, ic);
+#endif
   }
 
   void write(uint64_t addr, int core) {
     assert(core < NC);
+#ifdef ENABLE_FLEXICAS_THREAD
     xact_queue_add({CACHE_OP_WRITE, false, core, addr});
+#else
+    write_detailed(addr, core);
+#endif
   }
 
   void flush(uint64_t addr, int core) {
     assert(core < NC);
+#ifdef ENABLE_FLEXICAS_THREAD
     xact_queue_add({CACHE_OP_FLUSH, false, core, addr});
+#else
+    flush_detailed(addr, core);
+#endif
   }
 
   void flush_icache(int core) {
+#ifdef ENABLE_FLEXICAS_THREAD
     xact_queue_add({CACHE_OP_FLUSH_CACHE, true, core, 0});
+#else
+    flush_icache_detailed(core);
+#endif
   }
 
   void writeback(uint64_t addr, int core) {
     assert(core < NC);
+#ifdef ENABLE_FLEXICAS_THREAD
     xact_queue_add({CACHE_OP_WRITEBACK, false, core, addr});
+#else
+    writeback_detailed(addr, core);
+#endif
   }
 
   void csr_write(uint64_t cmd, int core, tlb_translate_func translator) {
