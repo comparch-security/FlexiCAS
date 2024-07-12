@@ -157,7 +157,7 @@ public:
     return std::make_pair(d_s, d_w);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) override {
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     int max_free = -1, p = 0;
     std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
     uint32_t m_s;
@@ -262,7 +262,7 @@ protected:
       else if(promote_local) meta->to_modified(-1);
     } else { // miss
       // do the cuckoo replacement
-      cache->replace(addr, &ai, &s, &w);
+      cache->replace(addr, &ai, &s, &w, prio);
       meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
       std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > stack;
       if(meta->is_valid()) cache->cuckoo_search(&ai, &s, &w, meta, stack);

@@ -162,7 +162,7 @@ public:
     return hit(addr, &ai, &s, &w, 0, false);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) = 0;
   virtual void replace_restore(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
   __always_inline CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) { return arrays[ai]->get_meta(s, w); }
@@ -266,10 +266,11 @@ public:
       return std::make_pair(meta, nullptr);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) override {
+  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     if constexpr (P==1) *ai = 0;
     else                *ai = ((*loc_random)() % P);
     *s = indexer.index(addr, *ai);
+    if(EnMT) this->set_mt_state(*ai, *s, prio);
     replacer[*ai].replace(*s, w);
   }
 

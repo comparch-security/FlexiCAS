@@ -278,7 +278,7 @@ protected:
             continue; // redo the hit check
           }
         } else { // do the replacement selection and recheck hit status
-          cache->replace(addr, &ai, &s, &w); cache->set_mt_state(ai, s, prio);
+          cache->replace(addr, &ai, &s, &w, prio);
           std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
           if(cache->hit(addr)) { // cache line is re-inserted by other transactions
             cache->replace_restore(ai, s, w);
@@ -291,7 +291,7 @@ protected:
       }
     } else {
       hit = cache->hit(addr, &ai, &s, &w);
-      if(!hit) cache->replace(addr, &ai, &s, &w);
+      if(!hit) cache->replace(addr, &ai, &s, &w, prio);
       std::tie(meta, data) = cache->access_line(ai, s, w);
     }
 

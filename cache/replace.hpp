@@ -15,7 +15,8 @@ class ReplaceFuncBase
   const uint32_t NW;
 protected:
   std::vector<std::vector<uint32_t> > used_map; // at the size of 16, vector is actually faster than list and do not require alloc
-  std::vector<std::vector<bool> > free_map, alloc_map;
+  std::vector<std::vector<bool> > free_map;
+  std::vector<std::vector<uint32_t> > alloc_map;
   std::vector<uint32_t> free_num, alloc_num;
   std::vector<std::mutex *> mtxs;
 
@@ -37,10 +38,14 @@ protected:
   virtual uint32_t select(uint32_t s) = 0;
 
 public:
+  static const uint16_t unalloc      = 0b000;
+  static const uint16_t pre_free     = 0b001; 
+  static const uint16_t pre_used     = 0b010;
+
   ReplaceFuncBase(uint32_t nset, uint32_t nway)
     :NW(nway), used_map(nset), free_map(nset), alloc_map(nset), free_num(nset, nway), alloc_num(nset, 0) {
     for (auto &s: free_map) s.resize(NW, true);
-    for (auto &s: alloc_map) s.resize(NW, false);
+    for (auto &s: alloc_map) s.resize(NW, unalloc);
     if constexpr (EnMT) {
       mtxs.resize(nset, nullptr);
       for(auto &m: mtxs) m = new std::mutex();
@@ -59,14 +64,15 @@ public:
     uint32_t i = 0;
     if constexpr (EnMT) lock(s);
     if constexpr (EF) {
-      if(free_num[s] > 0) i = alloc_from_free(s);
-      else                i = select(s);
+      if(free_num[s] > 0) { i = alloc_from_free(s); alloc_map[s][i] = pre_free;}
+      else                { i = select(s); alloc_map[s][i] = pre_used;}
     } else {
       i = select(s);
-      if(free_map[s][i]) { free_num[s]--; free_map[s][i] = false; }
+      if(free_map[s][i]) { free_num[s]--; free_map[s][i] = false; alloc_map[s][i] = pre_free;}
+      else                 alloc_map[s][i] = pre_used;
     }
     assert(i < NW || 0 == "replacer used_map corrupted!");
-    alloc_map[s][i] = true; alloc_num[s]++;
+    alloc_num[s]++;
     *w = i;
     if constexpr (EnMT) unlock(s);
   }
@@ -76,9 +82,12 @@ public:
   virtual void restore(uint32_t s, uint32_t w, uint32_t op = 0) {
     if constexpr (EnMT) lock(s);
     if constexpr (EF) {
-      free_num[s]++; free_map[s][w] = true; // put it to free map (likely selected next time)
+      if(alloc_map[s][w] == pre_free) { // put it to free map (likely selected next time)
+        free_num[s]++; 
+        free_map[s][w] = true;
+      }
     }
-    alloc_map[s][w] = false; alloc_num[s]--;
+    alloc_map[s][w] = unalloc; alloc_num[s]--;
     if constexpr (EnMT) unlock(s);
   }
 
@@ -86,9 +95,9 @@ public:
 
   virtual void invalid(uint32_t s, uint32_t w) {
     if constexpr (EnMT) lock(s);
-    if(!alloc_map[s][w]) {
-      free_map[s][w] = true;
+    if(alloc_map[s][w] == unalloc) {
       free_num[s]++;
+      free_map[s][w] = true;
     }
     if constexpr (EnMT) unlock(s);
   }
@@ -151,8 +160,11 @@ class ReplaceLRU : public ReplaceFIFO<IW, NW, EF, DUO, EnMT>
   typedef ReplaceFuncBase<EF, EnMT> RPT;
 protected:
   using RPT::alloc_map;
+  using RPT::free_map;
+  using RPT::free_num;
   using RPT::alloc_num;
   using RPT::used_map;
+  using RPT::unalloc;
 
 public:
   ReplaceLRU() : ReplaceFIFO<IW, NW, EF, DUO, EnMT>() {}
@@ -160,12 +172,15 @@ public:
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] || !DUO || demand_acc) {
+    if(alloc_map[s][w] || !DUO || demand_acc || free_map[s][w]) {
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
-    if(alloc_map[s][w] && demand_acc) { alloc_map[s][w] = false; alloc_num[s]--; }
+    if(alloc_map[s][w] && demand_acc) { 
+      alloc_map[s][w] = unalloc; alloc_num[s]--;
+    }
+    if(free_map[s][w]) {free_map[s][w] = false; free_num[s]--;}
     if constexpr (EnMT) RPT::unlock(s);
   }
 };
