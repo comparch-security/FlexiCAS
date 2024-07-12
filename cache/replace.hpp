@@ -116,6 +116,8 @@ protected:
   using RPT::alloc_map;
   using RPT::alloc_num;
   using RPT::used_map;
+  using RPT::free_map;
+  using RPT::free_num;
 
   virtual uint32_t select(uint32_t s) override {
     for(uint32_t i=0; i<NW; i++)
@@ -142,6 +144,7 @@ public:
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
+    if(free_map[s][w]) { free_map[s][w] = false; free_num[s]--; }
     if constexpr (EnMT) RPT::unlock(s);
   }
 };
@@ -180,7 +183,7 @@ public:
     if(alloc_map[s][w] && demand_acc) { 
       alloc_map[s][w] = unalloc; alloc_num[s]--;
     }
-    if(free_map[s][w]) {free_map[s][w] = false; free_num[s]--;}
+    if(free_map[s][w]) { free_map[s][w] = false; free_num[s]--; }
     if constexpr (EnMT) RPT::unlock(s);
   }
 };
@@ -201,6 +204,8 @@ protected:
   using RPT::used_map;
   using RPT::alloc_map;
   using RPT::alloc_num;
+  using RPT::free_map;
+  using RPT::free_num;
 
   virtual uint32_t select(uint32_t s) override {
     uint32_t max_prio = used_map[s][0];
@@ -222,6 +227,8 @@ public:
     if(alloc_map[s][w] || !DUO || demand_acc)
       used_map[s][w] = (alloc_map[s][w]) ? 2 : 0;
     if(alloc_map[s][w] && demand_acc) { alloc_map[s][w] = false; alloc_num[s]--; }
+
+    if(free_map[s][w]) { free_map[s][w] = false; free_num[s]--;}
     if constexpr (EnMT) RPT::unlock(s);
   }
 
@@ -248,6 +255,8 @@ class ReplaceRandom : public ReplaceFuncBase<EF, EnMT>
 protected:
   using RPT::alloc_map;
   using RPT::alloc_num;
+  using RPT::free_map;
+  using RPT::free_num;
 
   RandomGen<uint32_t> * loc_random; // a local randomizer for better thread parallelism
 
@@ -267,6 +276,7 @@ public:
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
     if constexpr (EnMT) RPT::lock(s);
     if(alloc_map[s][w] && demand_acc) { alloc_map[s][w] = false; alloc_num[s]--; }
+    if(free_map[s][w])                { free_map[s][w] = false; free_num[s]--; }
     if constexpr (EnMT) RPT::unlock(s);
   }
 };
