@@ -43,6 +43,7 @@
 namespace {
   static std::vector<CoreInterfaceBase *> core_data, core_inst;
   static std::vector<uint64_t> core_cycle; // record the cycle time in each core
+  static uint64_t wall_clock;              // a wall clock shared by all cores
   static MonitorBase *tracer;
   static int NC = 0;
   std::condition_variable xact_non_empty_notify, xact_non_full_notify;
@@ -116,7 +117,7 @@ namespace {
     while(!exit_flag) {
       // get the next xact
       xact_queue_op_mutex.lock();
-      burst_size = xact_queue.size();
+      burst_size = xact_queue.size() > XACT_QUEUE_BURST ? XACT_QUEUE_BURST : xact_queue.size();
       for(int i=0; i<burst_size; i++) { xact_output[i] = xact_queue.front(); xact_queue.pop_front(); }
       if(xact_queue.size() <= XACT_QUEUE_LOW)
         xact_non_full_notify.notify_all();
@@ -324,5 +325,9 @@ namespace flexicas {
 
   void bump_cycle(int step, int core) {
     core_cycle[core] += step;
+  }
+
+  void bump_wall_clock(int step) {
+    wall_clock += step;
   }
 }
