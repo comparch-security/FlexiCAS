@@ -191,6 +191,7 @@ namespace flexicas {
   void init(int ncore, const char *prefix) {
     NC = ncore;
     core_cycle.resize(NC, 0);
+    wall_clock = 0;
     if(prefix) pfc_log_prefix = std::string(prefix); // not currently used by the simple tracer but other advanced tracer may need print out logs
     auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NC, "l1d");
     core_data = get_l1_core_interface(l1d);

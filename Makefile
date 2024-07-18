@@ -33,7 +33,7 @@ all: libflexicas.a
 .PONY: all
 
 $(CRYPTO_LIB):
-	CXXFLAGS="-g0" $(MAKE) -C cryptopp -j$(NCORE)
+	$(MAKE) -C cryptopp -j$(NCORE)
 
 $(UTIL_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
