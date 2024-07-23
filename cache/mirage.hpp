@@ -92,7 +92,7 @@ template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<DTMT, MirageDataMeta>  && C_DERIVE<MIDX, IndexFuncBase>   && C_DERIVE<DIDX, IndexFuncBase> &&
-           C_DERIVE<MRPC, ReplaceFuncBase<EF,false> > && C_DERIVE<DRPC, ReplaceFuncBase<EF,false> > && C_DERIVE_OR_VOID<DLY, DelayBase>
+           C_DERIVE<MRPC, ReplaceFuncBase<EF> > && C_DERIVE<DRPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase>
 class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
@@ -157,7 +157,7 @@ public:
     return std::make_pair(d_s, d_w);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) override {
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     int max_free = -1, p = 0;
     std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
     uint32_t m_s;
@@ -170,6 +170,7 @@ public:
     }
     std::tie(*ai, *s) = candidates[(*loc_random)() % p];
     replacer[*ai].replace(*s, w);
+    return true; // ToDo: support multithread
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
@@ -262,7 +263,7 @@ protected:
       else if(promote_local) meta->to_modified(-1);
     } else { // miss
       // do the cuckoo replacement
-      cache->replace(addr, &ai, &s, &w);
+      cache->replace(addr, &ai, &s, &w, prio);
       meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
       std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > stack;
       if(meta->is_valid()) cache->cuckoo_search(&ai, &s, &w, meta, stack);
