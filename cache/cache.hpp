@@ -162,8 +162,7 @@ public:
     return hit(addr, &ai, &s, &w, 0, false);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
-  virtual void replace_restore(uint32_t ai, uint32_t s, uint32_t w) = 0;
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) = 0;
 
   __always_inline CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) { return arrays[ai]->get_meta(s, w); }
   __always_inline CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) { return arrays[ai]->get_data(s, w); }
@@ -199,7 +198,7 @@ public:
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY,
          bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
-           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF, EnMT> > && C_DERIVE_OR_VOID<DLY, DelayBase> &&
+           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase> &&
            (MSHR >= 2) // 2 buffers are required even for single-thread simulation
 class CacheSkewed : public CacheBase
 {
@@ -266,15 +265,20 @@ public:
       return std::make_pair(meta, nullptr);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) override {
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     if constexpr (P==1) *ai = 0;
     else                *ai = ((*loc_random)() % P);
     *s = indexer.index(addr, *ai);
+    if(EnMT) {
+      this->set_mt_state(*ai, *s, prio);
+      // double check the miss status
+      if(CacheBase::hit(addr)) { // the exact cache block is re-inserted by other transactions
+        this->reset_mt_state(*ai, *s, prio);
+        return false;
+      }
+    }
     replacer[*ai].replace(*s, w);
-  }
-
-  virtual void replace_restore(uint32_t ai, uint32_t s, uint32_t w) override {
-    replacer[ai].restore(s, w);
+    return true;
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
