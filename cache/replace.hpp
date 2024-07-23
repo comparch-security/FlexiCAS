@@ -8,20 +8,16 @@
 
 ///////////////////////////////////
 // Base class
-// EF: empty first, EnMT: enable multithread support
-template<bool EF, bool EnMT>
+// EF: empty first
+template<bool EF>
 class ReplaceFuncBase
 {
   const uint32_t NW;
 protected:
   std::vector<std::vector<uint32_t> > used_map; // at the size of 16, vector is actually faster than list and do not require alloc
   std::vector<std::vector<bool> > free_map;
-  std::vector<std::vector<uint32_t> > alloc_map;
-  std::vector<uint32_t> free_num, alloc_num;
-  std::vector<std::mutex *> mtxs;
-
-  __always_inline void lock(uint32_t s)   { mtxs[s]->lock();   }
-  __always_inline void unlock(uint32_t s) { mtxs[s]->unlock(); }
+  std::vector<int32_t> alloc_map; // record the way allocated for the next access (only one allocated ay at any time)
+  std::vector<uint32_t> free_num;
 
   __always_inline uint32_t alloc_from_free(uint32_t s) {
     free_num[s]--;
@@ -38,68 +34,37 @@ protected:
   virtual uint32_t select(uint32_t s) = 0;
 
 public:
-  static const uint16_t unalloc      = 0b000;
-  static const uint16_t pre_free     = 0b001; 
-  static const uint16_t pre_used     = 0b010;
-
   ReplaceFuncBase(uint32_t nset, uint32_t nway)
-    :NW(nway), used_map(nset), free_map(nset), alloc_map(nset), free_num(nset, nway), alloc_num(nset, 0) {
+    :NW(nway), used_map(nset), free_map(nset), alloc_map(nset, -1), free_num(nset, nway) {
     for (auto &s: free_map) s.resize(NW, true);
-    for (auto &s: alloc_map) s.resize(NW, unalloc);
-    if constexpr (EnMT) {
-      mtxs.resize(nset, nullptr);
-      for(auto &m: mtxs) m = new std::mutex();
-    }
   }
 
-  virtual ~ReplaceFuncBase() {
-    if constexpr (EnMT) {
-      for(auto m : mtxs) delete m;
-    }
-  }
+  virtual ~ReplaceFuncBase() {}
 
   __always_inline uint32_t get_free_num(uint32_t s) const { return free_num[s]; }
 
   virtual void replace(uint32_t s, uint32_t *w, uint32_t op = 0) {
     uint32_t i = 0;
-    if constexpr (EnMT) lock(s);
     if constexpr (EF) {
-      if(free_num[s] > 0) { i = alloc_from_free(s); alloc_map[s][i] = pre_free;}
-      else                { i = select(s); alloc_map[s][i] = pre_used;}
+      if(free_num[s] > 0) i = alloc_from_free(s);
+      else                i = select(s);
     } else {
       i = select(s);
-      if(free_map[s][i]) { free_num[s]--; free_map[s][i] = false; alloc_map[s][i] = pre_free;}
-      else                 alloc_map[s][i] = pre_used;
+      if(free_map[s][i]) { free_num[s]--; free_map[s][i] = false; }
     }
     assert(i < NW || 0 == "replacer used_map corrupted!");
-    alloc_num[s]++;
+    assert(alloc_map[s] == -1 || 0 == "potential parallel allocated cache blocks in one cache set!");
+	alloc_map[s] = i;
     *w = i;
-    if constexpr (EnMT) unlock(s);
-  }
-
-  // in multithread env, a replace selection might be deserted.
-  // The selected element should be placed as the most likely chosen position.
-  virtual void restore(uint32_t s, uint32_t w, uint32_t op = 0) {
-    if constexpr (EnMT) lock(s);
-    if constexpr (EF) {
-      if(alloc_map[s][w] == pre_free) { // put it to free map (likely selected next time)
-        free_num[s]++; 
-        free_map[s][w] = true;
-      }
-    }
-    alloc_map[s][w] = unalloc; alloc_num[s]--;
-    if constexpr (EnMT) unlock(s);
   }
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) = 0;
 
   virtual void invalid(uint32_t s, uint32_t w) {
-    if constexpr (EnMT) lock(s);
-    if(alloc_map[s][w] == unalloc) {
-      free_num[s]++;
+    if(w != alloc_map[s]) {
       free_map[s][w] = true;
+      free_num[s]++;
     }
-    if constexpr (EnMT) unlock(s);
   }
 };
 
@@ -107,22 +72,17 @@ public:
 // FIFO replacement
 // IW: index width, NW: number of ways
 // EF: empty first, DUO: demand update only (do not update state for release)
-// EnMT: enable multithread support
-template<int IW, int NW, bool EF = true, bool DUO = true, bool EnMT = false>
-class ReplaceFIFO : public ReplaceFuncBase<EF, EnMT>
+template<int IW, int NW, bool EF = true, bool DUO = true>
+class ReplaceFIFO : public ReplaceFuncBase<EF>
 {
-  typedef ReplaceFuncBase<EF, EnMT> RPT;
+  typedef ReplaceFuncBase<EF> RPT;
 protected:
   using RPT::alloc_map;
-  using RPT::alloc_num;
   using RPT::used_map;
-  using RPT::free_map;
-  using RPT::free_num;
 
   virtual uint32_t select(uint32_t s) override {
     for(uint32_t i=0; i<NW; i++)
-      if(used_map[s][i] <= alloc_num[s] && !alloc_map[s][i])
-        return i;
+      if(used_map[s][i] == 0) return i;
     assert(0 == "replacer used_map corrupted!");
     return -1;
   }
@@ -137,82 +97,65 @@ public:
   virtual ~ReplaceFIFO() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] && demand_acc) {
-      alloc_map[s][w] = false; alloc_num[s]--;
+    if(w == alloc_map[s] && demand_acc) {
+      alloc_map[s] = -1;
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
-    if(free_map[s][w]) { free_map[s][w] = false; free_num[s]--; }
-    if constexpr (EnMT) RPT::unlock(s);
   }
 };
 
 template<int IW, int NW, bool EF = true, bool DUO = true>
-using ReplaceFIFO_MT = ReplaceFIFO<IW, NW, EF, DUO, true>;
+using ReplaceFIFO_MT = ReplaceFIFO<IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // LRU replacement
 // IW: index width, NW: number of ways
 // EF: empty first, DUO: demand update only (do not update state for release)
-// EnMT: enable multithread support
-template<int IW, int NW, bool EF = true, bool DUO = true, bool EnMT = false>
-class ReplaceLRU : public ReplaceFIFO<IW, NW, EF, DUO, EnMT>
+template<int IW, int NW, bool EF = true, bool DUO = true>
+class ReplaceLRU : public ReplaceFIFO<IW, NW, EF, DUO>
 {
-  typedef ReplaceFuncBase<EF, EnMT> RPT;
+  typedef ReplaceFuncBase<EF> RPT;
 protected:
   using RPT::alloc_map;
-  using RPT::free_map;
-  using RPT::free_num;
-  using RPT::alloc_num;
   using RPT::used_map;
-  using RPT::unalloc;
 
 public:
-  ReplaceLRU() : ReplaceFIFO<IW, NW, EF, DUO, EnMT>() {}
+  ReplaceLRU() : ReplaceFIFO<IW, NW, EF, DUO>() {}
   virtual ~ReplaceLRU() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] || !DUO || demand_acc || free_map[s][w]) {
+    if(w == alloc_map[s] || !DUO || demand_acc) {
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
-    if(alloc_map[s][w] && demand_acc) { 
-      alloc_map[s][w] = unalloc; alloc_num[s]--;
-    }
-    if(free_map[s][w]) { free_map[s][w] = false; free_num[s]--; }
-    if constexpr (EnMT) RPT::unlock(s);
+    if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
   }
 };
 
 template<int IW, int NW, bool EF = true, bool DUO = true>
-using ReplaceLRU_MT = ReplaceLRU<IW, NW, EF, DUO, true>;
+using ReplaceLRU_MT = ReplaceLRU<IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // Static RRIP replacement
 // IW: index width, NW: number of ways
 // EF: empty first, DUO: demand update only (do not update state for release)
-// EnMT: enable multithread support
-template<int IW, int NW, bool EF = true, bool DUO = true, bool EnMT = false>
-class ReplaceSRRIP : public ReplaceFuncBase<EF, EnMT>
+template<int IW, int NW, bool EF = true, bool DUO = true>
+class ReplaceSRRIP : public ReplaceFuncBase<EF>
 {
-  typedef ReplaceFuncBase<EF, EnMT> RPT;
+  typedef ReplaceFuncBase<EF> RPT;
 protected:
   using RPT::used_map;
   using RPT::alloc_map;
-  using RPT::alloc_num;
-  using RPT::free_map;
-  using RPT::free_num;
 
   virtual uint32_t select(uint32_t s) override {
     uint32_t max_prio = used_map[s][0];
     uint32_t max_i    = 0;
-    for(uint32_t i=1; i<NW; i++) if(used_map[s][i] > max_prio && !alloc_map[s][i]) {max_prio = used_map[s][i]; max_i = i;}
+    for(uint32_t i=1; i<NW; i++) if(used_map[s][i] > max_prio) {max_prio = used_map[s][i]; max_i = i;}
     uint32_t gap = 3 - max_prio;
-    if(gap > 0 && alloc_num[s] == 0) for(uint32_t i=0; i<NW; i++) used_map[s][i] += gap;
+    if(gap > 0) for(uint32_t i=0; i<NW; i++) used_map[s][i] += gap;
     return max_i;
   }
 
@@ -223,50 +166,35 @@ public:
   virtual ~ReplaceSRRIP() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] || !DUO || demand_acc)
-      used_map[s][w] = (alloc_map[s][w]) ? 2 : 0;
-    if(alloc_map[s][w] && demand_acc) { alloc_map[s][w] = false; alloc_num[s]--; }
-
-    if(free_map[s][w]) { free_map[s][w] = false; free_num[s]--;}
-    if constexpr (EnMT) RPT::unlock(s);
+    if(w == alloc_map[s] || !DUO || demand_acc)
+      used_map[s][w] = (w == alloc_map[s]) ? 2 : 0;
+    if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
   }
 
   virtual void invalid(uint32_t s, uint32_t w) override {
-    if constexpr (EnMT) RPT::lock(s);
     used_map[s][w] = 3;
     RPT::invalid(s, w);
-    if constexpr (EnMT) RPT::unlock(s);
   }
 };
 
 template<int IW, int NW, bool EF = true, bool DUO = true>
-using ReplaceSRRIP_MT = ReplaceSRRIP<IW, NW, EF, DUO, true>;
+using ReplaceSRRIP_MT = ReplaceSRRIP<IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // Random replacement
 // IW: index width, NW: number of ways
 // EF: empty first, DUO: demand update only (do not update state for release)
-// EnMT: enable multithread support
-template<int IW, int NW, bool EF = true, bool DUO = true, bool EnMT = false>
-class ReplaceRandom : public ReplaceFuncBase<EF, EnMT>
+template<int IW, int NW, bool EF = true, bool DUO = true>
+class ReplaceRandom : public ReplaceFuncBase<EF>
 {
-  typedef ReplaceFuncBase<EF, EnMT> RPT;
+  typedef ReplaceFuncBase<EF> RPT;
 protected:
   using RPT::alloc_map;
-  using RPT::alloc_num;
-  using RPT::free_map;
-  using RPT::free_num;
 
   RandomGen<uint32_t> * loc_random; // a local randomizer for better thread parallelism
 
   virtual uint32_t select(uint32_t s) override {
-    assert(alloc_num[s] < NW || 0 ==
-           "Too many ways have been allocated without actual accesses!");
-    while(true) {
-      auto w = (*loc_random)() % NW;
-      if(!alloc_map[s][w]) return w;
-    }
+    return (*loc_random)() % NW;
   }
 
 public:
@@ -274,14 +202,11 @@ public:
   virtual ~ReplaceRandom() override { delete loc_random; }
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if constexpr (EnMT) RPT::lock(s);
-    if(alloc_map[s][w] && demand_acc) { alloc_map[s][w] = false; alloc_num[s]--; }
-    if(free_map[s][w])                { free_map[s][w] = false; free_num[s]--; }
-    if constexpr (EnMT) RPT::unlock(s);
+    if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
   }
 };
 
 template<int IW, int NW, bool EF = true, bool DUO = true>
-using ReplaceRandom_MT = ReplaceRandom<IW, NW, EF, DUO, true>;
+using ReplaceRandom_MT = ReplaceRandom<IW, NW, EF, DUO>;
 
 #endif

@@ -139,7 +139,7 @@ public:
   CacheSkewedExclusive(std::string name = "") : CacheT(name, 0, (EnDir ? DW : 0)) {}
   virtual ~CacheSkewedExclusive() override {}
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, prio, 0);
     else {
       if(0 == genre) CacheT::replace(addr, ai, s, w, prio, 0);
@@ -151,6 +151,7 @@ public:
         *w += NW;
       }
     }
+    return true; // ToDo: support multithread
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
