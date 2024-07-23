@@ -17,11 +17,10 @@
 #define L2IW 5
 #define L2WN 8
 
-#define NThread 5
-#define NCore 4
+#define NThread 2
+#define NCore 2
 
 int main(){
-  double st, ed;
 
   auto l1d = cache_gen_multi_thread_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRUMultiThread, MSIMultiThreadPolicy, false, false, DelayL1<1, 1, 1>, true>(NCore, "l1d");
   auto core_data = get_l1_core_interface(l1d);
@@ -37,13 +36,7 @@ int main(){
   }
   l2->outer->connect(mem, mem->connect(l2->outer));
 
-  st = clock();
-
-  SynchroTraceReplayer<NThread, NCore> replayer("../tests/pthread_spinlock", 1.0, 2.0, 1, 1, 300, core_data);
+  SynchroTraceReplayer<NThread, NCore> replayer("./regression", 1.0, 2.0, 1, 1, 300, core_data);
   replayer.init();
   replayer.start();
-
-  ed = clock();
-
-  printf("Replay Time: %.0lfms\n", (ed - st) / 1000.0);
 }

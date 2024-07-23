@@ -8,12 +8,10 @@
 #include <vector>
 #include <regex>
 #include <cassert>
-#include <zlib.h>
 #include <iostream>
 #include <unordered_map>
 #include <set>
 #include <fstream>
-#include "util/zfstream.hpp"
 #include "st_event.hpp"
 
 class StTraceParser
@@ -71,42 +69,33 @@ private:
     std::string::const_iterator line_start(line.cbegin());
     uint64_t iops, flops, reads, writes, start, end;
     if(std::regex_search(line_start, line.cend(), matches, pattern)){
-      iops = std::stoi(matches[1]);
+      iops  = std::stoi(matches[1]);
       flops = std::stoi(matches[2]);
-      reads = std::stoi(matches[3]);
+      reads  = std::stoi(matches[3]);
       writes = std::stoi(matches[4]);
-      std::regex addr_pattern(R"( [\$\*] 0x([A-Fa-f0-9]+) 0x([A-Fa-f0-9]+))");
-      line_start = matches.suffix().first;
-      if(std::regex_search(line_start, line.cend(), matches, addr_pattern)){
-        start = std::stoul(matches[1], nullptr, 16);
-        end = std::stoul(matches[2], nullptr, 16);
-      }
     }else{
         // TODO: add fatal match handle
     }
-    if(reads == 0 && writes == 0){
-      buffer.emplace_back(StEvent::ComputeTag, iops, flops);
-    }else{
-      ReqType type = writes > 0 ? ReqType::REQ_WRITE : ReqType::REQ_READ;
-      // Create a compute sub-event to "wait" before issuing the
-      // following memory request.
-      buffer.emplace_back(StEvent::ComputeTag, iops, flops);
-      
-      switch (type) 
-      {
-        case ReqType::REQ_READ:
-          buffer.emplace_back(StEvent::MemoryTag, MemoryRequest{start, end-start, ReqType::REQ_READ});
-          break;
-        case ReqType::REQ_WRITE:
-          buffer.emplace_back(StEvent::MemoryTag, MemoryRequest{start, end-start, ReqType::REQ_WRITE});
-          break;
-        default:
-          // TODO: handle this;
-          break;
-      }
 
+    if (reads == 0 && writes == 0) {
+      buffer.emplace_back(StEvent::ComputeTag, iops, flops);
+      return;
     }
 
+    iops  /= (reads+writes);
+    flops /= (reads+writes);
+    std::regex addr_pattern(R"( ([\$\*]) 0x([A-Fa-f0-9]+) 0x([A-Fa-f0-9]+))");
+    line_start = matches.suffix().first;
+    while (std::regex_search(line_start, line.cend(), matches, addr_pattern)) {
+      start = std::stoul(matches[2], nullptr, 16);
+      end = std::stoul(matches[3], nullptr, 16)+1;
+      buffer.emplace_back(StEvent::ComputeTag, iops*(end-start)/8, flops*(end-start)/8);
+      if (matches[1] == '*')
+        buffer.emplace_back(StEvent::MemoryTag, MemoryRequest{start, end-start, ReqType::REQ_READ});
+      else
+        buffer.emplace_back(StEvent::MemoryTag, MemoryRequest{start, end-start, ReqType::REQ_WRITE});
+      line_start = matches.suffix().first;
+    }
   }
 
 
@@ -123,7 +112,7 @@ private:
       ThreadID  prodThreadId = std::stoi(matches[1])-1;
       uint64_t prodEventId = std::stoi(matches[2]);
       uint64_t addr = std::stoul(matches[3], nullptr, 16);
-      uint64_t bytes = std::stoul(matches[4], nullptr, 16) - addr;
+      uint64_t bytes = std::stoul(matches[4], nullptr, 16) - addr + 1;
 
       buffer.emplace_back(StEvent::MemoryCommTag, addr, bytes, prodEventId, prodThreadId);
     }else{
@@ -201,7 +190,7 @@ protected:
   /** File streams */
   std::string filename;
   std::string line;
-  gzifstream traceFile;
+  std::ifstream traceFile;  //traceFile;
 
   /** The actual parser and underlying buffer */
   StTraceParser parser;
@@ -213,7 +202,7 @@ protected:
 
 public:
   StEventStream(ThreadID threadId, const std::string& eventDir, size_t BSize = 1024) : 
-  threadId(threadId), filename(eventDir + "/sigil.events.out-" + std::to_string(threadId) + ".gz"), 
+  threadId(threadId), filename(eventDir + "/sigil.events.out-" + std::to_string(threadId)), 
   lastLineParsed(0), traceFile(filename.c_str()), BufferSize(BSize){
     if(!traceFile){
       std::cerr << "Error opening file " << filename << std::endl;
