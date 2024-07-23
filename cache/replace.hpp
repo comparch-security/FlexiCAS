@@ -33,6 +33,14 @@ protected:
 
   virtual uint32_t select(uint32_t s) = 0;
 
+  __always_inline void delist_from_free(uint32_t s, uint32_t w, bool demand_acc) {
+    // in multithread simulation, a simultaneous probe may invalidate a cache block waiting for permission promotion
+    if(!free_map[s][w]) return;
+    assert(demand_acc); // assume such situation can occur only in permission promotion
+    free_map[s][w] = false;
+    free_num[s]--;
+  }
+
 public:
   ReplaceFuncBase(uint32_t nset, uint32_t nway)
     :NW(nway), used_map(nset), free_map(nset), alloc_map(nset, -1), free_num(nset, nway) {
@@ -103,6 +111,7 @@ public:
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
+    RPT::delist_from_free(s, w, demand_acc);
   }
 };
 
@@ -132,6 +141,7 @@ public:
       used_map[s][w] = NW-1;
     }
     if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    RPT::delist_from_free(s, w, demand_acc);
   }
 };
 
@@ -169,6 +179,7 @@ public:
     if(w == alloc_map[s] || !DUO || demand_acc)
       used_map[s][w] = (w == alloc_map[s]) ? 2 : 0;
     if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    RPT::delist_from_free(s, w, demand_acc);
   }
 
   virtual void invalid(uint32_t s, uint32_t w) override {
@@ -203,6 +214,7 @@ public:
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
     if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    RPT::delist_from_free(s, w, demand_acc);
   }
 };
 
