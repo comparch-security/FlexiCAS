@@ -139,10 +139,10 @@ public:
   CacheSkewedExclusive(std::string name = "") : CacheT(name, 0, (EnDir ? DW : 0)) {}
   virtual ~CacheSkewedExclusive() override {}
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) override {
-    if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, 0);
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
+    if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, prio, 0);
     else {
-      if(0 == genre) CacheT::replace(addr, ai, s, w, 0);
+      if(0 == genre) CacheT::replace(addr, ai, s, w, prio, 0);
       else {
         if constexpr (P==1) *ai = 0;
         else                *ai = ((*loc_random)() % P);
@@ -151,6 +151,7 @@ public:
         *w += NW;
       }
     }
+    return true; // ToDo: support multithread
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
@@ -269,7 +270,7 @@ protected:
       auto probe_hit = fetch_line(addr, meta, data, cmd, delay);
       if(cmd.id == -1 && !probe_hit) { // need to reserve a place in the normal way if there no cached copy
         uint32_t mai, ms, mw;
-        cache->replace(addr, &mai, &ms, &mw);
+        cache->replace(addr, &mai, &ms, &mw, XactPrio::acquire);
         auto [mmeta, mdata] = cache->access_line(mai, ms, mw);
         if(mmeta->is_valid()) this->evict(mmeta, mdata, mai, ms, mw, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
@@ -313,7 +314,7 @@ protected:
     }
 
     if(!probe_hit) { // exclusive cache handles a release only when there is no other sharer
-      cache->replace(addr, &ai, &s, &w);
+      cache->replace(addr, &ai, &s, &w, XactPrio::release);
       std::tie(meta, data) = cache->access_line(ai, s, w);
       if(meta->is_valid()) this->evict(meta, data, ai, s, w, delay);
       if(data_inner && data) data->copy(data_inner);
@@ -401,9 +402,9 @@ public:
 
 protected:
   std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
-  replace_line_ext(uint64_t addr, uint64_t *delay) {
+  replace_line_ext(uint64_t addr, uint16_t prio, uint64_t *delay) {
     uint32_t ai, s, w;
-    cache->replace(addr, &ai, &s, &w, true);
+    cache->replace(addr, &ai, &s, &w, prio, true);
     auto [meta, data] = cache->access_line(ai, s, w);
     data = cache->data_copy_buffer();
     if(meta->is_valid()) this->evict(meta, data, ai, s, w, delay);
@@ -432,7 +433,7 @@ protected:
         else { // normal request, move it to an extended way
           if(meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
             outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
-          auto [mmeta, mdata, mai, ms, mw] = replace_line_ext(addr, delay);
+          auto [mmeta, mdata, mai, ms, mw] = replace_line_ext(addr, prio, delay);
           mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
           return std::make_tuple(mmeta, data, mai, ms, mw, hit);
         }
@@ -463,11 +464,11 @@ protected:
       }
     } else { // miss
       if(cmd.id == -1) { // request from an uncached inner, fetch to a normal way
-        cache->replace(addr, &ai, &s, &w);
+        cache->replace(addr, &ai, &s, &w, prio);
         std::tie(meta, data) = cache->access_line(ai, s, w);
         if(meta->is_valid()) this->evict(meta, data, ai, s, w, delay);
       } else { // normal request, fetch to an extended way
-        std::tie(meta, data, ai, s, w) = replace_line_ext(addr, delay);
+        std::tie(meta, data, ai, s, w) = replace_line_ext(addr, prio, delay);
         data = cache->data_copy_buffer();
       }
       outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
@@ -504,7 +505,7 @@ protected:
       if(!phit) { // exclusive cache handles a release only when there is no other sharer
         // move it to normal meta
         uint32_t mai, ms, mw;
-        cache->replace(addr, &mai, &ms, &mw);
+        cache->replace(addr, &mai, &ms, &mw, XactPrio::release);
         auto [mmeta, mdata] = cache->access_line(mai, ms, mw);
         if(mmeta->is_valid()) this->evict(mmeta, mdata, mai, ms, mw, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
