@@ -27,14 +27,14 @@ UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
-UTIL_OBJS     = util/random.o util/query.o
+UTIL_OBJS     = util/random.o util/query.o util/statistics.o
 
 all: libflexicas.a
 
 .PONY: all
 
 $(CRYPTO_LIB):
-	CXXFLAGS="-g0" $(MAKE) -C cryptopp -j$(NCORE)
+	$(MAKE) -C cryptopp -j$(NCORE)
 
 $(UTIL_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@

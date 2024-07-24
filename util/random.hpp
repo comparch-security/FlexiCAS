@@ -88,6 +88,7 @@ class AddrXORHash final
 
 public:
   AddrXORHash() {}
+  AddrXORHash(unsigned int nkey) : keys(nkey, 0) { key(); }
   AddrXORHash(const std::vector<uint64_t>& keys) : keys(keys) {}
 
   void key() {
