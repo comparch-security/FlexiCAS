@@ -10,3 +10,4 @@ flexicas_srcs = \
 
 flexicas_precompiled = \
 	../flexicas/libflexicas.a \
+	../flexicas/cryptopp/libcryptopp.a \

@@ -69,7 +69,7 @@ public:
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) = 0;
 
   virtual void invalid(uint32_t s, uint32_t w) {
-    if(w != alloc_map[s]) {
+    if((int32_t)w != alloc_map[s]) {
       free_map[s][w] = true;
       free_num[s]++;
     }
@@ -105,7 +105,7 @@ public:
   virtual ~ReplaceFIFO() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if(w == alloc_map[s] && demand_acc) {
+    if((int32_t)w == alloc_map[s] && demand_acc) {
       alloc_map[s] = -1;
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
@@ -135,12 +135,12 @@ public:
   virtual ~ReplaceLRU() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if(w == alloc_map[s] || !DUO || demand_acc) {
+    if((int32_t)w == alloc_map[s] || !DUO || demand_acc) {
       auto prio = used_map[s][w];
       for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
       used_map[s][w] = NW-1;
     }
-    if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
     RPT::delist_from_free(s, w, demand_acc);
   }
 };
@@ -176,9 +176,9 @@ public:
   virtual ~ReplaceSRRIP() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if(w == alloc_map[s] || !DUO || demand_acc)
-      used_map[s][w] = (w == alloc_map[s]) ? 2 : 0;
-    if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    if((int32_t)w == alloc_map[s] || !DUO || demand_acc)
+      used_map[s][w] = ((int32_t)w == alloc_map[s]) ? 2 : 0;
+    if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
     RPT::delist_from_free(s, w, demand_acc);
   }
 
@@ -213,7 +213,7 @@ public:
   virtual ~ReplaceRandom() override { delete loc_random; }
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if(w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
     RPT::delist_from_free(s, w, demand_acc);
   }
 };
