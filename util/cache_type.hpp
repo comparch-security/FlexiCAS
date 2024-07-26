@@ -245,5 +245,24 @@ inline auto cache_gen_multi_thread_llc(int size, const std::string& name_prefix)
   return cache_multi_thread_type_compile<IW, WN, DT, MBT, RPT, CPT, false, true, false, DLY, EnMon>(size, name_prefix);
 }
 
+template<int IW, int WN, typename DT,
+         template <int, int, bool> class RPT,
+         typename DLY, bool EnMon>
+inline auto cache_gen_llc_remap(int size, const std::string& name_prefix) {
+  typedef IndexRemapSkewed<IW, 6, 1, IndexSkewed<IW, 6, 1>> index_type;
+  typedef RPT<IW,WN,true> replace_type;
+
+  typedef RemapMetadataBroadcast<48,0,0+6,MetadataMSIBroadcast<48,0,0+6>> metadata_type;
+  typedef MSIPolicy<metadata_type, false, true> policy_type;
+
+  typedef CacheRemap<IW, WN, 1, metadata_type, DT, index_type, replace_type, DLY, EnMon> cache_base_type;
+
+  typedef InnerCohPortRemapT<InnerCohPortUncached<false>, cache_base_type, metadata_type, false> input_type;
+
+  typedef CoherentCacheNorm<cache_base_type, OuterCohPortUncached<false>, input_type> cache_type;
+
+  return cache_generator<cache_type, policy_type>(size, name_prefix);
+}
+
 
 #endif
