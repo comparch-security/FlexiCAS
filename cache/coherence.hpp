@@ -399,12 +399,13 @@ public:
 
 protected:
   void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai) {
+    auto cache = static_cast<CT *>(InnerCohPortBase::cache);
     uint32_t new_idx, new_way;
     cache->replace(c_addr, &ai, &new_idx, &new_way);
     auto[m_meta, m_data] = cache->access_line(ai, new_idx, new_way);
     uint64_t m_addr = m_meta->addr(new_idx); 
-    auto c_m_meta = cache->meta_copy_buffer();
-    auto c_m_data = m_data ? cache->data_copy_buffer() : nullptr;
+    auto c_m_meta = cache->remap_meta_copy_buffer();
+    auto c_m_data = m_data ? cache->remap_data_copy_buffer() : nullptr;
 
     copy(m_meta, m_data, c_m_meta, c_m_data, m_addr);
 
@@ -420,16 +421,17 @@ protected:
     c_addr = m_addr;
     copy(c_m_meta, c_m_data, c_meta, c_data, m_addr);
 
-    cache->meta_return_buffer(c_m_meta);
-    cache->data_return_buffer(c_m_data);
+    cache->remap_meta_return_buffer(c_m_meta);
+    cache->remap_data_return_buffer(c_m_data);
   }
 
   void relocation_chain(uint32_t ai, uint32_t idx, uint32_t way) {
+    auto cache = static_cast<CT *>(InnerCohPortBase::cache);
     auto[meta, data] = cache->access_line(ai, idx, way);
     uint64_t c_addr = meta->addr(idx);
     if (!meta->is_valid() || static_cast<MT *>(meta)->is_remapped()) return;
-    auto c_meta = cache->meta_copy_buffer();
-    auto c_data = data ? cache->data_copy_buffer() : nullptr;
+    auto c_meta = cache->remap_meta_copy_buffer();
+    auto c_data = data ? cache->remap_data_copy_buffer() : nullptr;
     copy(meta, data, c_meta, c_data, c_addr);
 
     meta->to_invalid();
@@ -439,8 +441,8 @@ protected:
     while(c_meta->is_valid() && !static_cast<MT *>(c_meta)->is_remapped()){
       relocation(c_meta, c_data, c_addr, ai);
     }
-    cache->meta_return_buffer(c_meta);
-    cache->data_return_buffer(c_data);
+    cache->remap_meta_return_buffer(c_meta);
+    cache->remap_data_return_buffer(c_data);
   }
 };
 

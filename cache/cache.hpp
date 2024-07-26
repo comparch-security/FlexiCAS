@@ -371,6 +371,10 @@ public:
   virtual ~CacheBaseRemapSupport() {}
 
   virtual void seed(std::vector<uint64_t>& seeds) = 0;
+  virtual CMDataBase *remap_data_copy_buffer() = 0;
+  virtual void remap_data_return_buffer(CMDataBase *buf) = 0;
+  virtual CMMetadataBase *remap_meta_copy_buffer() = 0;
+  virtual void remap_meta_return_buffer(CMMetadataBase *buf) = 0;
 };
 
 // Dynamic-Randomized Skewed Cache 
@@ -378,25 +382,107 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
+template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, RemapMetadataSupport>
         && C_DERIVE_OR_VOID<DT, CMDataBase>
         && C_DERIVE<IDX, IndexSkewed<IW, 6, P>>
         && C_DERIVE_OR_VOID<DLY, DelayBase>
-class CacheRemap : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>, 
+class CacheRemap : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon, EF, EnMT, MSHR>, 
                       public CacheBaseRemapSupport
 {
   typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheT;
+  typedef typename std::conditional<EnMT, AtomicVar<uint16_t>, uint16_t>::type buffer_state_t;
 
 protected:
   using CacheT::indexer;
 
+  std::unordered_set<CMDataBase *> remap_data_buffer_pool_set;
+  std::vector<CMDataBase *>        remap_data_buffer_pool;
+  buffer_state_t                   remap_data_buffer_state;
+
+  std::unordered_set<CMMetadataBase *> remap_meta_buffer_pool_set;
+  std::vector<CMMetadataBase *>        remap_meta_buffer_pool;
+  buffer_state_t                       remap_meta_buffer_state;
 public:
   CacheRemap(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
-  : CacheT(name, extra_par, extra_way){}
-  virtual ~CacheRemap() {}
+  : CacheT(name, extra_par, extra_way), remap_data_buffer_state(2), remap_meta_buffer_pool(2), remap_meta_buffer_state(2){
+    // allocate buffer pools
+    // for single thread simulator, we assume a maximum of 2 buffers should be enough
+    remap_meta_buffer_pool.resize(2, nullptr);
+    for(auto &b : remap_meta_buffer_pool) { b = new MT(); remap_meta_buffer_pool_set.insert(b); }
+    if constexpr (!C_VOID<DT>) {
+      remap_data_buffer_pool.resize(2, nullptr);
+      for(auto &b : remap_data_buffer_pool) { b = new DT(); remap_data_buffer_pool_set.insert(b); }
+    }
+  }
+  virtual ~CacheRemap() {
+    if (!remap_data_buffer_pool_set.empty()) for(auto b: remap_data_buffer_pool_set) delete b;
+    for(auto b: remap_meta_buffer_pool_set) delete b;
+  }
 
   virtual void seed(std::vector<uint64_t>& seeds) { indexer.seed(seeds);}
+
+  virtual CMDataBase *remap_data_copy_buffer() {
+    if (remap_data_buffer_pool_set.empty()) return nullptr;
+    uint16_t index;
+    if constexpr (EnMT) { // when multithread
+      while(true) {
+        index = remap_data_buffer_state.read();
+        if(index == 0) { remap_data_buffer_state.wait(); continue; } // pool empty
+        if(!remap_data_buffer_state.swap(index, index-1)) continue;  // atomic write
+        index--; break;
+      }
+    } else {
+      assert(remap_data_buffer_state > 0);
+      index = --remap_data_buffer_state;
+    }
+    return remap_data_buffer_pool[index];
+  }
+
+  virtual void remap_data_return_buffer(CMDataBase *buf) {
+    if (!buf) return;
+    if(remap_data_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
+      uint16_t index;
+      if constexpr (EnMT) { // when multithread
+        while(true) {
+          index = remap_data_buffer_state.read();
+          if(remap_data_buffer_state.swap(index, index+1, true)) break;  // atomic write
+        }
+      } else
+        index = remap_data_buffer_state++;
+      remap_data_buffer_pool[index] = buf;
+    }
+  }
+
+  virtual CMMetadataBase *remap_meta_copy_buffer() {
+    uint16_t index;
+    if constexpr (EnMT) { // when multithread
+      while(true) {
+        index = remap_meta_buffer_state.read();
+        if(index == 0) { remap_meta_buffer_state.wait(); continue; } // pool empty
+        if(!remap_meta_buffer_state.swap(index, index-1)) continue;  // atomic write
+        index--; break;
+      }
+    } else {
+      assert(remap_meta_buffer_state > 0);
+      index = --remap_meta_buffer_state;
+    }
+    return remap_meta_buffer_pool[index];
+  }
+
+  virtual void remap_meta_return_buffer(CMMetadataBase *buf) {
+    if(remap_meta_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
+      uint16_t index;
+      if constexpr (EnMT) { // when multithread
+        while(true) {
+          index = remap_meta_buffer_state.read();
+          if(remap_meta_buffer_state.swap(index, index+1, true)) break;  // atomic write
+        }
+      } else
+        index = remap_meta_buffer_state++;
+      remap_meta_buffer_pool[index] = buf;
+    }
+  }
 };
 
 #endif
