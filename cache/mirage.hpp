@@ -176,7 +176,7 @@ public:
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
-      d_replacer.access(ds, dw, true);
+      d_replacer.access(ds, dw, true, false);
     }
     CacheT::hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
@@ -184,7 +184,7 @@ public:
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
-      d_replacer.access(ds, dw, demand_acc);
+      d_replacer.access(ds, dw, demand_acc, false);
     }
     CacheT::hook_write(addr, ai, s, w, hit, demand_acc, meta, data, delay);
   }
