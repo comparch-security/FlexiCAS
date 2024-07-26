@@ -364,11 +364,11 @@ template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, t
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
 
 // Dynamic-Randomized support for CacheBase
-class CacheBaseDRSupport
+class CacheBaseRemapSupport
 {
 public:
-  CacheBaseDRSupport() {}
-  virtual ~CacheBaseDRSupport() {}
+  CacheBaseRemapSupport() {}
+  virtual ~CacheBaseRemapSupport() {}
 
   virtual void seed(std::vector<uint64_t>& seeds) = 0;
 };
@@ -383,8 +383,8 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
         && C_DERIVE_OR_VOID<DT, CMDataBase>
         && C_DERIVE<IDX, IndexSkewed<IW, 6, P>>
         && C_DERIVE_OR_VOID<DLY, DelayBase>
-class CacheSkewedDR : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>, 
-                      public CacheBaseDRSupport
+class CacheRemap : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>, 
+                      public CacheBaseRemapSupport
 {
   typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheT;
 
@@ -392,9 +392,9 @@ protected:
   using CacheT::indexer;
 
 public:
-  CacheSkewedDR(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
+  CacheRemap(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
   : CacheT(name, extra_par, extra_way){}
-  virtual ~CacheSkewedDR() {}
+  virtual ~CacheRemap() {}
 
   virtual void seed(std::vector<uint64_t>& seeds) { indexer.seed(seeds);}
 };
