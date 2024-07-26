@@ -370,11 +370,13 @@ public:
   CacheBaseRemapSupport() {}
   virtual ~CacheBaseRemapSupport() {}
 
-  virtual void seed(std::vector<uint64_t>& seeds) = 0;
+  virtual std::vector<int>* get_SPtr() = 0;
   virtual CMDataBase *remap_data_copy_buffer() = 0;
   virtual void remap_data_return_buffer(CMDataBase *buf) = 0;
   virtual CMMetadataBase *remap_meta_copy_buffer() = 0;
   virtual void remap_meta_return_buffer(CMMetadataBase *buf) = 0;
+  virtual void rotate_indexer() = 0;
+  virtual void next_replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
 };
 
 // Dynamic-Randomized Skewed Cache 
@@ -385,7 +387,7 @@ public:
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, RemapMetadataSupport>
         && C_DERIVE_OR_VOID<DT, CMDataBase>
-        && C_DERIVE<IDX, IndexSkewed<IW, 6, P>>
+        && C_DERIVE<IDX, IndexFuncBase, IndexRemapSupport>
         && C_DERIVE_OR_VOID<DLY, DelayBase>
 class CacheRemap : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon, EF, EnMT, MSHR>, 
                       public CacheBaseRemapSupport
@@ -395,6 +397,9 @@ class CacheRemap : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon, E
 
 protected:
   using CacheT::indexer;
+  using CacheT::arrays;
+  using CacheT::replacer;
+  using CacheT::loc_random;
 
   std::unordered_set<CMDataBase *> remap_data_buffer_pool_set;
   std::vector<CMDataBase *>        remap_data_buffer_pool;
@@ -403,9 +408,11 @@ protected:
   std::unordered_set<CMMetadataBase *> remap_meta_buffer_pool_set;
   std::vector<CMMetadataBase *>        remap_meta_buffer_pool;
   buffer_state_t                       remap_meta_buffer_state;
+
+  std::vector<int> SPtr;
 public:
   CacheRemap(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
-  : CacheT(name, extra_par, extra_way), remap_data_buffer_state(2), remap_meta_buffer_pool(2), remap_meta_buffer_state(2){
+  : CacheT(name, extra_par, extra_way), remap_data_buffer_state(2), remap_meta_buffer_pool(2), remap_meta_buffer_state(2), SPtr(1ul<<IW, -1){
     // allocate buffer pools
     // for single thread simulator, we assume a maximum of 2 buffers should be enough
     remap_meta_buffer_pool.resize(2, nullptr);
@@ -420,7 +427,7 @@ public:
     for(auto b: remap_meta_buffer_pool_set) delete b;
   }
 
-  virtual void seed(std::vector<uint64_t>& seeds) { indexer.seed(seeds);}
+  virtual std::vector<int>* get_SPtr() { return &SPtr;}
 
   virtual CMDataBase *remap_data_copy_buffer() {
     if (remap_data_buffer_pool_set.empty()) return nullptr;
@@ -482,6 +489,39 @@ public:
         index = remap_meta_buffer_state++;
       remap_meta_buffer_pool[index] = buf;
     }
+  }
+
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+    for(*ai=0; *ai<P; (*ai)++) {
+      *s = indexer.index(addr, *ai);
+      if(SPtr[*ai] < 0){
+        if (arrays[*ai]->hit(addr, *s, w)) return true;
+      }
+      else{
+        if(*s >= SPtr[*ai]){
+          if (arrays[*ai]->hit(addr, *s, w)) return true;
+          
+          *s = indexer.next_index(addr, *ai);
+          if (arrays[*ai]->hit(addr, *s, w)) return true;
+        }
+        else{
+          *s = indexer.next_index(addr, *ai);
+          if (arrays[*ai]->hit(addr, *s, w)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  virtual void next_replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
+    if constexpr (P==1) *ai = 0;
+    else                *ai = ((*loc_random)() % P);
+    *s = indexer.next_index(addr, *ai);
+    replacer[*ai].replace(*s, w);
+  }
+
+  virtual void rotate_indexer(){
+    indexer.rotate_indexer();
   }
 };
 

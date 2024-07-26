@@ -367,18 +367,19 @@ public:
   void remap(){
     auto cache = static_cast<CT *>(InnerCohPortBase::cache);
     auto[P, nset, nway] = cache->size();
+    std::vector<int>* SPtr = cache->get_SPtr();
     // TODO: pause monitors.
     // cache->monitors->pause_monitor();
-    std::vector<uint64_t> seeds(P);
-    for(auto &s:seeds) s = cm_get_random_uint64();
-    cache->seed(seeds);
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
+        (*SPtr)[ai] = idx + 1;
         for(uint32_t way = 0; way < nway; way++){
           relocation_chain(ai, idx, way);
         }
       }
     }
+    SPtr->assign(SPtr->size(), -1);
+    cache->rotate_indexer();
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
@@ -401,7 +402,7 @@ protected:
   void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai) {
     auto cache = static_cast<CT *>(InnerCohPortBase::cache);
     uint32_t new_idx, new_way;
-    cache->replace(c_addr, &ai, &new_idx, &new_way);
+    cache->next_replace(c_addr, &ai, &new_idx, &new_way);
     auto[m_meta, m_data] = cache->access_line(ai, new_idx, new_way);
     uint64_t m_addr = m_meta->addr(new_idx); 
     auto c_m_meta = cache->remap_meta_copy_buffer();

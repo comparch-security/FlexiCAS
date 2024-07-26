@@ -59,5 +59,49 @@ public:
 template<int IW, int IOfst>
 using IndexRandom = IndexSkewed<IW,IOfst,1>;
 
+class IndexRemapSupport
+{
+public:
+  IndexRemapSupport() {}
+  virtual ~IndexRemapSupport() {}
+
+  virtual uint32_t next_index(uint64_t addr, int partition) = 0;
+  virtual void rotate_indexer() = 0;
+};
+
+template<int IW, int IOfst, int P, typename IDX>
+  requires C_DERIVE<IDX, IndexSkewed<IW, IOfst, P>>
+class IndexRemapSkewed : public IndexFuncBase, 
+                         public IndexRemapSupport 
+{
+  IDX* index_curr;
+  IDX* index_next;
+  std::vector<uint64_t> next_seeds;
+public:
+  IndexRemapSkewed() : IndexFuncBase((1ul << IW) - 1), index_curr(new IDX()), index_next(new IDX()) {
+    next_seeds.resize(P);
+    for(auto &s:next_seeds) s = cm_get_random_uint64();
+    index_next->seed(next_seeds);
+  }
+  ~IndexRemapSkewed() {
+    delete index_curr;
+    delete index_next;
+  }
+
+  virtual uint32_t index(uint64_t addr, int partition) {
+    return index_curr->index(addr, partition);
+  }
+
+  virtual uint32_t next_index(uint64_t addr, int partition) {
+    return index_next->index(addr, partition);
+  }
+
+  virtual void rotate_indexer() {
+    index_curr->seed(next_seeds);
+    for(auto &s:next_seeds) s = cm_get_random_uint64();
+    index_next->seed(next_seeds);
+  }
+};
+
 
 #endif
