@@ -220,6 +220,41 @@ using MetadataBroadcast = MetadataMixer<AW, IW, TOfst, MT>;
 template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE<MT, MetadataDirectoryBase>
 using MetadataDirectory = MetadataMixer<AW, IW, TOfst, MT>;
 
+// metadata supporting Remap
+class RemapMetadataSupport
+{
+protected:
+  unsigned int remapped     : 1; // 0: unremap, 1: remapped
+public:
+  RemapMetadataSupport() : remapped(0) {}
+  virtual ~RemapMetadataSupport() {}
+
+  // special methods needed for Dynamic randomized Cache
+  virtual void to_remapped() { remapped = 1;}      // change state to remapped
+  virtual void to_unremap() { remapped = 0;}
+  virtual bool is_remapped() const { return remapped;}
+};
+
+// Metadata with match function
+// AW    : address width
+// IW    : index width
+// TOfst : tag offset
+// MT    : metadata base
+template <int AW, int IW, int TOfst, typename MT>
+  requires C_DERIVE<MT, MetadataBroadcastBase> && (!C_DERIVE<MT, MetadataDirectoryBase>)
+class RemapMetadataBroadcast : public MT, public RemapMetadataSupport
+{
+public:
+  RemapMetadataBroadcast() : MT(), RemapMetadataSupport() {}
+  virtual ~RemapMetadataBroadcast() {}
+
+  virtual void copy(const CMMetadataBase *m_meta) {
+    MT::copy(m_meta);
+    auto meta = static_cast<const RemapMetadataBroadcast<AW, IW, TOfst, MT> *>(m_meta);
+    remapped = meta->remapped;
+  }
+};
+
 // A wrapper for implementing the multithread required cache line lock utility
 template <typename MT> requires C_DERIVE<MT, CMMetadataCommon>
 class MetaLock : public MT {

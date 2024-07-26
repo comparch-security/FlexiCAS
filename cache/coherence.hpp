@@ -342,18 +342,18 @@ public:
   }
 };
 
-template <typename IPUC, typename CT, bool EnMT = false> 
+template <typename IPUC, typename CT, typename MT, bool EnMT = false> 
   requires C_DERIVE<IPUC, InnerCohPortUncached<EnMT>>
-        && C_DERIVE<CT, CacheBase, CacheBaseDRSupport> 
+        && C_DERIVE<CT, CacheBase, CacheBaseRemapSupport> 
+        && C_DERIVE<MT, MetadataBroadcastBase, RemapMetadataSupport> 
 class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>
 {
   typedef InnerCohPortT<IPUC, EnMT> InnerT;
-  std::unordered_set<uint64_t> remapped;
 
   // copy a cache line (both meta and data)
   void copy(CMMetadataBase* meta, CMDataBase* data, CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t addr) {
     c_meta->init(addr);
-    c_meta->copy(meta);
+    static_cast<MT *>(c_meta)->copy(meta);
     if(data) c_data->copy(data);
   }
 
@@ -372,11 +372,18 @@ public:
     std::vector<uint64_t> seeds(P);
     for(auto &s:seeds) s = cm_get_random_uint64();
     cache->seed(seeds);
-    remapped.clear();
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
           relocation_chain(ai, idx, way);
+        }
+      }
+    }
+    for(uint32_t ai = 0; ai < P; ai++){
+      for(uint32_t idx = 0; idx < nset; idx++){
+        for(uint32_t way = 0; way < nway; way++){
+          auto[meta, data] = cache->access_line(ai, idx, way);
+          static_cast<MT *>(meta)->to_unremap();
         }
       }
     }
@@ -402,14 +409,14 @@ protected:
     copy(m_meta, m_data, c_m_meta, c_m_data, m_addr);
 
     if (c_m_meta->is_valid()) {
-      if (remapped.count(m_addr)) this->evict(m_meta, m_data, ai, new_idx, new_way, nullptr);
+      if (static_cast<MT *>(m_meta)->is_remapped()) this->evict(m_meta, m_data, ai, new_idx, new_way, nullptr);
       else cache->hook_manage(m_addr, ai, new_idx, new_way, true, true, false, c_m_meta, c_m_data, nullptr);
     }
 
     copy(c_meta, c_data, m_meta, m_data, c_addr);
     cache->hook_read(c_addr, ai, new_idx, new_way, true, m_meta, m_data, nullptr);
 
-    remapped.insert(c_addr);
+    static_cast<MT *>(m_meta)->to_remapped();
     c_addr = m_addr;
     copy(c_m_meta, c_m_data, c_meta, c_data, m_addr);
 
@@ -420,15 +427,16 @@ protected:
   void relocation_chain(uint32_t ai, uint32_t idx, uint32_t way) {
     auto[meta, data] = cache->access_line(ai, idx, way);
     uint64_t c_addr = meta->addr(idx);
-    if (!meta->is_valid() || remapped.count(c_addr)) return;
+    if (!meta->is_valid() || static_cast<MT *>(meta)->is_remapped()) return;
     auto c_meta = cache->meta_copy_buffer();
     auto c_data = data ? cache->data_copy_buffer() : nullptr;
     copy(meta, data, c_meta, c_data, c_addr);
 
     meta->to_invalid();
+    static_cast<MT *>(meta)->to_remapped();
     cache->hook_manage(c_addr, ai, idx, way, true, true, false, c_meta, c_data, nullptr);
 
-    while(c_meta->is_valid() && !remapped.count(c_addr)){
+    while(c_meta->is_valid() && !static_cast<MT *>(c_meta)->is_remapped()){
       relocation(c_meta, c_data, c_addr, ai);
     }
     cache->meta_return_buffer(c_meta);

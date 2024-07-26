@@ -379,7 +379,7 @@ public:
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
-  requires C_DERIVE<MT, CMMetadataBase> 
+  requires C_DERIVE<MT, MetadataBroadcastBase, RemapMetadataSupport>
         && C_DERIVE_OR_VOID<DT, CMDataBase>
         && C_DERIVE<IDX, IndexSkewed<IW, 6, P>>
         && C_DERIVE_OR_VOID<DLY, DelayBase>
