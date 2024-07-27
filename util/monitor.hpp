@@ -121,7 +121,7 @@ protected:
   bool active;
 
 public:
-  SimpleAccMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
+  SimpleAccMonitor() : MonitorBase(), cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
   virtual ~SimpleAccMonitor() override {}
 
   virtual bool attach(uint64_t cache_id) override { return true; }
@@ -179,7 +179,7 @@ class SimpleTracer : public MonitorBase
   virtual void print(std::string& msg) { std::cout << msg << std::endl; }
 
 public:
-  SimpleTracer(bool cd = false): active(false), compact_data(cd) {}
+  SimpleTracer(bool cd = false): MonitorBase(), active(false), compact_data(cd) {}
   virtual ~SimpleTracer() {}
 
   virtual bool attach(uint64_t cache_id) { return true; }
