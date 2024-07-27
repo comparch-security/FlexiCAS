@@ -99,7 +99,7 @@ class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, 
 
   typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR> CacheT;
 protected:
-  using CacheT::arrays;
+  using CacheBase::arrays;
   using CacheT::indexer;
   using CacheT::loc_random;
   using CacheT::replacer;

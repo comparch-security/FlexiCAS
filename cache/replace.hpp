@@ -186,11 +186,12 @@ public:
   virtual ~ReplaceSRRIP() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
-    if((int32_t)w == alloc_map[s] || !DUO || demand_acc)
+    if((int32_t)w == alloc_map[s] || !DUO || demand_acc) {
       if(!prefetch)
         used_map[s][w] = ((int32_t)w == alloc_map[s]) ? 2 : 0;
       else // prefetch
         used_map[s][w] = 3;
+    }
     if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
     RPT::delist_from_free(s, w, demand_acc);
   }
