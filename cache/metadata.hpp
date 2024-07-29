@@ -242,6 +242,12 @@ public:
   __always_inline void to_relocated()   { relocated = true;  }
   __always_inline void to_unrelocated() { relocated = false; }
   __always_inline bool is_relocated()   { return relocated;  }
+
+  __always_inline virtual void copy(const CMMetadataBase *m_meta) {
+    MT::copy(m_meta);
+    auto meta = static_cast<const MetadataWithRelocate<MT> *>(m_meta);
+    relocated = meta->relocated;
+  }
 };
 
 // A wrapper for implementing the multithread required cache line lock utility
