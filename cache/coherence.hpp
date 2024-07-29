@@ -416,7 +416,6 @@ public:
 
 template <typename IPUC, typename CT, typename MT, bool EnMT = false> 
   requires C_DERIVE<IPUC, InnerCohPortUncached<EnMT>>
-        && C_DERIVE<CT, CacheBase, CacheBaseDRSupport> 
 class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>
 {
   typedef InnerCohPortT<IPUC, EnMT> InnerT;
