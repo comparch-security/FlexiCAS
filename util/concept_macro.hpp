@@ -14,7 +14,7 @@
   // C++20
   #include <concepts>
   template <typename Derived, typename... Bases>
-  constexpr bool C_DERIVE = (std::derived_from<Bases, Derived> && ...);
+  constexpr bool C_DERIVE = (std::derived_from<Derived, Bases> && ...);
 #endif
 
 template<typename c>

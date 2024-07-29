@@ -26,9 +26,9 @@ class IndexNorm : public IndexFuncBase
 {
 public:
   IndexNorm() : IndexFuncBase((1ul << IW) - 1) {}
-  virtual ~IndexNorm() {}
+  virtual ~IndexNorm() override {}
 
-  virtual uint32_t index(uint64_t addr, int partition) {
+  virtual uint32_t index(uint64_t addr, int partition) override {
     return (addr >> IOfst) & mask;
   }
 };
@@ -42,9 +42,9 @@ class IndexSkewed : public IndexFuncBase
   CMHasher hashers[P];
 public:
   IndexSkewed() : IndexFuncBase((1ul << IW) - 1) {}
-  virtual ~IndexSkewed() {}
+  virtual ~IndexSkewed() override {}
 
-  virtual uint32_t index(uint64_t addr, int partition) {
+  virtual uint32_t index(uint64_t addr, int partition) override {
     return (hashers[partition](addr >> IOfst)) & mask;
   }
 

@@ -74,12 +74,12 @@ public:
     if constexpr (EnMT) cache_set_state.resize(nset);
   }
 
-  virtual ~CacheArrayNorm() {
+  virtual ~CacheArrayNorm() override {
     for(auto m:meta) delete m;
     if constexpr (!C_VOID<DT>) for(auto d:data) delete d;
   }
 
-  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const {
+  virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const override {
     for(unsigned int i=0; i<way_num; i++)
       if(meta[s*way_num + i]->match(addr)) {
         *w = i;
@@ -88,35 +88,41 @@ public:
     return false;
   }
 
-  virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) { return meta[s*way_num + w]; }
+  virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) override { return meta[s*way_num + w]; }
   virtual CMDataBase * get_data(uint32_t s, uint32_t w) {
     if constexpr (C_VOID<DT>) return nullptr;
     else                      return data[s*NW + w];
   }
 
-  virtual void set_mt_state(uint32_t s, uint16_t prio) {
-    while(true) {
-      auto state = cache_set_state[s].read();
-      if(prio <= state) { cache_set_state[s].wait(); continue; }
-      if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+  virtual void set_mt_state(uint32_t s, uint16_t prio) override {
+    if constexpr (EnMT) {
+      while(true) {
+        auto state = cache_set_state[s].read();
+        if(prio <= state) { cache_set_state[s].wait(); continue; }
+        if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+      }
     }
   }
 
-  virtual void check_mt_state(uint32_t s, uint16_t prio) {
-    auto prio_upper = (prio << 1) - 1;
-    while(true) {
-      auto state = cache_set_state[s].read();
-      assert(state >= prio);
-      if(prio_upper >= state) break;
-      cache_set_state[s].wait();
+  virtual void check_mt_state(uint32_t s, uint16_t prio) override {
+    if constexpr (EnMT) {
+      auto prio_upper = (prio << 1) - 1;
+      while(true) {
+        auto state = cache_set_state[s].read();
+        assert(state >= prio);
+        if(prio_upper >= state) break;
+        cache_set_state[s].wait();
+      }
     }
   }
 
-  virtual void reset_mt_state(uint32_t s, uint16_t prio) {
-    while(true) {
-      auto state = cache_set_state[s].read();
-      assert(state == state | prio);
-      if(cache_set_state[s].swap(state, state & (~prio), true)) break;
+  virtual void reset_mt_state(uint32_t s, uint16_t prio) override {
+    if constexpr (EnMT) {
+      while(true) {
+        auto state = cache_set_state[s].read();
+        assert(state == state | prio);
+        if(cache_set_state[s].swap(state, state & (~prio), true)) break;
+      }
     }
   }
 };
@@ -146,31 +152,29 @@ public:
 
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
-                   uint32_t *s, uint32_t *w
+                   uint32_t *s, uint32_t *w,
+                   uint16_t prio = 0, // transaction priority
+                   bool check_and_set = false // whether to check and set the priority if hit
                    ) = 0;
 
-  bool hit(uint64_t addr) {
+  __always_inline bool hit(uint64_t addr) {
     uint32_t ai, s, w;
-    return hit(addr, &ai, &s, &w);
+    return hit(addr, &ai, &s, &w, 0, false);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) = 0;
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) = 0;
 
-  virtual CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) {
-    return arrays[ai]->get_meta(s, w);
-  }
-
-  virtual CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
-    return arrays[ai]->get_data(s, w);
-  }
+  __always_inline CMMetadataCommon *access(uint32_t ai, uint32_t s, uint32_t w) { return arrays[ai]->get_meta(s, w); }
+  __always_inline CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) { return arrays[ai]->get_data(s, w); }
 
   // methods for supporting multithread execution
   virtual CMDataBase *data_copy_buffer() = 0;               // allocate a copy buffer, needed by exclusive cache with extended meta
   virtual void data_return_buffer(CMDataBase *buf) = 0;     // return a copy buffer, used to detect conflicts in copy buffer
   virtual CMMetadataBase *meta_copy_buffer() = 0;           // allocate a copy buffer, needed by exclusive cache with extended meta
   virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
-  __always_inline void lock_line(uint32_t ai, uint32_t s, uint32_t w)   { access(ai, s, w)->lock();   }
-  __always_inline void unlock_line(uint32_t ai, uint32_t s, uint32_t w) { access(ai, s, w)->unlock(); }
+  __always_inline void set_mt_state(uint32_t ai, uint32_t s, uint16_t prio)   { arrays[ai]->set_mt_state(s, prio);   }
+  __always_inline void check_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->check_mt_state(s, prio); }
+  __always_inline void reset_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->reset_mt_state(s, prio); }
 
   virtual std::tuple<int, int, int> size() const = 0;           // return the size parameters of the cache
   uint32_t get_id() const { return id; }
@@ -194,11 +198,10 @@ public:
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY,
          bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
-           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF, EnMT> > && C_DERIVE_OR_VOID<DLY, DelayBase> &&
-           MSHR >= 2 // 2 buffers are required even for single-thread simulation
+           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase> &&
+           (MSHR >= 2) // 2 buffers are required even for single-thread simulation
 class CacheSkewed : public CacheBase
 {
-  typedef typename std::conditional<EnMT, AtomicVar<uint16_t>, uint16_t>::type buffer_state_t;
 protected:
   IDX indexer;      // index resolver
   RPC replacer[P];  // replacer
@@ -206,11 +209,15 @@ protected:
 
   std::unordered_set<CMDataBase *> data_buffer_pool_set;
   std::vector<CMDataBase *>        data_buffer_pool;
-  buffer_state_t                   data_buffer_state;
+  uint16_t                         data_buffer_state;
+  std::mutex                       data_buffer_mutex;
+  std::condition_variable          data_buffer_cv;
 
   std::unordered_set<CMMetadataBase *> meta_buffer_pool_set;
   std::vector<CMMetadataBase *>        meta_buffer_pool;
-  buffer_state_t                       meta_buffer_state;
+  uint16_t                             meta_buffer_state;
+  std::mutex                           meta_buffer_mutex;
+  std::condition_variable              meta_buffer_cv;
 
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
@@ -231,25 +238,26 @@ public:
     }
   }
 
-  virtual ~CacheSkewed() {
+  virtual ~CacheSkewed() override {
     delete CacheMonitorSupport::monitors;
     if (!data_buffer_pool_set.empty()) for(auto b: data_buffer_pool_set) delete b;
     for(auto b: meta_buffer_pool_set) delete b;
     if constexpr (P>1) delete loc_random;
   }
 
-  virtual std::tuple<int, int, int> size() const { return std::make_tuple(P, 1ul<<IW, NW); }
+  virtual std::tuple<int, int, int> size() const override { return std::make_tuple(P, 1ul<<IW, NW); }
 
-  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w ) {
+  virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool check_and_set) override {
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      if(arrays[*ai]->hit(addr, *s, w))
-        return true;
+      if(EnMT && check_and_set) this->set_mt_state(*ai, *s, prio);
+      if(arrays[*ai]->hit(addr, *s, w)) return true;
+      if(EnMT && check_and_set) this->reset_mt_state(*ai, *s, prio);
     }
     return false;
   }
 
-  virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) {
+  virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) override {
     auto meta = static_cast<CMMetadataBase *>(arrays[ai]->get_meta(s, w));
     if constexpr (!C_VOID<DT>)
       return std::make_pair(meta, w < NW ? arrays[ai]->get_data(s, w) : nullptr);
@@ -257,98 +265,102 @@ public:
       return std::make_pair(meta, nullptr);
   }
 
-  virtual void replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, unsigned int genre = 0) {
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     if constexpr (P==1) *ai = 0;
     else                *ai = ((*loc_random)() % P);
     *s = indexer.index(addr, *ai);
+    if(EnMT) {
+      this->set_mt_state(*ai, *s, prio);
+      // double check the miss status
+      if(CacheBase::hit(addr)) { // the exact cache block is re-inserted by other transactions
+        this->reset_mt_state(*ai, *s, prio);
+        return false;
+      }
+    }
     replacer[*ai].replace(*s, w);
+    return true;
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
-    if(ai < P) replacer[ai].access(s, w, false);
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if(ai < P) replacer[ai].access(s, w, true, false);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
-    if(ai < P) replacer[ai].access(s, w, is_release);
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if(ai < P) replacer[ai].access(s, w, demand_acc, false);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P && hit && evict) replacer[ai].invalid(s, w);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
   }
 
-  virtual CMDataBase *data_copy_buffer() {
+  virtual CMDataBase *data_copy_buffer() override {
     if (data_buffer_pool_set.empty()) return nullptr;
-    uint16_t index;
-    if constexpr (EnMT) { // when multithread
-      while(true) {
-        index = data_buffer_state.read();
-        if(index == 0) { data_buffer_state.wait(); continue; } // pool empty
-        if(!data_buffer_state.swap(index, index-1)) continue;  // atomic write
-        index--; break;
-      }
+    if constexpr (EnMT) {
+      std::unique_lock lk(data_buffer_mutex);
+      while(data_buffer_state == 0) data_buffer_cv.wait(lk);
+      return data_buffer_pool[--data_buffer_state];
     } else {
       assert(data_buffer_state > 0);
-      index = --data_buffer_state;
+      return data_buffer_pool[--data_buffer_state];
     }
-    return data_buffer_pool[index];
   }
 
-  virtual void data_return_buffer(CMDataBase *buf) {
+  virtual void data_return_buffer(CMDataBase *buf) override {
     if (!buf) return;
     if(data_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
-      uint16_t index;
-      if constexpr (EnMT) { // when multithread
-        while(true) {
-          index = data_buffer_state.read();
-          if(data_buffer_state.swap(index, index+1, true)) break;  // atomic write
+      if constexpr (EnMT) {
+        {
+          std::lock_guard lk(data_buffer_mutex);
+          data_buffer_pool[data_buffer_state] = buf;
+          data_buffer_state++;
         }
-      } else
-        index = data_buffer_state++;
-      data_buffer_pool[index] = buf;
+        data_buffer_cv.notify_one();
+      } else {
+        data_buffer_pool[data_buffer_state] = buf;
+        data_buffer_state++;
+      }
     }
   }
 
-  virtual CMMetadataBase *meta_copy_buffer() {
-    uint16_t index;
-    if constexpr (EnMT) { // when multithread
-      while(true) {
-        index = meta_buffer_state.read();
-        if(index == 0) { meta_buffer_state.wait(); continue; } // pool empty
-        if(!meta_buffer_state.swap(index, index-1)) continue;  // atomic write
-        index--; break;
-      }
+  virtual CMMetadataBase *meta_copy_buffer() override {
+    if (meta_buffer_pool_set.empty()) return nullptr;
+    if constexpr (EnMT) {
+      std::unique_lock lk(meta_buffer_mutex);
+      while(meta_buffer_state == 0) meta_buffer_cv.wait(lk);
+      return meta_buffer_pool[--meta_buffer_state];
     } else {
       assert(meta_buffer_state > 0);
-      index = --meta_buffer_state;
+      return meta_buffer_pool[--meta_buffer_state];
     }
-    return meta_buffer_pool[index];
   }
 
-  virtual void meta_return_buffer(CMMetadataBase *buf) {
+  virtual void meta_return_buffer(CMMetadataBase *buf) override {
     if(meta_buffer_pool_set.count(buf)) { // only recycle previous allocated buffer
-      uint16_t index;
-      if constexpr (EnMT) { // when multithread
-        while(true) {
-          index = meta_buffer_state.read();
-          if(meta_buffer_state.swap(index, index+1, true)) break;  // atomic write
+      if constexpr (EnMT) {
+        {
+          std::lock_guard lk(meta_buffer_mutex);
+          meta_buffer_pool[meta_buffer_state] = buf;
+          meta_buffer_state++;
         }
-      } else
-        index = meta_buffer_state++;
-      meta_buffer_pool[index] = buf;
+        meta_buffer_cv.notify_one();
+      } else {
+        meta_buffer_pool[meta_buffer_state] = buf;
+        meta_buffer_state++;
+      }
     }
   }
 
-  virtual bool query_coloc(uint64_t addrA, uint64_t addrB){
+  virtual bool query_coloc(uint64_t addrA, uint64_t addrB) override {
     for(int i=0; i<P; i++) 
       if(indexer.index(addrA, i) == indexer.index(addrB, i)) 
         return true;
     return false;
   }
 
-  virtual void query_fill_loc(LocInfo *loc, uint64_t addr) {
+  virtual void query_fill_loc(LocInfo *loc, uint64_t addr) override {
     for(int i=0; i<P; i++){
       loc->insert(LocIdx(i, indexer.index(addr, i)), LocRange(0, NW-1));
     }
@@ -360,8 +372,8 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
-using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon>;
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon, EF, EnMT, MSHR>;
 
 // Dynamic-Randomized support for CacheBase
 class CacheBaseDRSupport
