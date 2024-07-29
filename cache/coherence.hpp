@@ -465,7 +465,7 @@ public:
 protected:
   void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai) {
     uint32_t new_idx, new_way;
-    cache->replace(c_addr, &ai, &new_idx, &new_way);
+    cache->replace(c_addr, &ai, &new_idx, &new_way, 0);
     auto[m_meta, m_data] = cache->access_line(ai, new_idx, new_way);
     uint64_t m_addr = m_meta->addr(new_idx); 
     auto c_m_meta = cache->meta_copy_buffer();
