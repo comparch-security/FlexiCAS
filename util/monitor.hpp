@@ -5,9 +5,12 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <boost/format.hpp>
 #include "util/delay.hpp"
 #include "util/concept_macro.hpp"
 #include "util/print.hpp"
+#include "cache/metadata.hpp"
+#include "util/random.hpp"
 
 class CMDataBase;
 class CMMetadataBase;
@@ -43,7 +46,6 @@ protected:
 public:
 
   MonitorContainerBase(uint32_t id) : id(id) {}
-
   virtual ~MonitorContainerBase() {}
 
   virtual void attach_monitor(MonitorBase *m) = 0;
@@ -82,27 +84,27 @@ public:
     if constexpr (!C_VOID<DLY>) timer = new DLY();
   }
 
-  virtual ~CacheMonitorImp() {
+  virtual ~CacheMonitorImp() override {
     if constexpr (!C_VOID<DLY>) delete timer;
   }
 
-  virtual void attach_monitor(MonitorBase *m) {
+  virtual void attach_monitor(MonitorBase *m) override {
     if constexpr (EnMon) {
       if(m->attach(id)) monitors.insert(m);
     }
   }
 
-  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
+  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
     if constexpr (EnMon) for(auto m:monitors) m->read(id, addr, ai, s, w, hit, meta, data);
     if constexpr (!C_VOID<DLY>) timer->read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
+  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
     if constexpr (EnMon) for(auto m:monitors) m->write(id, addr, ai, s, w, hit, meta, data);
     if constexpr (!C_VOID<DLY>) timer->write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) {
+  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
     if(hit && evict) {
       if constexpr (EnMon) for(auto m:monitors) m->invalid(id, addr, ai, s, w, meta, data);
     }
@@ -119,18 +121,18 @@ protected:
   bool active;
 
 public:
-  SimpleAccMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
-  virtual ~SimpleAccMonitor() {}
+  SimpleAccMonitor() : MonitorBase(), cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
+  virtual ~SimpleAccMonitor() override {}
 
-  virtual bool attach(uint64_t cache_id) { return true; }
+  virtual bool attach(uint64_t cache_id) override { return true; }
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  {
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  override {
     if(!active) return;
     cnt_access++;
     if(!hit) cnt_miss++;
   }
 
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) {
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_access++;
     cnt_write++;
@@ -140,7 +142,7 @@ public:
     }
   }
 
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) {
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_invalid++;
   }
@@ -174,37 +176,84 @@ class SimpleTracer : public MonitorBase
   bool active;
   bool compact_data;
 
-  virtual void print(std::string& msg);
+  virtual void print(std::string& msg) { std::cout << msg << std::endl; }
 
 public:
-  SimpleTracer(bool cd = false): active(true), compact_data(cd) {}
+  SimpleTracer(bool cd = false): MonitorBase(), active(false), compact_data(cd) {}
   virtual ~SimpleTracer() {}
 
   virtual bool attach(uint64_t cache_id) { return true; }
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data);
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data);
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data);
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s read  %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
 
-  virtual void start() { active = true;  }
-  virtual void stop()  { active = false; }
-  virtual void pause() { active = false; }
-  virtual void resume() { active = true; }
-  virtual void reset() { active = false; }
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s write %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s evict %016x %02d %04d %02d  ") % UniqueID::name(cache_id) % addr % ai % s % w).str() ;
+
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
+
+  virtual void start() override { active = true;  }
+  virtual void stop()  override { active = false; }
+  virtual void pause() override { active = false; }
+  virtual void resume() override { active = true; }
+  virtual void reset() override { active = false; }
 };
 
 // multithread version of simple tracer
 class SimpleTracerMT : public SimpleTracer
 {
-  PrintPool pool;
   std::thread print_thread;
-  virtual void print(std::string& msg) { pool.add(msg); }
+  std::hash<std::thread::id> hasher;
+  virtual void print(std::string& msg) override {
+    uint16_t id = hasher(std::this_thread::get_id());
+    std::string msg_ext = (boost::format("thread %04x: %s") % id % msg).str();
+    globalPrinter->add(msg_ext);
+  }
 
 public:
-  SimpleTracerMT(bool cd = false): SimpleTracer(cd), pool(256) {
-    print_thread = std::thread(&PrintPool::print, &pool);
+  SimpleTracerMT(bool cd = false): SimpleTracer(cd) {
+    print_thread = std::thread(&PrintPool::print, globalPrinter);
   }
-  virtual void stop() { pool.stop(); print_thread.join(); }
+  virtual ~SimpleTracerMT() override {}
+  virtual void stop() { globalPrinter->stop(); print_thread.join(); }
 };
 
 #endif

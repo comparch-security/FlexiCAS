@@ -12,8 +12,8 @@ namespace {
   public:
     RandomGenBase() : uniform(0, max_value) {}
     RandomGenBase(unsigned int s) : rand_gen(s), uniform(0, max_value) {}
-    virtual rv_type operator ()() {return uniform(rand_gen); }
-    virtual void seed(uint64_t s) {rand_gen.seed(s); }
+    virtual rv_type operator ()() override { return uniform(rand_gen); }
+    virtual void seed(uint64_t s) override { rand_gen.seed(s); }
   };
 
   template<typename rv_type, uint64_t max_value>
