@@ -15,10 +15,12 @@ int main() {
   SimpleTracer tracer(true);
   l1d->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
+  tracer.start();
 
   RegressionGen<1, false, false, AddrN, 0, Data64B> tgen;
   auto rv = tgen.run(TestN, core, core);
 
+  tracer.stop();
   delete_caches(cache);
   delete mem;
   return rv;

@@ -12,7 +12,6 @@
 #include <queue>
 #include "cache/metadata.hpp"
 #include "util/regression.hpp"
-#include "cache/coherence_multi.hpp"
 #include <thread>
 
 class cache_xact 
@@ -89,6 +88,7 @@ protected:
   std::vector<DataQueue* > dq_pool;
   std::vector<std::deque<cache_xact >> xact_queue;
   std::vector<std::mutex *> xact_mutux;
+  std::vector<std::condition_variable *> xact_cond;
 public:
   ParallelRegressionGen() : ReT(), ParallelRegressionSupport() {
     xact_queue.resize(NC);
@@ -97,7 +97,11 @@ public:
       dq_pool[i] = new DataQueue(NC, addr_pool[i]);
     }
     xact_mutux.resize(NC);
-    for(int i = 0; i < NC; i++) xact_mutux[i] = new std::mutex();
+    xact_cond.resize(NC);
+    for(int i = 0; i < NC; i++) {
+      xact_mutux[i] = new std::mutex();
+      xact_cond[i] = new std::condition_variable();
+    }
   }
 
   virtual ~ParallelRegressionGen() {
@@ -117,10 +121,12 @@ public:
       act = cache_xact{rw, core, ic, flush, addr, d};
       if(flush == 2){ // share instruction flush
         for(int i = 0; i < NC; i++){
+          if(i == core) continue;
           std::unique_lock lk(*xact_mutux[i]);
-          act.core = i;
-          xact_queue[core].push_back(act);
+          xact_cond[i]->wait(lk, [&, i]{return xact_queue[i].empty();});
+          xact_queue[i].push_back(act);
         }
+        xact_queue[core].push_back(act);
       }else{
         std::unique_lock lk(*xact_mutux[core]);
         xact_queue[core].push_back(act);
@@ -146,6 +152,7 @@ public:
     else{
       act = xact_queue[core].front();
       xact_queue[core].pop_front();
+      xact_cond[core]->notify_all();
       return std::make_pair(true, act);
     }
   }
@@ -167,7 +174,7 @@ public:
         if(flush){
           if(flush == 3)  (*core_data)[core]->flush(addr, nullptr);
           else            (*core_inst)[core]->flush(addr, nullptr);
-          if(rw && act_core == core){
+          if(rw){
             (*core_data)[core]->write(addr, &data, nullptr);
             prg->write_dq(addr, &data);
           }

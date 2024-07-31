@@ -10,11 +10,11 @@ class MetadataMSIBase : public BT
 {
 public:
   MetadataMSIBase(): BT() {}
-  virtual ~MetadataMSIBase() {}
+  virtual ~MetadataMSIBase() override {}
 
 private:
-  virtual void to_owned(int32_t coh_id) {}
-  virtual void to_exclusive(int32_t coh_id) {}
+  virtual void to_owned(int32_t coh_id) override {}
+  virtual void to_exclusive(int32_t coh_id) override {}
 };
 
 template <int AW, int IW, int TOfst>
@@ -29,6 +29,7 @@ template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, MetadataBroad
   typedef MIPolicy<MT, isL1, isLLC> PolicT;
 protected:
   using CohPolicyBase::outer;
+  using CohPolicyBase::is_release;
   using CohPolicyBase::is_fetch_read;
   using CohPolicyBase::is_fetch_write;
   using CohPolicyBase::is_write;
@@ -41,22 +42,23 @@ protected:
   using CohPolicyBase::cmd_for_null;
 
 public:
-  virtual ~MSIPolicy() {}
+  virtual ~MSIPolicy() override {}
 
-  virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const {
+  virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const override {
     if(is_fetch_write(cmd) || is_evict(cmd) || is_writeback(cmd))
       return outer->cmd_for_write();
     else
       return outer->cmd_for_read();
   }
 
-  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
+    if(is_release(cmd))     return std::make_pair(false, cmd_for_null()); // assuming inclusive cache, release is always hit and exclusive/modified
     if(is_fetch_write(cmd)) return std::make_pair(true, cmd_for_probe_release(cmd.id));
     if(meta->is_shared())   return std::make_pair(false, cmd_for_null());
     return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
   }
 
-  virtual std::tuple<bool, bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const {
+  virtual std::tuple<bool, bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
     if(is_write(cmd)) {
       if(!meta->allow_write())       return std::make_tuple(true,  false, outer->cmd_for_write());
       else if(!meta->is_modified())  return std::make_tuple(false, true,  cmd_for_null()); // promote locally
@@ -64,7 +66,7 @@ public:
     return std::make_tuple(false, false, cmd_for_null());
   }
 
-  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const {
+  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const override {
     meta->init(addr);
     if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
     else {
@@ -73,7 +75,7 @@ public:
     }
   }
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const {
+  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const override {
     int32_t id = cmd.id;
     if(is_fetch_read(cmd)) {
       meta->to_shared(id);
@@ -85,7 +87,7 @@ public:
     }
   }
 
-  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const {
+  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const override {
     if constexpr (!isL1) {
       if(outer->is_evict(outer_cmd))
         return std::make_pair(true, cmd_for_probe_release());
@@ -100,7 +102,7 @@ public:
     } else return std::make_pair(false, cmd_for_null());
   }
 
-  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const {
+  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const override {
     PolicT::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
     if(meta) {
       if(outer->is_evict(outer_cmd))
@@ -113,7 +115,7 @@ public:
     }
   }
 
-  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const {
+  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const override {
     if (isLLC || uncached) {
       if(meta) {
         if(is_evict(cmd)) return std::make_tuple(true, true, cmd_for_probe_release());
