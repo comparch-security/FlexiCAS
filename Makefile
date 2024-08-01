@@ -68,7 +68,7 @@ $(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEA
 	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@
 
 $(PARALLEL_REGRESSION_TESTS_RST): %.out: %
-	timeout 1m $< 2>$@ 1>temp.log
+	timeout 1m $< 2>$@
 
 regression: $(REGRESSION_TESTS_RST) $(PARALLEL_REGRESSION_TESTS_RST)
 
