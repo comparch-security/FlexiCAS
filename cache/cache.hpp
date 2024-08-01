@@ -281,6 +281,19 @@ public:
     return true;
   }
 
+  __always_inline std::pair<MT*, uint64_t> relocate(uint32_t s_ai, uint32_t s_s, uint32_t s_w, uint32_t d_ai, uint32_t d_s, uint32_t d_w) {
+    auto s_meta = static_cast<MT *>(this->access(s_ai, s_s, s_w));
+    auto addr = s_meta->addr(s_s);
+    auto d_meta = static_cast<MT *>(this->access(d_ai, d_s, d_w));
+    d_meta->init(addr);
+    d_meta->copy(s_meta);
+    s_meta->to_clean();
+    s_meta->to_invalid();
+    if constexpr (!C_VOID<DT>)
+      static_cast<DT *>(this->get_data(d_ai, d_s, d_w))->copy(static_cast<DT *>(this->get_data(s_ai, s_s, s_w)));
+    return std::make_pair(d_meta, addr);
+  }
+
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) replacer[ai].access(s, w, true, false);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
