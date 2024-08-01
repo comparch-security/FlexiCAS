@@ -425,6 +425,8 @@ class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>
   void copy(CMMetadataBase* meta, CMDataBase* data, CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t addr) {
     c_meta->init(addr);
     c_meta->copy(meta);
+    if(static_cast<MT *>(meta)->is_relocated()) static_cast<MT *>(c_meta)->to_relocated();
+    else static_cast<MT *>(c_meta)->to_unrelocated();
     if(data) c_data->copy(data);
   }
 
@@ -453,8 +455,7 @@ public:
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
-          auto[meta, data] = cache->access_line(ai, idx, way);
-          static_cast<MT *>(meta)->to_unrelocated();
+          static_cast<MT *>(cache->access(ai, idx, way))->to_unrelocated();
         }
       }
     }
