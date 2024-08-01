@@ -217,15 +217,15 @@ public:
     }
   }
 
-  void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
-    auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
-    auto m_meta = static_cast<MT *>(this->access(m_ai, m_s, m_w));
-    auto addr = m_meta->addr(m_s);
-    meta->init(addr); meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
-    get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
-    CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
-    CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // hit is true or false? may have impact on delay
-    std::tie(*ai, *s, *w, meta) = std::make_tuple(m_ai, m_s, m_w, m_meta);
+  void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
+    while(!stack.empty()) {
+      auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
+      auto [meta, addr] = this->relocate(m_ai, m_s, m_w, *ai, *s, *w);
+      get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
+      CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
+      CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // hit is true or false? may have impact on delay
+      std::tie(*ai, *s, *w) = std::make_tuple(m_ai, m_s, m_w);
+    }
   }
 
 };
@@ -271,7 +271,7 @@ protected:
         this->evict(meta, cache->get_data_data(static_cast<MT *>(meta)), ai, s, w, delay);
         cache->get_data_meta(static_cast<MT *>(meta))->to_invalid();
       }
-      while(!stack.empty()) cache->cuckoo_relocate(&ai, &s, &w, meta, stack, delay);
+      cache->cuckoo_relocate(&ai, &s, &w, stack, delay);
       meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
       auto data_pointer = cache->replace_data(addr);
       auto data_meta = cache->get_data_meta(data_pointer);
