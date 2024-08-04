@@ -281,17 +281,27 @@ public:
     return true;
   }
 
-  __always_inline std::pair<MT*, uint64_t> relocate(uint32_t s_ai, uint32_t s_s, uint32_t s_w, uint32_t d_ai, uint32_t d_s, uint32_t d_w) {
-    auto s_meta = static_cast<MT *>(this->access(s_ai, s_s, s_w));
-    auto addr = s_meta->addr(s_s);
-    auto d_meta = static_cast<MT *>(this->access(d_ai, d_s, d_w));
+  __always_inline std::pair<MT*, uint64_t> relocate(uint64_t addr, MT *s_meta, MT *d_meta) {
     d_meta->init(addr);
     d_meta->copy(s_meta);
     s_meta->to_clean();
     s_meta->to_invalid();
-    if constexpr (!C_VOID<DT>)
-      static_cast<DT *>(this->get_data(d_ai, d_s, d_w))->copy(static_cast<DT *>(this->get_data(s_ai, s_s, s_w)));
     return std::make_pair(d_meta, addr);
+  }
+
+  __always_inline std::pair<MT*, uint64_t> relocate(uint32_t s_ai, uint32_t s_s, uint32_t s_w, MT *d_meta, DT *d_data = nullptr) {
+    if constexpr (!C_VOID<DT>) d_data->copy(static_cast<DT *>(this->get_data(s_ai, s_s, s_w)));
+    auto s_meta = static_cast<MT *>(this->access(s_ai, s_s, s_w));
+    return relocate(s_meta->addr(s_s), s_meta, d_meta);
+  }
+
+  __always_inline std::pair<MT*, uint64_t> relocate(uint64_t addr, uint32_t d_ai, uint32_t d_s, uint32_t d_w, MT *s_meta, DT *s_data = nullptr) {
+    if constexpr (!C_VOID<DT>) static_cast<DT *>(this->get_data(d_ai, d_s, d_w))->copy(s_data);
+    return relocate(addr, s_meta, static_cast<MT *>(this->access(d_ai, d_s, d_w)));
+  }
+
+  __always_inline std::pair<MT*, uint64_t> relocate(uint32_t s_ai, uint32_t s_s, uint32_t s_w, uint32_t d_ai, uint32_t d_s, uint32_t d_w) {
+    return relocate(s_ai, s_s, s_w, static_cast<MT *>(this->access(d_ai, d_s, d_w)), static_cast<DT *>(this->get_data(d_ai, d_s, d_w)));
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
