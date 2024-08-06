@@ -281,27 +281,32 @@ public:
     return true;
   }
 
-  __always_inline std::pair<MT*, uint64_t> relocate(uint64_t addr, MT *s_meta, MT *d_meta) {
+  __always_inline void relocate(uint64_t addr, CMMetadataBase *s_meta, CMMetadataBase *d_meta) {
     d_meta->init(addr);
     d_meta->copy(s_meta);
     s_meta->to_clean();
     s_meta->to_invalid();
-    return std::make_pair(d_meta, addr);
   }
 
-  __always_inline std::pair<MT*, uint64_t> relocate(uint32_t s_ai, uint32_t s_s, uint32_t s_w, MT *d_meta, DT *d_data = nullptr) {
-    if constexpr (!C_VOID<DT>) d_data->copy(static_cast<DT *>(this->get_data(s_ai, s_s, s_w)));
-    auto s_meta = static_cast<MT *>(this->access(s_ai, s_s, s_w));
-    return relocate(s_meta->addr(s_s), s_meta, d_meta);
-  }
-
-  __always_inline std::pair<MT*, uint64_t> relocate(uint64_t addr, uint32_t d_ai, uint32_t d_s, uint32_t d_w, MT *s_meta, DT *s_data = nullptr) {
-    if constexpr (!C_VOID<DT>) static_cast<DT *>(this->get_data(d_ai, d_s, d_w))->copy(s_data);
-    return relocate(addr, s_meta, static_cast<MT *>(this->access(d_ai, d_s, d_w)));
+  __always_inline void relocate(uint64_t addr, CMMetadataBase *s_meta, CMMetadataBase *d_meta, CMDataBase *s_data, CMDataBase *d_data) {
+    relocate(addr, s_meta, d_meta);
+    if(s_data) d_data->copy(s_data);
   }
 
   __always_inline std::pair<MT*, uint64_t> relocate(uint32_t s_ai, uint32_t s_s, uint32_t s_w, uint32_t d_ai, uint32_t d_s, uint32_t d_w) {
-    return relocate(s_ai, s_s, s_w, static_cast<MT *>(this->access(d_ai, d_s, d_w)), static_cast<DT *>(this->get_data(d_ai, d_s, d_w)));
+    if constexpr (C_VOID<DT>) {
+      auto s_meta = static_cast<CMMetadataBase *>(this->access(s_ai, s_s, s_w));
+      auto d_meta = static_cast<CMMetadataBase *>(this->access(d_ai, d_s, d_w));
+      auto addr = s_meta->addr(s_s);
+      relocate(addr, s_meta, d_meta);
+      return std::make_pair(static_cast<MT *>(d_meta), addr);
+    } else {
+      auto [s_meta, s_data] = this->access_line(s_ai, s_s, s_w);
+      auto [d_meta, d_data] = this->access_line(d_ai, d_s, d_w);
+      auto addr = s_meta->addr(s_s);
+      relocate(addr, s_meta, d_meta); d_data->copy(s_data);
+      return std::make_pair(static_cast<MT *>(d_meta), addr);
+    }
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
