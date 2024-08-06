@@ -209,7 +209,7 @@ public:
         replacer[m_ai].replace(m_s, &m_w);
         auto m_meta = static_cast<MT *>(this->access(m_ai, m_s, m_w));
         auto m_addr = m_meta->addr(m_s);
-        if(remapped.count(m_addr)) break;
+        if(remapped.count(m_addr)) break; // ToDo: here will break the replace state! allocate() without access()
         remapped.insert(addr);
         stack.push(std::make_tuple(*ai, *s, *w));
         std::tie(meta, addr, *ai, *s, *w) = std::make_tuple(m_meta, m_addr, m_ai, m_s, m_w);
@@ -223,7 +223,7 @@ public:
       auto [meta, addr] = this->relocate(m_ai, m_s, m_w, *ai, *s, *w);
       get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
       CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
-      CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // hit is true or false? may have impact on delay
+      CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // read or write? // hit is true or false? may have impact on delay
       std::tie(*ai, *s, *w) = std::make_tuple(m_ai, m_s, m_w);
     }
   }
