@@ -5,10 +5,6 @@
 
 class MetadataMIBase : public CMMetadataBase
 {
-public:
-  MetadataMIBase(): CMMetadataBase() {}
-  virtual ~MetadataMIBase() override {}
-
 private:
   virtual void to_shared(int32_t coh_id) override {}
   virtual void to_owned(int32_t coh_id) override {}
@@ -31,8 +27,6 @@ protected:
   using CohPolicyBase::is_evict;
 
 public:
-  virtual ~MIPolicy() override {}
-
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const override {
     return outer->cmd_for_write();
   }

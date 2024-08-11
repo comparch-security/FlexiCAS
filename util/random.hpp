@@ -8,7 +8,6 @@
 template<typename rv_type>
 class RandomGen {
 public:
-  virtual ~RandomGen() {}
   virtual rv_type operator ()() = 0;
   virtual void seed(uint64_t s) = 0;
 };
