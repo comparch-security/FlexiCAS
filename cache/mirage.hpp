@@ -12,8 +12,7 @@ protected:
   uint32_t mai, ms, mw; // data meta pointer to meta
 
 public:
-  MirageDataMeta() : CMMetadataCommon(), state(false), mai(0), ms(0), mw(0) {}
-  virtual ~MirageDataMeta() override {}
+  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
   __always_inline void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
   __always_inline std::tuple<uint32_t, uint32_t, uint32_t> pointer() { return std::make_tuple(mai, ms, mw);} // return the pointer to data
   virtual void to_invalid() override { state = false; }
@@ -30,7 +29,6 @@ protected:
   uint32_t ds, dw;
 public:
   MirageMetadataSupport() : ds(0), dw(0) {}
-  virtual ~MirageMetadataSupport() {}
 
   // special methods needed for Mirage Cache
   __always_inline void bind(uint32_t s, uint32_t w) { ds = s; dw = w; }                     // initialize meta pointer
@@ -47,9 +45,6 @@ class MirageMetadataMSIBroadcast : public MetadataBroadcast<AW, IW, TOfst, Metad
 {
   typedef MetadataBroadcast<AW, IW, TOfst, MetadataMSIBase<MetadataBroadcastBase> > MetadataT;
 public:
-  MirageMetadataMSIBroadcast() : MetadataT(), MirageMetadataSupport() {}
-  virtual ~MirageMetadataMSIBroadcast() override {}
-
   virtual std::string to_string() const override { return CMMetadataBase::to_string() + MirageMetadataSupport::to_string(); }
 
   virtual void copy(const CMMetadataBase *m_meta) override {
@@ -67,9 +62,6 @@ class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always 
   using CohPolicyBase::is_flush;
   using CohPolicyBase::is_evict;
 public:
-  MirageMSIPolicy() : MSIPolicy<MT, false, true>() {}
-  virtual ~MirageMSIPolicy() override {}
-
   virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const override {
     assert(is_flush(cmd));
     if(is_evict(cmd)) {
@@ -242,7 +234,7 @@ protected:
   using InnerCohPortBase::outer;
 public:
   MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
-  virtual ~MirageInnerPortUncached() override {}
+
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) override { // common function for access a line in the cache

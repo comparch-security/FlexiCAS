@@ -90,7 +90,7 @@ protected:
   std::vector<std::mutex *> xact_mutux;
   std::vector<std::condition_variable *> xact_cond;
 public:
-  ParallelRegressionGen() : ReT(), ParallelRegressionSupport() {
+  ParallelRegressionGen() {
     xact_queue.resize(NC);
     dq_pool.resize(addr_pool.size());
     for(int i = 0; i < addr_pool.size(); i++){

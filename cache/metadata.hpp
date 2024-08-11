@@ -16,8 +16,6 @@ public:
   virtual void write(uint64_t *wdata) {} // write the whole cache block
   virtual void copy(const CMDataBase *block) = 0; // copy the content of block
   virtual std::string to_string() const = 0;
-
-  virtual ~CMDataBase() {}
 };
 
 // typical 64B data block
@@ -28,7 +26,6 @@ protected:
 
 public:
   Data64B() : data{0} {}
-  virtual ~Data64B() override {}
 
   virtual void reset() override { for(auto d:data) d = 0; }
   virtual uint64_t read(unsigned int index) const override { return data[index]; }
@@ -50,8 +47,6 @@ public:
 class CMMetadataCommon
 {
 public:
-  CMMetadataCommon() {}
-  virtual ~CMMetadataCommon() {}
   virtual void to_invalid() = 0;      // change state to invalid
   virtual bool is_valid() const = 0;
   virtual bool match(uint64_t addr) const = 0;
@@ -77,8 +72,7 @@ public:
   static const unsigned int state_exclusive = 4; // 110 clean, exclusive
   static const unsigned int state_owned     = 2; // 010 may dirty, shared
 
-  CMMetadataBase() : CMMetadataCommon(), state(0), dirty(0), extend(0) {}
-  virtual ~CMMetadataBase() override {}
+  CMMetadataBase() : state(0), dirty(0), extend(0) {}
 
   // implement a totally useless base class
   virtual bool match(uint64_t addr) const override { return false; } // wether an address match with this block
@@ -144,8 +138,7 @@ protected:
   __always_inline bool is_sharer(int32_t coh_id) const { return ((1ull << coh_id) & (sharer))!= 0; }
 
 public:
-  MetadataDirectoryBase() : MetadataBroadcastBase(), sharer(0) {}
-  virtual ~MetadataDirectoryBase() override {}
+  MetadataDirectoryBase() : sharer(0) {}
 
   virtual void to_invalid()                 override { MetadataBroadcastBase::to_invalid();         clean_sharer();          }
   virtual void to_shared(int32_t coh_id)    override { MetadataBroadcastBase::to_shared(coh_id);    add_sharer_help(coh_id); }
@@ -191,7 +184,6 @@ protected:
 
 public:
   MetadataMixer() : tag(0) {}
-  virtual ~MetadataMixer() override {}
 
   virtual CMMetadataBase * get_outer_meta() override { return &outer_meta; }
   virtual const CMMetadataBase * get_outer_meta() const override { return &outer_meta; }
@@ -237,8 +229,7 @@ class MetadataWithRelocate : public MT
 protected:
   bool relocated;
 public:
-  MetadataWithRelocate() : MT(), relocated(false) {}
-  virtual ~MetadataWithRelocate() override {}
+  MetadataWithRelocate() : relocated(false) {}
   __always_inline void to_relocated()   { relocated = true;  }
   __always_inline void to_unrelocated() { relocated = false; }
   __always_inline bool is_relocated()   { return relocated;  }
@@ -255,8 +246,6 @@ class MetaLock : public MT {
 #endif
 
 public:
-  MetaLock() : MT() {}
-  virtual ~MetaLock() override {}
   virtual void lock() override {
 #ifdef CHECK_MULTI
     uint64_t thread_id = global_lock_checker->thread_id();

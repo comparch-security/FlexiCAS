@@ -26,7 +26,6 @@ protected:
 
 public:
   CacheArrayBase(std::string name = "") : name(name) {}
-  virtual ~CacheArrayBase() {}
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) = 0;
@@ -74,7 +73,7 @@ public:
     if constexpr (EnMT) cache_set_state.resize(nset);
   }
 
-  virtual ~CacheArrayNorm() override {
+  virtual ~CacheArrayNorm() {
     for(auto m:meta) delete m;
     if constexpr (!C_VOID<DT>) for(auto d:data) delete d;
   }

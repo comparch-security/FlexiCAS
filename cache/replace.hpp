@@ -47,8 +47,6 @@ public:
     for (auto &s: free_map) s.resize(NW, true);
   }
 
-  virtual ~ReplaceFuncBase() {}
-
   __always_inline uint32_t get_free_num(uint32_t s) const { return free_num[s]; }
 
   virtual void replace(uint32_t s, uint32_t *w) {
@@ -102,7 +100,6 @@ public:
       for(uint32_t i=0; i<NW; i++) s[i] = i;
     }
   }
-  virtual ~ReplaceFIFO() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] && demand_acc) {
@@ -136,9 +133,6 @@ protected:
   using RPT::used_map;
 
 public:
-  ReplaceLRU() : ReplaceFIFO<IW, NW, EF, DUO>() {}
-  virtual ~ReplaceLRU() override {}
-
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] || !DUO || demand_acc) {
       auto prio = used_map[s][w];
@@ -183,7 +177,6 @@ public:
   ReplaceSRRIP() : RPT(1ul << IW, NW) {
     for (auto &s: used_map) s.resize(NW, 3);
   }
-  virtual ~ReplaceSRRIP() override {}
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] || !DUO || demand_acc) {
@@ -224,7 +217,7 @@ protected:
 
 public:
   ReplaceRandom() : RPT(1ul << IW, NW), loc_random(cm_alloc_rand32()) {}
-  virtual ~ReplaceRandom() override { delete loc_random; }
+  virtual ~ReplaceRandom() { delete loc_random; }
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
