@@ -26,6 +26,7 @@ protected:
 
 public:
   CacheArrayBase(std::string name = "") : name(name) {}
+  virtual ~CacheArrayBase() = default;
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) = 0;
@@ -73,7 +74,7 @@ public:
     if constexpr (EnMT) cache_set_state.resize(nset);
   }
 
-  virtual ~CacheArrayNorm() {
+  virtual ~CacheArrayNorm() override {
     for(auto m:meta) delete m;
     if constexpr (!C_VOID<DT>) for(auto d:data) delete d;
   }
@@ -119,7 +120,7 @@ public:
     if constexpr (EnMT) {
       while(true) {
         auto state = cache_set_state[s].read();
-        assert(state == state | prio);
+        assert(state == (state | prio));
         if(cache_set_state[s].swap(state, state & (~prio), true)) break;
       }
     }

@@ -9,6 +9,7 @@
 class CMDataBase
 {
 public:
+  virtual ~CMDataBase() = default;
   // implement a totally useless base class
   virtual void reset() {} // reset the data block, normally unnecessary
   virtual uint64_t read(unsigned int index) const { return 0; } // read a 64b data
@@ -27,7 +28,7 @@ protected:
 public:
   Data64B() : data{0} {}
 
-  virtual void reset() override { for(auto d:data) d = 0; }
+  virtual void reset() override { for(auto &d:data) d = 0; }
   virtual uint64_t read(unsigned int index) const override { return data[index]; }
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) override { data[index] = (data[index] & (~wmask)) | (wdata & wmask); }
   virtual void write(uint64_t *wdata) override { for(int i=0; i<8; i++) data[i] = wdata[i]; }
@@ -47,6 +48,7 @@ public:
 class CMMetadataCommon
 {
 public:
+  virtual ~CMMetadataCommon() = default;
   virtual void to_invalid() = 0;      // change state to invalid
   virtual bool is_valid() const = 0;
   virtual bool match(uint64_t addr) const = 0;
@@ -261,7 +263,7 @@ public:
 
   virtual void unlock() override {
 #ifdef CHECK_MULTI
-    uint64_t thread_id = global_lock_checker->thread_id();
+    //uint64_t thread_id = global_lock_checker->thread_id();
     assert(locked.load() != 0 || 0 ==
            "This cache line has already be unlocked and should not be unlocked again!");
     locked = 0;

@@ -194,14 +194,14 @@ void shape_distribution(const std::vector<double>& cdfs, std::vector<uint64_t> &
   auto ssize = sample.size();
 
   std::vector<int> index(dsize, 0);
-  for(int i=0; i<dsize; i++) {
+  for(unsigned int i=0; i<dsize; i++) {
     index[i] = ssize * cdfs[i] - 1;
     if(index[i] < 0) index[i] = 0;
   }
 
   std::sort(sample.begin(), sample.end());
 
-  for(int i=0; i<dsize; i++) dist[i] = sample[index[i]];
+  for(unsigned int i=0; i<dsize; i++) dist[i] = sample[index[i]];
 }
 
 double kl_divergence_with_uniform(const std::vector<uint64_t>& sample) {

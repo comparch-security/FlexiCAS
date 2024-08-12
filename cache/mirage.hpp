@@ -111,8 +111,6 @@ public:
     }
   }
 
-  virtual ~MirageCache() override {}
-
   __always_inline CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
     auto pointer = static_cast<MT *>(this->access(ai, s, w))->pointer();
     return arrays[P]->get_data(pointer.first, pointer.second);

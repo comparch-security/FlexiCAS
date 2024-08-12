@@ -47,6 +47,8 @@ public:
     for (auto &s: free_map) s.resize(NW, true);
   }
 
+  virtual ~ReplaceFuncBase() = default;
+
   __always_inline uint32_t get_free_num(uint32_t s) const { return free_num[s]; }
 
   virtual void replace(uint32_t s, uint32_t *w) {
@@ -217,7 +219,7 @@ protected:
 
 public:
   ReplaceRandom() : RPT(1ul << IW, NW), loc_random(cm_alloc_rand32()) {}
-  virtual ~ReplaceRandom() { delete loc_random; }
+  virtual ~ReplaceRandom() override { delete loc_random; }
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;

@@ -75,7 +75,7 @@ public:
     monitors = new CacheMonitorImp<DLY, EnMon>(id);
   }
 
-  virtual ~SimpleMemoryModel() {
+  virtual ~SimpleMemoryModel() override {
     delete monitors;
   }
 
