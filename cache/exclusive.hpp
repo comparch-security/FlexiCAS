@@ -131,7 +131,6 @@ protected:
   DRPC ext_replacer[P];
 public:
   CacheSkewedExclusive(std::string name = "") : CacheT(name, 0, (EnDir ? DW : 0)) {}
-  virtual ~CacheSkewedExclusive() override {}
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, prio, 0);
@@ -556,7 +555,6 @@ protected:
   using OuterCohPortBase::coh_id;
 public:
   ExclusiveOuterCohPortBroadcastT(policy_ptr policy) : OPUC(policy) {}
-  virtual ~ExclusiveOuterCohPortBroadcastT() {}
 
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
@@ -608,7 +606,6 @@ protected:
   using OuterCohPortBase::coh_id;
 public:
   ExclusiveOuterCohPortDirectoryT(policy_ptr policy) : OPUC(policy) {}
-  virtual ~ExclusiveOuterCohPortDirectoryT() {}
 
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;

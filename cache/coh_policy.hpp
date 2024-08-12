@@ -40,6 +40,8 @@ protected:
 public:
   friend CoherentCacheBase; // deferred assignment for cache
 
+  virtual ~CohPolicyBase() = default;
+
   __always_inline void connect(CohPolicyBase *policy) { outer = policy ? policy : this; } // memory does not use policy and returns nullptr
 
   // message type

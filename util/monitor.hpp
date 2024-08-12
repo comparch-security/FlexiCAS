@@ -19,6 +19,8 @@ class CMMetadataBase;
 class MonitorBase
 {
 public:
+  virtual ~MonitorBase() = default;
+
   // standard functions to supprt a type of monitoring
   virtual bool attach(uint64_t cache_id) = 0; // decide whether to attach the mointor to this cache
   virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
@@ -42,8 +44,8 @@ protected:
   std::set<MonitorBase *> monitors;     // performance moitors
 
 public:
-
   MonitorContainerBase(uint32_t id) : id(id) {}
+  virtual ~MonitorContainerBase() = default;
 
   virtual void attach_monitor(MonitorBase *m) = 0;
 
@@ -85,7 +87,7 @@ public:
     if constexpr (!C_VOID<DLY>) timer = new DLY();
   }
 
-  virtual ~CacheMonitorImp() {
+  virtual ~CacheMonitorImp() override {
     if constexpr (!C_VOID<DLY>) delete timer;
   }
 
@@ -258,6 +260,7 @@ public:
   SimpleTracerMT(bool cd = false): SimpleTracer(cd) {
     print_thread = std::thread(&PrintPool::print, globalPrinter);
   }
+
   virtual void stop() { globalPrinter->stop(); print_thread.join(); }
 };
 

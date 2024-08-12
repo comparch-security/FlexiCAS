@@ -44,6 +44,7 @@ protected:
 
 public:
   OuterCohPortBase(policy_ptr policy) : policy(policy) {}
+  virtual ~OuterCohPortBase() = default;
 
   void connect(CohMasterBase *h, std::pair<int32_t, policy_ptr> info) { coh = h; coh_id = info.first; policy->connect(info.second.get()); }
 
@@ -71,6 +72,7 @@ protected:
   policy_ptr policy; // the coherence policy
 public:
   InnerCohPortBase(policy_ptr policy) : policy(policy) {}
+  virtual ~InnerCohPortBase() = default;
 
   virtual std::pair<uint32_t, policy_ptr> connect(CohClientBase *c, bool uncached = false) {
     if(uncached) {
@@ -151,7 +153,6 @@ protected:
   using OuterCohPortBase::policy;
 public:
   OuterCohPortT(policy_ptr policy) : OPUC(policy) {}
-  virtual ~OuterCohPortT() {}
 
   virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
@@ -374,7 +375,6 @@ protected:
   using InnerCohPortBase::policy;
 public:
   InnerCohPortT(policy_ptr policy) : IPUC(policy) {}
-  virtual ~InnerCohPortT() {}
 
   virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) override {
     bool hit = false, writeback = false;
@@ -550,7 +550,6 @@ class CoherentCacheNorm : public CoherentCacheBase
 public:
   CoherentCacheNorm(policy_ptr policy, std::string name = "")
     : CoherentCacheBase(new CacheT(name), new OuterT(policy), new InnerT(policy), policy, name) {}
-  virtual ~CoherentCacheNorm() override {}
 };
 
 /////////////////////////////////

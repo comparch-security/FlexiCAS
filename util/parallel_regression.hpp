@@ -36,9 +36,9 @@ protected:
   uint64_t addr;
   std::deque<Data64B> data_deque;
   std::mutex* mtx;
-  int NC;
+  unsigned int NC;
 public:
-  DataQueue(int NCore, uint64_t waddr) : NC(NCore), addr(waddr) {
+  DataQueue(int NCore, uint64_t waddr) : addr(waddr), NC(NCore) {
     mtx = new std::mutex();
   }
   virtual ~DataQueue() { delete mtx; }
@@ -93,7 +93,7 @@ public:
   ParallelRegressionGen() {
     xact_queue.resize(NC);
     dq_pool.resize(addr_pool.size());
-    for(int i = 0; i < addr_pool.size(); i++){
+    for(unsigned int i = 0; i < addr_pool.size(); i++){
       dq_pool[i] = new DataQueue(NC, addr_pool[i]);
     }
     xact_mutux.resize(NC);
@@ -115,7 +115,7 @@ public:
     act.core = hasher(gi++) % NC;
     while(num < test_num){
       auto [addr, data, rw, core, ic, flush] = gen();
-      int index = addr_map[addr];
+      //int index = addr_map[addr];
       Data64B d;
       d.copy(data);
       act = cache_xact{rw, core, ic, flush, addr, d};
