@@ -15,7 +15,6 @@ protected:
   int slice;
 public:
   SliceHashBase(int s) : slice(s) {}
-  virtual ~SliceHashBase() {}
   virtual uint32_t operator () (uint64_t addr) = 0;
 };
 
@@ -26,7 +25,6 @@ class SliceHashNorm : public SliceHashBase
 {
 public:
   SliceHashNorm(int s): SliceHashBase(s) {}
-  virtual ~SliceHashNorm() override {}
   virtual uint32_t operator () (uint64_t addr) override { return (addr >> BlkOfst) % slice; }
 };
 
@@ -42,7 +40,6 @@ public:
     else if (s == 8) hash.key({0x3cccc93100ull, 0x2eb5faa880ull, 0x1b5f575400ull});
     else             assert(0 == "The number of slices must be equal to 2, 4 or 8!");
   }
-  virtual ~SliceHashIntelCAS() {}
 
   uint32_t virtual operator () (uint64_t addr) override { return hash(addr); }
 

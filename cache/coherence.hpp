@@ -45,7 +45,7 @@ protected:
 
 public:
   OuterCohPortBase(policy_ptr policy) : policy(policy) {}
-  virtual ~OuterCohPortBase() {}
+  virtual ~OuterCohPortBase() = default;
 
   void connect(CohMasterBase *h, std::pair<int32_t, policy_ptr> info) { coh = h; coh_id = info.first; policy->connect(info.second.get()); }
 
@@ -73,7 +73,7 @@ protected:
   policy_ptr policy; // the coherence policy
 public:
   InnerCohPortBase(policy_ptr policy) : policy(policy) {}
-  virtual ~InnerCohPortBase() {}
+  virtual ~InnerCohPortBase() = default;
 
   virtual std::pair<uint32_t, policy_ptr> connect(CohClientBase *c, bool uncached = false) {
     if(uncached) {
@@ -105,7 +105,6 @@ class OuterCohPortUncached : public OuterCohPortBase
 {
 public:
   OuterCohPortUncached(policy_ptr policy) : OuterCohPortBase(policy) {}
-  virtual ~OuterCohPortUncached() override {}
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) override {
     outer_cmd.id = coh_id;
@@ -155,7 +154,6 @@ protected:
   using OuterCohPortBase::policy;
 public:
   OuterCohPortT(policy_ptr policy) : OPUC(policy) {}
-  virtual ~OuterCohPortT() override {}
 
   virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
@@ -221,7 +219,6 @@ class InnerCohPortUncached : public InnerCohPortBase
 {
 public:
   InnerCohPortUncached(policy_ptr policy) : InnerCohPortBase(policy) {}
-  virtual ~InnerCohPortUncached() override {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
@@ -379,7 +376,6 @@ protected:
   using InnerCohPortBase::policy;
 public:
   InnerCohPortT(policy_ptr policy) : IPUC(policy) {}
-  virtual ~InnerCohPortT() override {}
 
   virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) override {
     bool hit = false, writeback = false;
@@ -551,7 +547,6 @@ class CoreInterface : public InnerCohPortUncached<EnMT>, public CoreInterfaceBas
 
 public:
   CoreInterface(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
-  virtual ~CoreInterface() override {}
 
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) override {
     addr = normalize(addr);
@@ -658,7 +653,6 @@ class CoherentCacheNorm : public CoherentCacheBase
 public:
   CoherentCacheNorm(policy_ptr policy, std::string name = "")
     : CoherentCacheBase(new CacheT(name), new OuterT(policy), new InnerT(policy), policy, name) {}
-  virtual ~CoherentCacheNorm() override {}
 };
 
 /////////////////////////////////
@@ -675,7 +669,6 @@ protected:
   HT hasher;
 public:
   SliceDispatcher(const std::string &n, int slice) : CohMasterBase(nullptr), name(n), hasher(slice) {}
-  virtual ~SliceDispatcher() override {}
   void connect(CohMasterBase *c) { cohm.push_back(c); }
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     cohm[hasher(addr)]->acquire_resp(addr, data_inner, meta_inner, cmd, delay);

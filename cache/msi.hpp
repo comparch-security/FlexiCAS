@@ -8,10 +8,6 @@ template <typename BT>
   requires C_SAME<BT, MetadataBroadcastBase> || C_SAME<BT, MetadataDirectoryBase>
 class MetadataMSIBase : public BT
 {
-public:
-  MetadataMSIBase(): BT() {}
-  virtual ~MetadataMSIBase() override {}
-
 private:
   virtual void to_owned(int32_t coh_id) override {}
   virtual void to_exclusive(int32_t coh_id) override {}
@@ -42,8 +38,6 @@ protected:
   using CohPolicyBase::cmd_for_null;
 
 public:
-  virtual ~MSIPolicy() override {}
-
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const override {
     if(is_fetch_write(cmd) || is_evict(cmd) || is_writeback(cmd))
       return outer->cmd_for_write();

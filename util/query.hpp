@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <utility>
 #include <string>
+#include <cstdint>
 
 class CacheBase;
 
