@@ -40,7 +40,7 @@ public:
     data_pool.resize(total);
     wflag.resize(total);
     iflag.resize(total);
-    for(int i=0; i<total; i++) {
+    for(unsigned int i=0; i<total; i++) {
       auto addr = hasher(gi++) & addr_mask;
       while(addr_map.count(addr)) addr = hasher(gi++) & addr_mask;
       addr_pool[i] = addr;
@@ -103,7 +103,7 @@ public:
   }
 
   bool run(uint64_t TestN, std::vector<CoreInterfaceBase *>& core_inst, std::vector<CoreInterfaceBase *>& core_data) {
-    for(int i=0; i<TestN; i++) {
+    for(unsigned int i=0; i<TestN; i++) {
       auto [addr, wdata, rw, nc, ic, flush] = gen();
       if(flush) {
         if(flush == 3)       core_data[nc]->flush(addr, nullptr);

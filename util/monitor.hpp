@@ -19,14 +19,14 @@ class CMMetadataBase;
 class MonitorBase
 {
 public:
-  MonitorBase() {}
-  virtual ~MonitorBase() {}
+  virtual ~MonitorBase() = default;
 
   // standard functions to supprt a type of monitoring
   virtual bool attach(uint64_t cache_id) = 0; // decide whether to attach the mointor to this cache
   virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
   virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
   virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) = 0;
+  virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) { return false; } // a special function to log non-standard information to a special monitor
 
   // control
   virtual void start() = 0;    // start the monitor, assuming the monitor is just initialized
@@ -44,9 +44,8 @@ protected:
   std::set<MonitorBase *> monitors;     // performance moitors
 
 public:
-
   MonitorContainerBase(uint32_t id) : id(id) {}
-  virtual ~MonitorContainerBase() {}
+  virtual ~MonitorContainerBase() = default;
 
   virtual void attach_monitor(MonitorBase *m) = 0;
 
@@ -56,6 +55,7 @@ public:
   virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void magic_func(uint64_t addr, uint64_t magic_id, void *magic_data) = 0; // an interface for special communication with a specific monitor if attached
 };
 
 // class monitor helper
@@ -69,7 +69,10 @@ public:
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool is_release, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
   // probe, invalidate and writeback
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
-
+  // an interface for special communication with a specific monitor if attached
+  __always_inline void monitor_magic_func(uint64_t addr, uint64_t magic_id, void *magic_data) {
+    monitors->magic_func(addr, magic_id, magic_data);
+  }
 };
 
 // Cache monitor and delay support
@@ -111,6 +114,13 @@ public:
     if constexpr (!C_VOID<DLY>) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
 
+  virtual void magic_func(uint64_t addr, uint64_t magic_id, void *magic_data) {
+    if constexpr (EnMon) {
+      for(auto m:monitors)
+        if(m->magic_func(id, addr, magic_id, magic_data))
+          return;
+    }
+  }
 };
 
 // Simple Access Monitor
@@ -121,8 +131,7 @@ protected:
   bool active;
 
 public:
-  SimpleAccMonitor() : MonitorBase(), cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
-  virtual ~SimpleAccMonitor() override {}
+  SimpleAccMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
 
   virtual bool attach(uint64_t cache_id) override { return true; }
 
@@ -179,8 +188,7 @@ class SimpleTracer : public MonitorBase
   virtual void print(std::string& msg) { std::cout << msg << std::endl; }
 
 public:
-  SimpleTracer(bool cd = false): MonitorBase(), active(false), compact_data(cd) {}
-  virtual ~SimpleTracer() {}
+  SimpleTracer(bool cd = false): active(false), compact_data(cd) {}
 
   virtual bool attach(uint64_t cache_id) { return true; }
 
@@ -252,7 +260,7 @@ public:
   SimpleTracerMT(bool cd = false): SimpleTracer(cd) {
     print_thread = std::thread(&PrintPool::print, globalPrinter);
   }
-  virtual ~SimpleTracerMT() override {}
+
   virtual void stop() { globalPrinter->stop(); print_thread.join(); }
 };
 

@@ -38,9 +38,9 @@ protected:
   static const uint32_t downgrade_act   = 4;
 
 public:
-  virtual ~CohPolicyBase() {}
-
   friend CoherentCacheBase; // deferred assignment for cache
+
+  virtual ~CohPolicyBase() = default;
 
   __always_inline void connect(CohPolicyBase *policy) { outer = policy ? policy : this; } // memory does not use policy and returns nullptr
 

@@ -9,6 +9,7 @@
 class CMDataBase
 {
 public:
+  virtual ~CMDataBase() = default;
   // implement a totally useless base class
   virtual void reset() {} // reset the data block, normally unnecessary
   virtual uint64_t read(unsigned int index) const { return 0; } // read a 64b data
@@ -16,8 +17,6 @@ public:
   virtual void write(uint64_t *wdata) {} // write the whole cache block
   virtual void copy(const CMDataBase *block) = 0; // copy the content of block
   virtual std::string to_string() const = 0;
-
-  virtual ~CMDataBase() {}
 };
 
 // typical 64B data block
@@ -28,9 +27,8 @@ protected:
 
 public:
   Data64B() : data{0} {}
-  virtual ~Data64B() override {}
 
-  virtual void reset() override { for(auto d:data) d = 0; }
+  virtual void reset() override { for(auto &d:data) d = 0; }
   virtual uint64_t read(unsigned int index) const override { return data[index]; }
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) override { data[index] = (data[index] & (~wmask)) | (wdata & wmask); }
   virtual void write(uint64_t *wdata) override { for(int i=0; i<8; i++) data[i] = wdata[i]; }
@@ -50,8 +48,7 @@ public:
 class CMMetadataCommon
 {
 public:
-  CMMetadataCommon() {}
-  virtual ~CMMetadataCommon() {}
+  virtual ~CMMetadataCommon() = default;
   virtual void to_invalid() = 0;      // change state to invalid
   virtual bool is_valid() const = 0;
   virtual bool match(uint64_t addr) const = 0;
@@ -77,8 +74,7 @@ public:
   static const unsigned int state_exclusive = 4; // 110 clean, exclusive
   static const unsigned int state_owned     = 2; // 010 may dirty, shared
 
-  CMMetadataBase() : CMMetadataCommon(), state(0), dirty(0), extend(0) {}
-  virtual ~CMMetadataBase() override {}
+  CMMetadataBase() : state(0), dirty(0), extend(0) {}
 
   // implement a totally useless base class
   virtual bool match(uint64_t addr) const override { return false; } // wether an address match with this block
@@ -144,8 +140,7 @@ protected:
   __always_inline bool is_sharer(int32_t coh_id) const { return ((1ull << coh_id) & (sharer))!= 0; }
 
 public:
-  MetadataDirectoryBase() : MetadataBroadcastBase(), sharer(0) {}
-  virtual ~MetadataDirectoryBase() override {}
+  MetadataDirectoryBase() : sharer(0) {}
 
   virtual void to_invalid()                 override { MetadataBroadcastBase::to_invalid();         clean_sharer();          }
   virtual void to_shared(int32_t coh_id)    override { MetadataBroadcastBase::to_shared(coh_id);    add_sharer_help(coh_id); }
@@ -191,7 +186,6 @@ protected:
 
 public:
   MetadataMixer() : tag(0) {}
-  virtual ~MetadataMixer() override {}
 
   virtual CMMetadataBase * get_outer_meta() override { return &outer_meta; }
   virtual const CMMetadataBase * get_outer_meta() const override { return &outer_meta; }
@@ -230,6 +224,19 @@ using MetadataBroadcast = MetadataMixer<AW, IW, TOfst, MT>;
 template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE<MT, MetadataDirectoryBase>
 using MetadataDirectory = MetadataMixer<AW, IW, TOfst, MT>;
 
+// support a relocated bit in the metadata for dynamic remap randomized caches
+template<typename MT> requires C_DERIVE<MT, CMMetadataBase>
+class MetadataWithRelocate : public MT
+{
+protected:
+  bool relocated;
+public:
+  MetadataWithRelocate() : relocated(false) {}
+  __always_inline void to_relocated()   { relocated = true;  }
+  __always_inline void to_unrelocated() { relocated = false; }
+  __always_inline bool is_relocated()   { return relocated;  }
+};
+
 // A wrapper for implementing the multithread required cache line lock utility
 template <typename MT> requires C_DERIVE<MT, CMMetadataCommon>
 class MetaLock : public MT {
@@ -241,8 +248,6 @@ class MetaLock : public MT {
 #endif
 
 public:
-  MetaLock() : MT() {}
-  virtual ~MetaLock() override {}
   virtual void lock() override {
 #ifdef CHECK_MULTI
     uint64_t thread_id = global_lock_checker->thread_id();
@@ -258,7 +263,7 @@ public:
 
   virtual void unlock() override {
 #ifdef CHECK_MULTI
-    uint64_t thread_id = global_lock_checker->thread_id();
+    //uint64_t thread_id = global_lock_checker->thread_id();
     assert(locked.load() != 0 || 0 ==
            "This cache line has already be unlocked and should not be unlocked again!");
     locked = 0;

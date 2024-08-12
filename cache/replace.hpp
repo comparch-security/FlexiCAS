@@ -47,11 +47,11 @@ public:
     for (auto &s: free_map) s.resize(NW, true);
   }
 
-  virtual ~ReplaceFuncBase() {}
+  virtual ~ReplaceFuncBase() = default;
 
   __always_inline uint32_t get_free_num(uint32_t s) const { return free_num[s]; }
 
-  virtual void replace(uint32_t s, uint32_t *w, uint32_t op = 0) {
+  virtual void replace(uint32_t s, uint32_t *w) {
     uint32_t i = 0;
     if constexpr (EF) {
       if(free_num[s] > 0) i = alloc_from_free(s);
@@ -66,7 +66,7 @@ public:
     *w = i;
   }
 
-  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) = 0;
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) = 0;
 
   virtual void invalid(uint32_t s, uint32_t w) {
     if((int32_t)w != alloc_map[s]) {
@@ -102,14 +102,18 @@ public:
       for(uint32_t i=0; i<NW; i++) s[i] = i;
     }
   }
-  virtual ~ReplaceFIFO() override {}
 
-  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] && demand_acc) {
       alloc_map[s] = -1;
       auto prio = used_map[s][w];
-      for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
-      used_map[s][w] = NW-1;
+      if(!prefetch) {
+        for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
+        used_map[s][w] = NW-1;
+      } else if(prio > 0) { // prefetch and insert into empty
+        for(uint32_t i=0; i<NW; i++) if(used_map[s][i] < prio) used_map[s][i]++;
+        used_map[s][w] = 0; // insert at LRU position
+      }
     }
     RPT::delist_from_free(s, w, demand_acc);
   }
@@ -131,14 +135,16 @@ protected:
   using RPT::used_map;
 
 public:
-  ReplaceLRU() : ReplaceFIFO<IW, NW, EF, DUO>() {}
-  virtual ~ReplaceLRU() override {}
-
-  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] || !DUO || demand_acc) {
       auto prio = used_map[s][w];
-      for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
-      used_map[s][w] = NW-1;
+      if(!prefetch) {
+        for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
+        used_map[s][w] = NW-1;
+      } else if(prio > 0){ // prefetch and insert into empty
+        for(uint32_t i=0; i<NW; i++) if(used_map[s][i] < prio) used_map[s][i]++;
+        used_map[s][w] = 0; // insert at LRU position
+      }
     }
     if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
     RPT::delist_from_free(s, w, demand_acc);
@@ -173,11 +179,14 @@ public:
   ReplaceSRRIP() : RPT(1ul << IW, NW) {
     for (auto &s: used_map) s.resize(NW, 3);
   }
-  virtual ~ReplaceSRRIP() override {}
 
-  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
-    if((int32_t)w == alloc_map[s] || !DUO || demand_acc)
-      used_map[s][w] = ((int32_t)w == alloc_map[s]) ? 2 : 0;
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
+    if((int32_t)w == alloc_map[s] || !DUO || demand_acc) {
+      if(!prefetch)
+        used_map[s][w] = ((int32_t)w == alloc_map[s]) ? 2 : 0;
+      else // prefetch
+        used_map[s][w] = 3;
+    }
     if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
     RPT::delist_from_free(s, w, demand_acc);
   }
@@ -212,7 +221,7 @@ public:
   ReplaceRandom() : RPT(1ul << IW, NW), loc_random(cm_alloc_rand32()) {}
   virtual ~ReplaceRandom() override { delete loc_random; }
 
-  virtual void access(uint32_t s, uint32_t w, bool demand_acc, uint32_t op = 0) override {
+  virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
     RPT::delist_from_free(s, w, demand_acc);
   }

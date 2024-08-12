@@ -26,7 +26,7 @@ protected:
 
 public:
   CacheArrayBase(std::string name = "") : name(name) {}
-  virtual ~CacheArrayBase() {}
+  virtual ~CacheArrayBase() = default;
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
   virtual CMMetadataCommon * get_meta(uint32_t s, uint32_t w) = 0;
@@ -120,7 +120,7 @@ public:
     if constexpr (EnMT) {
       while(true) {
         auto state = cache_set_state[s].read();
-        assert(state == state | prio);
+        assert(state == (state | prio));
         if(cache_set_state[s].swap(state, state & (~prio), true)) break;
       }
     }
@@ -281,13 +281,41 @@ public:
     return true;
   }
 
+  __always_inline void relocate(uint64_t addr, CMMetadataBase *s_meta, CMMetadataBase *d_meta) {
+    d_meta->init(addr);
+    d_meta->copy(s_meta);
+    s_meta->to_clean();
+    s_meta->to_invalid();
+  }
+
+  __always_inline void relocate(uint64_t addr, CMMetadataBase *s_meta, CMMetadataBase *d_meta, CMDataBase *s_data, CMDataBase *d_data) {
+    relocate(addr, s_meta, d_meta);
+    if(s_data) d_data->copy(s_data);
+  }
+
+  __always_inline std::pair<MT*, uint64_t> relocate(uint32_t s_ai, uint32_t s_s, uint32_t s_w, uint32_t d_ai, uint32_t d_s, uint32_t d_w) {
+    if constexpr (C_VOID<DT>) {
+      auto s_meta = static_cast<CMMetadataBase *>(this->access(s_ai, s_s, s_w));
+      auto d_meta = static_cast<CMMetadataBase *>(this->access(d_ai, d_s, d_w));
+      auto addr = s_meta->addr(s_s);
+      relocate(addr, s_meta, d_meta);
+      return std::make_pair(static_cast<MT *>(d_meta), addr);
+    } else {
+      auto [s_meta, s_data] = this->access_line(s_ai, s_s, s_w);
+      auto [d_meta, d_data] = this->access_line(d_ai, d_s, d_w);
+      auto addr = s_meta->addr(s_s);
+      relocate(addr, s_meta, d_meta); d_data->copy(s_data);
+      return std::make_pair(static_cast<MT *>(d_meta), addr);
+    }
+  }
+
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P) replacer[ai].access(s, w, true);
+    if(ai < P) replacer[ai].access(s, w, true, false);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P) replacer[ai].access(s, w, demand_acc);
+    if(ai < P) replacer[ai].access(s, w, demand_acc, false);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
   }
 

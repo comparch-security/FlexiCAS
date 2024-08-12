@@ -18,9 +18,6 @@ protected:
   using CohPolicyBase::cmd_for_release;
 public:
 
-  ExclusiveMSIPolicy() : MSIPolicy<MT, false, isLLC>() {}
-  virtual ~ExclusiveMSIPolicy() override {}
-
   virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
     if(is_fetch_write(cmd))    return std::make_pair(true, cmd_for_probe_release(cmd.id));
     else                       return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
@@ -90,9 +87,6 @@ protected:
   using CohPolicyBase::is_fetch_write;
 public:
 
-  ExclusiveMESIPolicy() : ExclusiveMSIPolicy<MT, true, isLLC>() {}
-  virtual ~ExclusiveMESIPolicy() override {}
-
   virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const override { // after grant to inner
     int32_t id = cmd.id;
     if(id != -1) { // inner cache is cached
@@ -137,7 +131,6 @@ protected:
   DRPC ext_replacer[P];
 public:
   CacheSkewedExclusive(std::string name = "") : CacheT(name, 0, (EnDir ? DW : 0)) {}
-  virtual ~CacheSkewedExclusive() override {}
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, prio, 0);
@@ -156,8 +149,8 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if(w >= NW) ext_replacer[ai].access(s, w-NW, true);
-      else        replacer[ai].access(s, w, true);
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, true, false);
+      else        replacer[ai].access(s, w, true, false);
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
     } else {
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
@@ -166,8 +159,8 @@ public:
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if(w >= NW) ext_replacer[ai].access(s, w-NW, demand_acc);
-      else        replacer[ai].access(s, w, demand_acc);
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, demand_acc, false);
+      else        replacer[ai].access(s, w, demand_acc, false);
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
     } else {
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
@@ -207,7 +200,6 @@ protected:
 
 public:
   ExclusiveInnerCohPortUncachedBroadcast(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
-  virtual ~ExclusiveInnerCohPortUncachedBroadcast() override {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
@@ -384,7 +376,6 @@ protected:
 
 public:
   ExclusiveInnerCohPortUncachedDirectory(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
-  virtual ~ExclusiveInnerCohPortUncachedDirectory() override {}
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, XactPrio::acquire, delay);
@@ -564,7 +555,6 @@ protected:
   using OuterCohPortBase::coh_id;
 public:
   ExclusiveOuterCohPortBroadcastT(policy_ptr policy) : OPUC(policy) {}
-  virtual ~ExclusiveOuterCohPortBroadcastT() override {}
 
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
@@ -616,7 +606,6 @@ protected:
   using OuterCohPortBase::coh_id;
 public:
   ExclusiveOuterCohPortDirectoryT(policy_ptr policy) : OPUC(policy) {}
-  virtual ~ExclusiveOuterCohPortDirectoryT() override {}
 
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;

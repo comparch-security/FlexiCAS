@@ -12,8 +12,7 @@ protected:
   uint32_t mai, ms, mw; // data meta pointer to meta
 
 public:
-  MirageDataMeta() : CMMetadataCommon(), state(false), mai(0), ms(0), mw(0) {}
-  virtual ~MirageDataMeta() override {}
+  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
   __always_inline void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
   __always_inline std::tuple<uint32_t, uint32_t, uint32_t> pointer() { return std::make_tuple(mai, ms, mw);} // return the pointer to data
   virtual void to_invalid() override { state = false; }
@@ -30,7 +29,6 @@ protected:
   uint32_t ds, dw;
 public:
   MirageMetadataSupport() : ds(0), dw(0) {}
-  virtual ~MirageMetadataSupport() {}
 
   // special methods needed for Mirage Cache
   __always_inline void bind(uint32_t s, uint32_t w) { ds = s; dw = w; }                     // initialize meta pointer
@@ -47,9 +45,6 @@ class MirageMetadataMSIBroadcast : public MetadataBroadcast<AW, IW, TOfst, Metad
 {
   typedef MetadataBroadcast<AW, IW, TOfst, MetadataMSIBase<MetadataBroadcastBase> > MetadataT;
 public:
-  MirageMetadataMSIBroadcast() : MetadataT(), MirageMetadataSupport() {}
-  virtual ~MirageMetadataMSIBroadcast() override {}
-
   virtual std::string to_string() const override { return CMMetadataBase::to_string() + MirageMetadataSupport::to_string(); }
 
   virtual void copy(const CMMetadataBase *m_meta) override {
@@ -67,9 +62,6 @@ class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always 
   using CohPolicyBase::is_flush;
   using CohPolicyBase::is_evict;
 public:
-  MirageMSIPolicy() : MSIPolicy<MT, false, true>() {}
-  virtual ~MirageMSIPolicy() override {}
-
   virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const override {
     assert(is_flush(cmd));
     if(is_evict(cmd)) {
@@ -99,7 +91,7 @@ class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, 
 
   typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR> CacheT;
 protected:
-  using CacheT::arrays;
+  using CacheBase::arrays;
   using CacheT::indexer;
   using CacheT::loc_random;
   using CacheT::replacer;
@@ -118,8 +110,6 @@ public:
       for(auto &b : CacheT::data_buffer_pool) { b = new DT(); CacheT::data_buffer_pool_set.insert(b); }
     }
   }
-
-  virtual ~MirageCache() override {}
 
   __always_inline CMDataBase *get_data(uint32_t ai, uint32_t s, uint32_t w) {
     auto pointer = static_cast<MT *>(this->access(ai, s, w))->pointer();
@@ -176,7 +166,7 @@ public:
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
-      d_replacer.access(ds, dw, true);
+      d_replacer.access(ds, dw, true, false);
     }
     CacheT::hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
@@ -184,7 +174,7 @@ public:
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
-      d_replacer.access(ds, dw, demand_acc);
+      d_replacer.access(ds, dw, demand_acc, false);
     }
     CacheT::hook_write(addr, ai, s, w, hit, demand_acc, meta, data, delay);
   }
@@ -209,7 +199,7 @@ public:
         replacer[m_ai].replace(m_s, &m_w);
         auto m_meta = static_cast<MT *>(this->access(m_ai, m_s, m_w));
         auto m_addr = m_meta->addr(m_s);
-        if(remapped.count(m_addr)) break;
+        if(remapped.count(m_addr)) break; // ToDo: here will break the replace state! allocate() without access()
         remapped.insert(addr);
         stack.push(std::make_tuple(*ai, *s, *w));
         std::tie(meta, addr, *ai, *s, *w) = std::make_tuple(m_meta, m_addr, m_ai, m_s, m_w);
@@ -217,15 +207,15 @@ public:
     }
   }
 
-  void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
-    auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
-    auto m_meta = static_cast<MT *>(this->access(m_ai, m_s, m_w));
-    auto addr = m_meta->addr(m_s);
-    meta->init(addr); meta->copy(m_meta); m_meta->to_clean(); m_meta->to_invalid();
-    get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
-    CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
-    CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // hit is true or false? may have impact on delay
-    std::tie(*ai, *s, *w, meta) = std::make_tuple(m_ai, m_s, m_w, m_meta);
+  void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
+    while(!stack.empty()) {
+      auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
+      auto [meta, addr] = this->relocate(m_ai, m_s, m_w, *ai, *s, *w);
+      get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
+      CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
+      CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // read or write? // hit is true or false? may have impact on delay
+      std::tie(*ai, *s, *w) = std::make_tuple(m_ai, m_s, m_w);
+    }
   }
 
 };
@@ -242,7 +232,7 @@ protected:
   using InnerCohPortBase::outer;
 public:
   MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
-  virtual ~MirageInnerPortUncached() override {}
+
 protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) override { // common function for access a line in the cache
@@ -271,7 +261,7 @@ protected:
         this->evict(meta, cache->get_data_data(static_cast<MT *>(meta)), ai, s, w, delay);
         cache->get_data_meta(static_cast<MT *>(meta))->to_invalid();
       }
-      while(!stack.empty()) cache->cuckoo_relocate(&ai, &s, &w, meta, stack, delay);
+      cache->cuckoo_relocate(&ai, &s, &w, stack, delay);
       meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
       auto data_pointer = cache->replace_data(addr);
       auto data_meta = cache->get_data_meta(data_pointer);

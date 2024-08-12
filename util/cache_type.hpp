@@ -183,7 +183,6 @@ inline auto cache_multi_thread_type_compile(int size, const std::string& name_pr
   constexpr bool isDir  = std::is_same_v<MBT, MetadataDirectoryBase>;
   constexpr bool isMESI = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MESIPolicy<MetadataDirectoryBase, false, true> >;
   constexpr bool isMSI  = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MSIPolicy<MetadataDirectoryBase, false, true> >;
-  constexpr bool isMI   = std::is_same_v<CPT<MetadataDirectoryBase, false, true>, MIPolicy<MetadataDirectoryBase, false, true> >;
 
   // MESI
   typedef MetadataMESIDirectory<48, IW, IW+6> mesi_metadata_type;
