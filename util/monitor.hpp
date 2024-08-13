@@ -18,6 +18,8 @@ class CMMetadataBase;
 // monitor base class
 class MonitorBase
 {
+protected:
+  std::string prefix; // in case a log file is generate, specify the prefix of the log file
 public:
   virtual ~MonitorBase() = default;
 
@@ -34,6 +36,8 @@ public:
   virtual void pause() = 0;    // pause the monitor, assming it will resume later
   virtual void resume() = 0;   // resume the monitor, assuming it has been paused
   virtual void reset() = 0;    // reset all internal statistics, assuming to be later started as new
+
+  __always_inline void set_prefix(const std::string& s) { prefix = s; }
 };
 
 // mointor container used in cache

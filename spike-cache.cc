@@ -51,7 +51,6 @@ namespace {
   std::mutex xact_queue_full_mutex;
   std::mutex xact_queue_empty_mutex;
   static bool exit_flag = false;
-  static std::string pfc_log_prefix;
   static uint64_t pfc_value = 0;
   static std::atomic_bool cache_idle = false;
 
@@ -161,6 +160,9 @@ namespace {
     core_data[core]->query_loc(paddr, &query_locs);
     return query_locs.back().cache;
   }
+
+  static std::string pfc_str; // a string buffer used by PFC's CSR interface
+
 }
 
 namespace flexicas {
@@ -192,7 +194,6 @@ namespace flexicas {
     NC = ncore;
     core_cycle.resize(NC, 0);
     wall_clock = 0;
-    if(prefix) pfc_log_prefix = std::string(prefix); // not currently used by the simple tracer but other advanced tracer may need print out logs
     auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NC, "l1d");
     core_data = get_l1_core_interface(l1d);
     auto l1i = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, true, void, true>(NC, "l1i");
@@ -202,6 +203,7 @@ namespace flexicas {
     auto dispatcher = new SliceDispatcher<SliceHashNorm<> >("disp", NC);
     auto mem = new SimpleMemoryModel<void,void,true>("mem");
     tracer = new SimpleTracer(true);
+    if(prefix) tracer->set_prefix(std::string(prefix));
 
     for(int i=0; i<NC; i++) {
       l1i[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1i[i]->outer, true));
@@ -274,13 +276,29 @@ namespace flexicas {
   }
 
   void csr_write(uint64_t cmd, int core, tlb_translate_func translator) {
-    if(cmd == FLEXICAS_PFC_START) {
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CMD && (cmd & FLEXICAS_PFC_CMD_MASK) == FLEXICAS_PFC_START) {
       tracer->start();
       return;
     }
 
-    if(cmd == FLEXICAS_PFC_STOP) {
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CMD && (cmd & FLEXICAS_PFC_CMD_MASK) == FLEXICAS_PFC_STOP) {
       tracer->stop();
+      return;
+    }
+
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CMD && (cmd & FLEXICAS_PFC_CMD_MASK) == FLEXICAS_PFC_STR_CHAR) {
+      char c = (cmd >> 16) & 0xff;
+      pfc_str.push_back(c);
+      return;
+    }
+
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CMD && (cmd & FLEXICAS_PFC_CMD_MASK) == FLEXICAS_PFC_STR_CLR) {
+      pfc_str.clear();
+      return;
+    }
+
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CMD && (cmd & FLEXICAS_PFC_CMD_MASK) == FLEXICAS_PFC_PREFIX) {
+      if(tracer) tracer->set_prefix(pfc_str);
       return;
     }
 
