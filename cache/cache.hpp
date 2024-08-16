@@ -284,12 +284,12 @@ public:
   __always_inline void relocate(uint64_t addr, CMMetadataBase *s_meta, CMMetadataBase *d_meta) {
     d_meta->init(addr);
     d_meta->copy(s_meta);
-    s_meta->to_clean();
-    s_meta->to_invalid();
   }
 
   __always_inline void relocate(uint64_t addr, CMMetadataBase *s_meta, CMMetadataBase *d_meta, CMDataBase *s_data, CMDataBase *d_data) {
     relocate(addr, s_meta, d_meta);
+    if(static_cast<MT *>(s_meta)->is_relocated()) static_cast<MT *>(d_meta)->to_relocated();
+    else static_cast<MT *>(d_meta)->to_unrelocated();
     if(s_data) d_data->copy(s_data);
   }
 
@@ -299,12 +299,15 @@ public:
       auto d_meta = static_cast<CMMetadataBase *>(this->access(d_ai, d_s, d_w));
       auto addr = s_meta->addr(s_s);
       relocate(addr, s_meta, d_meta);
+      s_meta->to_clean(); s_meta->to_invalid();
       return std::make_pair(static_cast<MT *>(d_meta), addr);
     } else {
       auto [s_meta, s_data] = this->access_line(s_ai, s_s, s_w);
       auto [d_meta, d_data] = this->access_line(d_ai, d_s, d_w);
       auto addr = s_meta->addr(s_s);
-      relocate(addr, s_meta, d_meta); d_data->copy(s_data);
+      relocate(addr, s_meta, d_meta);
+      s_meta->to_clean(); s_meta->to_invalid();
+      d_data->copy(s_data);
       return std::make_pair(static_cast<MT *>(d_meta), addr);
     }
   }
