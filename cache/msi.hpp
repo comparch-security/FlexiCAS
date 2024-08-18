@@ -40,9 +40,9 @@ protected:
 public:
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const override {
     if(is_fetch_write(cmd) || is_evict(cmd) || is_writeback(cmd))
-      return outer->cmd_for_write();
+      return this->cmd_for_write();
     else
-      return outer->cmd_for_read();
+      return this->cmd_for_read();
   }
 
   virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
@@ -54,7 +54,7 @@ public:
 
   virtual std::tuple<bool, bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
     if(is_write(cmd)) {
-      if(!meta->allow_write())       return std::make_tuple(true,  false, outer->cmd_for_write());
+      if(!meta->allow_write())       return std::make_tuple(true,  false, this->cmd_for_write());
       else if(!meta->is_modified())  return std::make_tuple(false, true,  cmd_for_null()); // promote locally
     }
     return std::make_tuple(false, false, cmd_for_null());
@@ -62,9 +62,9 @@ public:
 
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const override {
     meta->init(addr);
-    if(outer->is_fetch_read(outer_cmd)) meta->to_shared(-1);
+    if(is_fetch_read(outer_cmd)) meta->to_shared(-1);
     else {
-      assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
+      assert(is_fetch_write(outer_cmd) && meta->allow_write());
       meta->to_modified(-1);
     }
   }
@@ -83,12 +83,12 @@ public:
 
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const override {
     if constexpr (!isL1) {
-      if(outer->is_evict(outer_cmd))
+      if(is_evict(outer_cmd))
         return std::make_pair(true, cmd_for_probe_release());
       else {
         if(meta && meta->is_shared())
           return std::make_pair(false, cmd_for_null());
-        else if(outer->is_downgrade(outer_cmd))
+        else if(is_downgrade(outer_cmd))
           return std::make_pair(true, cmd_for_probe_downgrade());
         else
           return std::make_pair(true, cmd_for_probe_writeback());
@@ -99,9 +99,9 @@ public:
   virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const override {
     PolicT::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
     if(meta) {
-      if(outer->is_evict(outer_cmd))
+      if(is_evict(outer_cmd))
         meta->to_invalid();
-      else if(outer->is_downgrade(outer_cmd)) {
+      else if(is_downgrade(outer_cmd)) {
         meta->get_outer_meta()->to_shared(-1);
         meta->to_shared(-1);
         meta->to_clean();

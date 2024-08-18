@@ -103,7 +103,7 @@ template<bool EnMT>
 class OuterCohPortUncached : public OuterCohPortBase
 {
 public:
-  OuterCohPortUncached(policy_ptr policy) : OuterCohPortBase(policy) {}
+  using OuterCohPortBase::OuterCohPortBase;
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) override {
     outer_cmd.id = coh_id;
@@ -152,7 +152,7 @@ protected:
   using OuterCohPortBase::coh_id;
   using OuterCohPortBase::policy;
 public:
-  OuterCohPortT(policy_ptr policy) : OPUC(policy) {}
+  using OPUC::OPUC;
 
   virtual std::pair<bool,bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
@@ -192,12 +192,12 @@ public:
         if(data_outer) data_outer->copy(data);
       }
       policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-      cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
+      cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(outer_cmd), writeback, meta, data, delay);
       if constexpr (EnMT) { meta_outer->unlock(); meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
     } else {
       if constexpr (EnMT) meta_outer->lock();
       policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-      cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
+      cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(outer_cmd), writeback, meta, data, delay);
       if constexpr (EnMT) meta_outer->unlock();
     }
     return std::make_pair(hit, writeback);
@@ -217,7 +217,7 @@ template<bool EnMT>
 class InnerCohPortUncached : public InnerCohPortBase
 {
 public:
-  InnerCohPortUncached(policy_ptr policy) : InnerCohPortBase(policy) {}
+  using InnerCohPortBase::InnerCohPortBase;
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
@@ -374,7 +374,7 @@ protected:
   using InnerCohPortBase::outer;
   using InnerCohPortBase::policy;
 public:
-  InnerCohPortT(policy_ptr policy) : IPUC(policy) {}
+  using IPUC::IPUC;
 
   virtual std::pair<bool, bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) override {
     bool hit = false, writeback = false;
@@ -443,7 +443,7 @@ class CoreInterface : public InnerCohPortUncached<EnMT>, public CoreInterfaceBas
   using BaseT::outer;
 
 public:
-  CoreInterface(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
+  using BaseT::BaseT;
 
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) override {
     addr = normalize(addr);

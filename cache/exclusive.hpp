@@ -130,7 +130,7 @@ class CacheSkewedExclusive : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY
 protected:
   DRPC ext_replacer[P];
 public:
-  CacheSkewedExclusive(std::string name = "") : CacheT(name, 0, (EnDir ? DW : 0)) {}
+  CacheSkewedExclusive(std::string name) : CacheT(name, 0, (EnDir ? DW : 0)) {}
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
     if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, prio, 0);
@@ -199,7 +199,7 @@ protected:
   using InnerCohPortBase::outer;
 
 public:
-  ExclusiveInnerCohPortUncachedBroadcast(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
+  using BaseT::BaseT;
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
@@ -225,7 +225,7 @@ protected:
       std::tie(probe_hit, probe_writeback) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(probe_writeback) { // always writeback the line as it likely(always??) dirty
         assert(meta->is_dirty());
-        outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
+        outer->writeback_req(addr, meta, data, policy->cmd_for_release_writeback(), delay);
       }
     }
 
@@ -254,7 +254,7 @@ protected:
       }
       else if(promote_local) meta->to_modified(-1);
       if(cmd.id != -1 && policy->is_acquire(cmd) && meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
-        outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
+        outer->writeback_req(addr, meta, data, policy->cmd_for_release_writeback(), delay);
       return std::make_tuple(meta, data, ai, s, w, hit);
     } else { // miss
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
@@ -375,7 +375,7 @@ protected:
   using InnerCohPortBase::outer;
 
 public:
-  ExclusiveInnerCohPortUncachedDirectory(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
+  using BaseT::BaseT;
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, XactPrio::acquire, delay);
@@ -423,7 +423,7 @@ protected:
           return std::make_tuple(meta, data, ai, s, w, hit);
         else { // normal request, move it to an extended way
           if(meta->is_dirty()) // writeback the dirty data as the dirty bit would be lost
-            outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
+            outer->writeback_req(addr, meta, data, policy->cmd_for_release_writeback(), delay);
           auto [mmeta, mdata, mai, ms, mw] = replace_line_ext(addr, prio, delay);
           mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
           return std::make_tuple(mmeta, data, mai, ms, mw, hit);
@@ -437,7 +437,7 @@ protected:
           std::tie(phit, pwb) = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
           if(pwb) { // a write occurred during the probe, always write it back as it likely (always??) dirty
             assert(meta->is_dirty());
-            outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay);
+            outer->writeback_req(addr, meta, data, policy->cmd_for_release_writeback(), delay);
           }
         }
         if(!pwb) { // still get it from outer
@@ -477,7 +477,7 @@ protected:
       std::tie(meta, data, ai, s, w, hit) = access_line(addr, cmd, XactPrio::release, delay);
       if(data_inner) data->copy(data_inner);
       policy->meta_after_release(cmd, meta, meta_inner);
-      if(meta->is_extend()) outer->writeback_req(addr, meta, data, policy->cmd_for_outer_writeback(cmd), delay); // writeback if dirty
+      if(meta->is_extend()) outer->writeback_req(addr, meta, data, policy->cmd_for_release_writeback(), delay); // writeback if dirty
       assert(meta_inner); // assume meta_inner is valid for all writebacks
       cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
       cache->data_return_buffer(data); // return it anyway
@@ -554,7 +554,7 @@ protected:
   using OuterCohPortBase::policy;
   using OuterCohPortBase::coh_id;
 public:
-  ExclusiveOuterCohPortBroadcastT(policy_ptr policy) : OPUC(policy) {}
+  using OPUC::OPUC;
 
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
@@ -581,7 +581,7 @@ public:
     }
 
     policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
-    cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
+    cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(outer_cmd), writeback, meta, data, delay);
 
     if(!hit) {
       cache->meta_return_buffer(meta);
@@ -605,7 +605,7 @@ protected:
   using OuterCohPortBase::policy;
   using OuterCohPortBase::coh_id;
 public:
-  ExclusiveOuterCohPortDirectoryT(policy_ptr policy) : OPUC(policy) {}
+  using OPUC::OPUC;
 
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta_outer, CMDataBase *data_outer, coh_cmd_t outer_cmd, uint64_t *delay) override {
     uint32_t ai, s, w;
@@ -633,7 +633,7 @@ public:
     }
 
     policy->meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
-    cache->hook_manage(addr, ai, s, w, hit, policy->is_outer_evict(outer_cmd), writeback, meta, data, delay);
+    cache->hook_manage(addr, ai, s, w, hit, policy->is_evict(outer_cmd), writeback, meta, data, delay);
 
     if(hit && meta->is_extend()) {
       cache->data_return_buffer(data);
