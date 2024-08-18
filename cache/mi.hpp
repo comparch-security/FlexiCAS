@@ -28,7 +28,7 @@ protected:
 
 public:
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const override {
-    return outer->cmd_for_write();
+    return cmd_for_write();
   }
 
   virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
@@ -41,7 +41,7 @@ public:
 
   virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const override {
     meta->init(addr);
-    assert(outer->is_fetch_write(outer_cmd) && meta->allow_write());
+    assert(is_fetch_write(outer_cmd) && meta->allow_write());
     meta->to_modified(-1);
   }
 
@@ -52,8 +52,8 @@ public:
 
   virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const override {
     if constexpr (!isL1) {
-      assert(outer->is_probe(outer_cmd));
-      if(outer->is_evict(outer_cmd) || outer->is_downgrade(outer_cmd))
+      assert(is_probe(outer_cmd));
+      if(is_evict(outer_cmd) || is_downgrade(outer_cmd))
         return std::make_pair(true, cmd_for_probe_release());
       else
         return std::make_pair(true, cmd_for_probe_writeback());
@@ -63,7 +63,7 @@ public:
   virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const override {
     CohPolicyBase::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
     if(meta) {
-      if(outer->is_evict(outer_cmd) || outer->is_downgrade(outer_cmd)) meta->to_invalid();
+      if(is_evict(outer_cmd) || is_downgrade(outer_cmd)) meta->to_invalid();
     }
   }
 

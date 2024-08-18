@@ -23,11 +23,9 @@ public:
 class Data64B : public CMDataBase
 {
 protected:
-  uint64_t data[8];
+  uint64_t data[8] = {0};
 
 public:
-  Data64B() : data{0} {}
-
   virtual void reset() override { for(auto &d:data) d = 0; }
   virtual uint64_t read(unsigned int index) const override { return data[index]; }
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) override { data[index] = (data[index] & (~wmask)) | (wdata & wmask); }
@@ -133,15 +131,13 @@ class MetadataDirectoryBase : public MetadataBroadcastBase
   __always_inline void add_sharer_help(int32_t coh_id) { if(coh_id != -1) add_sharer(coh_id); }
 
 protected:
-  uint64_t sharer;
+  uint64_t sharer = 0;
   __always_inline void add_sharer(int32_t coh_id) { sharer |= (1ull << coh_id); }
   __always_inline void clean_sharer(){ sharer = 0; }
   __always_inline void delete_sharer(int32_t coh_id){ sharer &= ~(1ull << coh_id); }
   __always_inline bool is_sharer(int32_t coh_id) const { return ((1ull << coh_id) & (sharer))!= 0; }
 
 public:
-  MetadataDirectoryBase() : sharer(0) {}
-
   virtual void to_invalid()                 override { MetadataBroadcastBase::to_invalid();         clean_sharer();          }
   virtual void to_shared(int32_t coh_id)    override { MetadataBroadcastBase::to_shared(coh_id);    add_sharer_help(coh_id); }
   virtual void to_modified(int32_t coh_id)  override { MetadataBroadcastBase::to_modified(coh_id);  add_sharer_help(coh_id); }
@@ -178,15 +174,13 @@ template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE<MT, CMMetada
 class MetadataMixer : public MT
 {
 protected:
-  uint64_t     tag;
+  uint64_t     tag = 0;
   constexpr static uint64_t mask = (1ull << (AW-TOfst)) - 1;
   CMMetadataBase outer_meta; // maintain a copy of metadata for hierarchical coherence support
                              // this outer metadata is responsible only to record the S/M/E/O state seen by the outer
                              // whether the block is dirty, shared by inner caches, and directory, etc. are hold by the metadata
 
 public:
-  MetadataMixer() : tag(0) {}
-
   virtual CMMetadataBase * get_outer_meta() override { return &outer_meta; }
   virtual const CMMetadataBase * get_outer_meta() const override { return &outer_meta; }
 
@@ -229,9 +223,8 @@ template<typename MT> requires C_DERIVE<MT, CMMetadataBase>
 class MetadataWithRelocate : public MT
 {
 protected:
-  bool relocated;
+  bool relocated = false;
 public:
-  MetadataWithRelocate() : relocated(false) {}
   __always_inline void to_relocated()   { relocated = true;  }
   __always_inline void to_unrelocated() { relocated = false; }
   __always_inline bool is_relocated()   { return relocated;  }

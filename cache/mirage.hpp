@@ -8,11 +8,10 @@
 class MirageDataMeta : public CMMetadataCommon
 {
 protected:
-  bool state; // false: invalid, true: valid
-  uint32_t mai, ms, mw; // data meta pointer to meta
+  bool state = false; // false: invalid, true: valid
+  uint32_t mai = 0, ms = 0, mw = 0; // data meta pointer to meta
 
 public:
-  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
   __always_inline void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
   __always_inline std::tuple<uint32_t, uint32_t, uint32_t> pointer() { return std::make_tuple(mai, ms, mw);} // return the pointer to data
   virtual void to_invalid() override { state = false; }
@@ -26,10 +25,8 @@ public:
 class MirageMetadataSupport
 {
 protected:
-  uint32_t ds, dw;
+  uint32_t ds = 0, dw = 0;
 public:
-  MirageMetadataSupport() : ds(0), dw(0) {}
-
   // special methods needed for Mirage Cache
   __always_inline void bind(uint32_t s, uint32_t w) { ds = s; dw = w; }                     // initialize meta pointer
   __always_inline std::pair<uint32_t, uint32_t> pointer() { return std::make_pair(ds, dw);} // return meta pointer to data meta

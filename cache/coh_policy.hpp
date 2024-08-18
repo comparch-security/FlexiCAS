@@ -45,41 +45,37 @@ public:
   __always_inline void connect(CohPolicyBase *policy) { outer = policy ? policy : this; } // memory does not use policy and returns nullptr
 
   // message type
-  __always_inline bool is_acquire(coh_cmd_t cmd) const     { return cmd.msg == acquire_msg;     }
-  __always_inline bool is_release(coh_cmd_t cmd) const     { return cmd.msg == release_msg;     }
-  __always_inline bool is_probe(coh_cmd_t cmd) const       { return cmd.msg == probe_msg;       }
-  __always_inline bool is_flush(coh_cmd_t cmd) const       { return cmd.msg == flush_msg;       }
-  __always_inline bool is_finish(coh_cmd_t cmd) const      { return cmd.msg == finish_msg;      }
+  constexpr __always_inline bool is_acquire(coh_cmd_t cmd) const     { return cmd.msg == acquire_msg;     }
+  constexpr __always_inline bool is_release(coh_cmd_t cmd) const     { return cmd.msg == release_msg;     }
+  constexpr __always_inline bool is_probe(coh_cmd_t cmd) const       { return cmd.msg == probe_msg;       }
+  constexpr __always_inline bool is_flush(coh_cmd_t cmd) const       { return cmd.msg == flush_msg;       }
+  constexpr __always_inline bool is_finish(coh_cmd_t cmd) const      { return cmd.msg == finish_msg;      }
 
   // action type
-  __always_inline bool is_fetch_read(coh_cmd_t cmd) const      { return cmd.act == fetch_read_act;  }
-  __always_inline bool is_fetch_write(coh_cmd_t cmd) const     { return cmd.act == fetch_write_act; }
-  __always_inline bool is_evict(coh_cmd_t cmd) const           { return cmd.act == evict_act;       }
-  __always_inline bool is_outer_evict(coh_cmd_t cmd) const     { return outer->is_evict(cmd);       }
-  __always_inline bool is_writeback(coh_cmd_t cmd) const       { return cmd.act == writeback_act;   }
-  __always_inline bool is_outer_writeback(coh_cmd_t cmd) const { return outer->is_writeback(cmd);   }
-  __always_inline bool is_downgrade(coh_cmd_t cmd) const       { return cmd.act == downgrade_act;   }
-  __always_inline bool is_write(coh_cmd_t cmd) const           { return cmd.act == fetch_write_act || cmd.act == evict_act || cmd.act == writeback_act; }
+  constexpr __always_inline bool is_fetch_read(coh_cmd_t cmd) const  { return cmd.act == fetch_read_act;  }
+  constexpr __always_inline bool is_fetch_write(coh_cmd_t cmd) const { return cmd.act == fetch_write_act; }
+  constexpr __always_inline bool is_evict(coh_cmd_t cmd) const       { return cmd.act == evict_act;       }
+  constexpr __always_inline bool is_writeback(coh_cmd_t cmd) const   { return cmd.act == writeback_act;   }
+  constexpr __always_inline bool is_downgrade(coh_cmd_t cmd) const   { return cmd.act == downgrade_act;   }
+  constexpr __always_inline bool is_write(coh_cmd_t cmd) const       { return cmd.act == fetch_write_act || cmd.act == evict_act || cmd.act == writeback_act; }
 
   // generate command
-  constexpr coh_cmd_t cmd_for_read()              const { return {-1, acquire_msg, fetch_read_act }; }
-  constexpr coh_cmd_t cmd_for_write()             const { return {-1, acquire_msg, fetch_write_act}; }
-  constexpr coh_cmd_t cmd_for_flush()             const { return {-1, flush_msg,   evict_act      }; }
-  constexpr coh_cmd_t cmd_for_writeback()         const { return {-1, flush_msg,   writeback_act  }; }
-  constexpr coh_cmd_t cmd_for_release()           const { return {-1, release_msg, evict_act      }; }
-  constexpr coh_cmd_t cmd_for_release_writeback() const { return {-1, release_msg, writeback_act  }; }
-  constexpr coh_cmd_t cmd_for_null()              const { return {-1, 0,           0              }; }
-  constexpr coh_cmd_t cmd_for_probe_writeback()   const { return {-1, probe_msg,   writeback_act  }; }
-  constexpr coh_cmd_t cmd_for_probe_release()     const { return {-1, probe_msg,   evict_act      }; }
-  constexpr coh_cmd_t cmd_for_probe_downgrade()   const { return {-1, probe_msg,   downgrade_act  }; }
+  constexpr __always_inline coh_cmd_t cmd_for_read()              const { return {-1, acquire_msg, fetch_read_act }; }
+  constexpr __always_inline coh_cmd_t cmd_for_write()             const { return {-1, acquire_msg, fetch_write_act}; }
+  constexpr __always_inline coh_cmd_t cmd_for_flush()             const { return {-1, flush_msg,   evict_act      }; }
+  constexpr __always_inline coh_cmd_t cmd_for_writeback()         const { return {-1, flush_msg,   writeback_act  }; }
+  constexpr __always_inline coh_cmd_t cmd_for_release()           const { return {-1, release_msg, evict_act      }; }
+  constexpr __always_inline coh_cmd_t cmd_for_release_writeback() const { return {-1, release_msg, writeback_act  }; }
+  constexpr __always_inline coh_cmd_t cmd_for_null()              const { return {-1, 0,           0              }; }
+  constexpr __always_inline coh_cmd_t cmd_for_probe_writeback()   const { return {-1, probe_msg,   writeback_act  }; }
+  constexpr __always_inline coh_cmd_t cmd_for_probe_release()     const { return {-1, probe_msg,   evict_act      }; }
+  constexpr __always_inline coh_cmd_t cmd_for_probe_downgrade()   const { return {-1, probe_msg,   downgrade_act  }; }
   __always_inline coh_cmd_t cmd_for_probe_writeback(int32_t id)   const { return {id, probe_msg,   writeback_act  }; }
   __always_inline coh_cmd_t cmd_for_probe_release(int32_t id)     const { return {id, probe_msg,   evict_act      }; }
   __always_inline coh_cmd_t cmd_for_probe_downgrade(int32_t id)   const { return {id, probe_msg,   downgrade_act  }; }
   __always_inline coh_cmd_t cmd_for_finish(int32_t id)            const { return {id, finish_msg,  0              }; }
 
   virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const = 0;
-
-  __always_inline coh_cmd_t cmd_for_outer_writeback(coh_cmd_t cmd) const { return outer->cmd_for_release_writeback(); }
 
   // acquire
   virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const = 0;
@@ -110,7 +106,7 @@ public:
   }
 
   bool probe_need_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta){
-    assert(outer->is_probe(outer_cmd));
+    assert(is_probe(outer_cmd));
     return meta->is_dirty();
   }
 
@@ -124,7 +120,7 @@ public:
         }
         meta_outer->to_dirty();
       }
-      if(outer->is_evict(outer_cmd) || !meta) meta_outer->sync(inner_id);
+      if(is_evict(outer_cmd) || !meta) meta_outer->sync(inner_id);
     }
   }
 
@@ -135,7 +131,7 @@ public:
 
   std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta, bool uncached) const {
     if(meta->is_dirty())
-      return std::make_pair(true, outer->cmd_for_release());
+      return std::make_pair(true, cmd_for_release());
     else if(!uncached)
       return outer->inner_need_release();
     else
