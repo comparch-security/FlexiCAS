@@ -417,12 +417,6 @@ class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>
   typedef InnerCohPortT<IPUC, EnMT> InnerT;
   std::unordered_set<uint64_t> remapped;
 
-  // copy a cache line (both meta and data)
-  void copy(CMMetadataBase* meta, CMDataBase* data, CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t addr) {
-    static_cast<CT *>(cache)->relocate(addr, meta, c_meta, data, c_data);
-    if(static_cast<MT *>(meta)->is_relocated()) static_cast<MT *>(c_meta)->to_relocated();
-    else static_cast<MT *>(c_meta)->to_unrelocated();
-  }
 
 protected:
   using InnerT::cache;
@@ -476,14 +470,14 @@ protected:
       if (static_cast<MT *>(m_meta)->is_relocated()) this->evict(m_meta, m_data, ai, new_idx, new_way, nullptr);
       else cache->hook_manage(m_addr, ai, new_idx, new_way, true, true, false, m_meta, m_data, nullptr);
     }
-    copy(m_meta, m_data, c_m_meta, c_m_data, m_addr);
+    static_cast<CT *>(cache)->relocate(m_addr, m_meta, c_m_meta, m_data, c_m_data);
 
-    copy(c_meta, c_data, m_meta, m_data, c_addr);
+    static_cast<CT *>(cache)->relocate(c_addr, c_meta, m_meta, c_data, m_data);
     cache->hook_read(c_addr, ai, new_idx, new_way, true, m_meta, m_data, nullptr);
 
     static_cast<MT *>(m_meta)->to_relocated();
     c_addr = m_addr;
-    copy(c_m_meta, c_m_data, c_meta, c_data, m_addr);
+    static_cast<CT *>(cache)->relocate(m_addr, c_m_meta, c_meta, c_m_data, c_data);
 
     cache->meta_return_buffer(c_m_meta);
     cache->data_return_buffer(c_m_data);
@@ -495,7 +489,7 @@ protected:
     if (!meta->is_valid() || static_cast<MT *>(meta)->is_relocated()) return;
     auto c_meta = cache->meta_copy_buffer();
     auto c_data = data ? cache->data_copy_buffer() : nullptr;
-    copy(meta, data, c_meta, c_data, c_addr);
+    static_cast<CT *>(cache)->relocate(c_addr, meta, c_meta, data, c_data);
     static_cast<MT *>(meta)->to_relocated();
     cache->hook_manage(c_addr, ai, idx, way, true, true, false, c_meta, c_data, nullptr);
 
