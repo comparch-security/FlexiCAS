@@ -219,6 +219,12 @@ protected:
   std::mutex                           meta_buffer_mutex;
   std::condition_variable              meta_buffer_cv;
 
+  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int) {
+    if constexpr (P==1) *ai = 0;
+    else                *ai = ((*loc_random)() % P);
+    *s = indexer.index(addr, *ai);
+  }
+
 public:
   CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
     : CacheBase(name), loc_random(nullptr), data_buffer_state(MSHR), meta_buffer_pool(MSHR), meta_buffer_state(MSHR)
@@ -266,9 +272,7 @@ public:
   }
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
-    if constexpr (P==1) *ai = 0;
-    else                *ai = ((*loc_random)() % P);
-    *s = indexer.index(addr, *ai);
+    replace_choose_set(addr, ai, s, genre);
     if(EnMT) {
       this->set_mt_state(*ai, *s, prio);
       // double check the miss status
@@ -403,6 +407,11 @@ public:
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon, EF, EnMT, MSHR>;
 
+class RemapHelper {
+  static const unsigned int replace_for_relocate = 2408200ul;
+  static const unsigned int replace_during_remap = 2408201ul;
+};
+
 // Dynamic-Randomized Skewed Cache 
 // IW: index width, NW: number of ways, P: number of partitions
 // MT: metadata type, DT: data type (void if not in use)
@@ -413,7 +422,7 @@ template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename
         && C_DERIVE_OR_VOID<DT, CMDataBase>
         && C_DERIVE<IDX, IndexSkewed<IW, 6, P>>
         && C_DERIVE_OR_VOID<DLY, DelayBase>
-class CacheRemap : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>
+class CacheRemap : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>, protected RemapHelper
 {
   typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheT;
 
@@ -423,6 +432,18 @@ protected:
   using CacheT::indexer;
   using CacheT::replacer;
   using CacheT::loc_random;
+
+  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, uint16_t prio, unsigned int genre) override {
+    if constexpr (P==1) *ai = 0;
+    else                *ai = ((*loc_random)() % P);
+    if(0 == genre) *s = indexer.index(addr, *ai);
+    else if(replace_for_relocate == genre) *s = indexer_next.index(addr, *ai);
+    else {
+      assert(replace_during_remap == genre);
+      assert(0 == "remap in multithread simulation is not supported yet!");
+      *ai = -1; //force a segment error in release mode
+    }
+  }
 
 public:
   CacheRemap(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
@@ -439,16 +460,6 @@ public:
     indexer_next.seed(next_seeds);
   }
 
-  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
-    if(0 == genre) CacheT::replace(addr, ai, s, w, prio, 0);
-    else {
-      if constexpr (P==1) *ai = 0;
-      else                *ai = ((*loc_random)() % P);
-      *s = indexer_next.index(addr, *ai);
-      replacer[*ai].replace(*s, w);
-    }
-    return true; // ToDo: support multithread
-  }
 };
 
 #endif

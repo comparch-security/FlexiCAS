@@ -412,7 +412,7 @@ public:
 
 template <typename IPUC, typename CT, typename MT, bool EnMT = false> 
   requires C_DERIVE<IPUC, InnerCohPortUncached<EnMT>>
-class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>
+class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>, protected RemapHelper
 {
   typedef InnerCohPortT<IPUC, EnMT> InnerT;
 
@@ -456,7 +456,7 @@ public:
 protected:
   void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr) {
     uint32_t new_ai, new_idx, new_way;
-    cache->replace(c_addr, &new_ai, &new_idx, &new_way, XactPrio::acquire, true);
+    cache->replace(c_addr, &new_ai, &new_idx, &new_way, XactPrio::acquire, replace_for_relocate);
     auto[m_meta, m_data] = cache->access_line(new_ai, new_idx, new_way);
     uint64_t m_addr = m_meta->addr(new_idx); 
     auto c_m_meta = cache->meta_copy_buffer();
