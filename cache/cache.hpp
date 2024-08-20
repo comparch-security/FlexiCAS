@@ -417,15 +417,35 @@ class CacheRemap : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon>
 {
   typedef CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY, EnMon> CacheT;
 
+  IDX indexer_next;
+  std::vector<uint64_t> next_seeds;
 protected:
   using CacheT::indexer;
+  using CacheT::replacer;
+  using CacheT::loc_random;
 
 public:
   CacheRemap(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
-  : CacheT(name, extra_par, extra_way){}
+  : CacheT(name, extra_par, extra_way) {
+    next_seeds.resize(P);
+    std::generate(next_seeds.begin(), next_seeds.end(), cm_get_random_uint64);
+    indexer_next.seed(next_seeds);
+  }
   virtual ~CacheRemap() {}
 
-  void seed(std::vector<uint64_t>& seeds) { indexer.seed(seeds);}
+  void rotate_indexer() {
+    indexer.seed(next_seeds);
+    std::generate(next_seeds.begin(), next_seeds.end(), cm_get_random_uint64);
+    indexer_next.seed(next_seeds);
+  }
+
+  bool next_replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) {
+    if constexpr (P==1) *ai = 0;
+    else                *ai = ((*loc_random)() % P);
+    *s = indexer_next.index(addr, *ai);
+    replacer[*ai].replace(*s, w);
+    return true;
+  }
 };
 
 #endif
