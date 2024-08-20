@@ -412,10 +412,9 @@ public:
 
 template <typename IPUC, typename CT, typename MT, bool EnMT = false> 
   requires C_DERIVE<IPUC, InnerCohPortUncached<EnMT>>
-class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>
+class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>, protected RemapHelper
 {
   typedef InnerCohPortT<IPUC, EnMT> InnerT;
-  std::unordered_set<uint64_t> remapped;
 
 
 protected:
@@ -426,13 +425,9 @@ public:
   virtual ~InnerCohPortRemapT() {} 
 
   void remap(){
-    auto cache = static_cast<CT *>(InnerCohPortBase::cache);
     auto[P, nset, nway] = cache->size();
     // TODO: pause monitors.
     // cache->monitors->pause_monitor();
-    std::vector<uint64_t> seeds(P);
-    for(auto &s:seeds) s = cm_get_random_uint64();
-    cache->seed(seeds);
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
@@ -440,6 +435,7 @@ public:
         }
       }
     }
+    static_cast<CT *>(cache)->rotate_indexer();
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
@@ -458,22 +454,22 @@ public:
   }
 
 protected:
-  void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr, uint32_t ai) {
-    uint32_t new_idx, new_way;
-    cache->replace(c_addr, &ai, &new_idx, &new_way, XactPrio::acquire);
-    auto[m_meta, m_data] = cache->access_line(ai, new_idx, new_way);
+  void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr) {
+    uint32_t new_ai, new_idx, new_way;
+    cache->replace(c_addr, &new_ai, &new_idx, &new_way, XactPrio::acquire, replace_for_relocate);
+    auto[m_meta, m_data] = cache->access_line(new_ai, new_idx, new_way);
     uint64_t m_addr = m_meta->addr(new_idx); 
     auto c_m_meta = cache->meta_copy_buffer();
     auto c_m_data = m_data ? cache->data_copy_buffer() : nullptr;
 
     if (m_meta->is_valid()) {
-      if (static_cast<MT *>(m_meta)->is_relocated()) this->evict(m_meta, m_data, ai, new_idx, new_way, nullptr);
-      else cache->hook_manage(m_addr, ai, new_idx, new_way, true, true, false, m_meta, m_data, nullptr);
+      if (static_cast<MT *>(m_meta)->is_relocated()) this->evict(m_meta, m_data, new_ai, new_idx, new_way, nullptr);
+      else cache->hook_manage(m_addr, new_ai, new_idx, new_way, true, true, false, m_meta, m_data, nullptr);
     }
     static_cast<CT *>(cache)->relocate(m_addr, m_meta, c_m_meta, m_data, c_m_data);
 
     static_cast<CT *>(cache)->relocate(c_addr, c_meta, m_meta, c_data, m_data);
-    cache->hook_read(c_addr, ai, new_idx, new_way, true, m_meta, m_data, nullptr);
+    cache->hook_read(c_addr, new_ai, new_idx, new_way, true, m_meta, m_data, nullptr);
 
     static_cast<MT *>(m_meta)->to_relocated();
     c_addr = m_addr;
@@ -494,7 +490,7 @@ protected:
     cache->hook_manage(c_addr, ai, idx, way, true, true, false, c_meta, c_data, nullptr);
 
     while(c_meta->is_valid()){
-      relocation(c_meta, c_data, c_addr, ai);
+      relocation(c_meta, c_data, c_addr);
     }
     cache->meta_return_buffer(c_meta);
     cache->data_return_buffer(c_data);

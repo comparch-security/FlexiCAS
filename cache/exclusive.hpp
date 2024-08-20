@@ -129,21 +129,15 @@ class CacheSkewedExclusive : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY
   using CacheMonitorSupport::monitors;
 protected:
   DRPC ext_replacer[P];
+
 public:
   CacheSkewedExclusive(std::string name = "") : CacheT(name, 0, (EnDir ? DW : 0)) {}
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
-    if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, prio, 0);
-    else {
-      if(0 == genre) CacheT::replace(addr, ai, s, w, prio, 0);
-      else {
-        if constexpr (P==1) *ai = 0;
-        else                *ai = ((*loc_random)() % P);
-        *s = indexer.index(addr, *ai);
-        ext_replacer[*ai].replace(*s, w);
-        *w += NW;
-      }
-    }
+    this->replace_choose_set(addr, ai, s, genre);
+    if constexpr (!EnDir) replacer[*ai].replace(*s, w);
+    else if(0 == genre)   replacer[*ai].replace(*s, w);
+    else                { ext_replacer[*ai].replace(*s, w); *w += NW; }
     return true; // ToDo: support multithread
   }
 
