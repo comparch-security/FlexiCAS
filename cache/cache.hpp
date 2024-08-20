@@ -439,12 +439,15 @@ public:
     indexer_next.seed(next_seeds);
   }
 
-  bool next_replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) {
-    if constexpr (P==1) *ai = 0;
-    else                *ai = ((*loc_random)() % P);
-    *s = indexer_next.index(addr, *ai);
-    replacer[*ai].replace(*s, w);
-    return true;
+  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
+    if(0 == genre) CacheT::replace(addr, ai, s, w, prio, 0);
+    else {
+      if constexpr (P==1) *ai = 0;
+      else                *ai = ((*loc_random)() % P);
+      *s = indexer_next.index(addr, *ai);
+      replacer[*ai].replace(*s, w);
+    }
+    return true; // ToDo: support multithread
   }
 };
 

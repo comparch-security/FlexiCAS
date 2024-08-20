@@ -456,7 +456,7 @@ public:
 protected:
   void relocation(CMMetadataBase* c_meta, CMDataBase* c_data, uint64_t& c_addr) {
     uint32_t new_ai, new_idx, new_way;
-    static_cast<CT *>(cache)->next_replace(c_addr, &new_ai, &new_idx, &new_way, XactPrio::acquire);
+    cache->replace(c_addr, &new_ai, &new_idx, &new_way, XactPrio::acquire, true);
     auto[m_meta, m_data] = cache->access_line(new_ai, new_idx, new_way);
     uint64_t m_addr = m_meta->addr(new_idx); 
     auto c_m_meta = cache->meta_copy_buffer();
