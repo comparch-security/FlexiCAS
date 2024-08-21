@@ -219,7 +219,7 @@ protected:
   std::mutex                           meta_buffer_mutex;
   std::condition_variable              meta_buffer_cv;
 
-  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int) {
+  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int genre) {
     if constexpr (P==1) *ai = 0;
     else                *ai = ((*loc_random)() % P);
     *s = indexer.index(addr, *ai);
@@ -408,6 +408,7 @@ template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, t
 using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon, EF, EnMT, MSHR>;
 
 class RemapHelper {
+protected:
   static const unsigned int replace_for_relocate = 2408200ul;
   static const unsigned int replace_during_remap = 2408201ul;
 };
@@ -433,7 +434,7 @@ protected:
   using CacheT::replacer;
   using CacheT::loc_random;
 
-  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, uint16_t prio, unsigned int genre) override {
+  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int genre) override {
     if constexpr (P==1) *ai = 0;
     else                *ai = ((*loc_random)() % P);
     if(0 == genre) *s = indexer.index(addr, *ai);
