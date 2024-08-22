@@ -98,7 +98,7 @@ protected:
   DIDX d_indexer;   // data index resolver
   DRPC d_replacer;  // data replacer
 
-  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int genre = 0) override {
+  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int genre) override {
     int max_free = -1, p = 0;
     std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
     uint32_t m_s;
