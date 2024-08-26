@@ -9,5 +9,5 @@ flexicas_srcs = \
 	spike-cache.cc \
 
 flexicas_precompiled = \
-	../flexicas/libflexicas.a \
-	../flexicas/cryptopp/libcryptopp.a \
+	@top_srcdir@/flexicas/libflexicas.a \
+	@top_srcdir@/flexicas/cryptopp/libcryptopp.a \
