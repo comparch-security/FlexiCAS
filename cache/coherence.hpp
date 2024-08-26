@@ -428,21 +428,16 @@ public:
     auto[P, nset, nway] = cache->size();
     // TODO: pause monitors.
     // cache->monitors->pause_monitor();
+    static_cast<CT *>(cache)->remap_start();
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
         for(uint32_t way = 0; way < nway; way++){
           relocation_chain(ai, idx, way);
         }
+        static_cast<CT *>(cache)->move_SPtr(ai);
       }
     }
-    static_cast<CT *>(cache)->rotate_indexer();
-    for(uint32_t ai = 0; ai < P; ai++){
-      for(uint32_t idx = 0; idx < nset; idx++){
-        for(uint32_t way = 0; way < nway; way++){
-          static_cast<MT *>(cache->access(ai, idx, way))->to_unrelocated();
-        }
-      }
-    }
+    static_cast<CT *>(cache)->remap_end();
     // TODO: resume monitors
     // cache->monitors->resume_monitor();
   }
