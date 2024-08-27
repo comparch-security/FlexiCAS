@@ -4,29 +4,18 @@
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE<MT, CMMetadataBase>
-class ExclusiveMSIPolicy : public MSIPolicy<MT, false, isLLC>    // always not L1
+template<bool isL1, bool isLLC, typename Outer, bool EnDir = false> requires (!isL1)
+struct ExclusiveMSIPolicy : public MSIPolicy<false, isLLC, Outer>    // always not L1
 {
-protected:
-  using CohPolicyBase::is_fetch_read;
-  using CohPolicyBase::is_fetch_write;
-  using CohPolicyBase::is_evict;
-  using CohPolicyBase::cmd_for_null;
-  using CohPolicyBase::cmd_for_probe_release;
-  using CohPolicyBase::cmd_for_probe_writeback;
-  using CohPolicyBase::cmd_for_probe_downgrade;
-  using CohPolicyBase::cmd_for_release;
-public:
-
-  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
-    if(is_fetch_write(cmd))    return std::make_pair(true, cmd_for_probe_release(cmd.id));
-    else                       return std::make_pair(true, cmd_for_probe_downgrade(cmd.id));
+  static __always_inline std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
+    if(coh::is_fetch_write(cmd))    return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
+    else                            return std::make_pair(true, coh::cmd_for_probe_downgrade(cmd.id));
   }
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const override { // after grant to inner
+  static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) { // after grant to inner
     int32_t id = cmd.id;
     if constexpr (EnDir) {
-      if(is_fetch_read(cmd)) {
+      if(coh::is_fetch_read(cmd)) {
         meta->to_shared(id);
         meta_inner->to_shared(-1);
       } else {
@@ -34,8 +23,8 @@ public:
         meta_inner->to_modified(-1);
       }
     } else {
-      if(is_fetch_read(cmd)) meta_inner->to_shared(-1);
-      else                   meta_inner->to_modified(-1);
+      if(coh::is_fetch_read(cmd)) meta_inner->to_shared(-1);
+      else                        meta_inner->to_modified(-1);
 
       if(id != -1) meta->to_invalid();
       else         meta->to_shared(-1); // as the inner does not exist, state is shared
@@ -43,13 +32,13 @@ public:
     assert(!meta_inner->is_dirty());
   }
 
-  virtual std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) const override {
+  static __always_inline std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) {
     // for exclusive cache, no sync is needed for normal way, always sync for extended way
-    return meta->is_extend() ? std::make_pair(true, cmd_for_probe_release()) : std::make_pair(false, cmd_for_null());
+    return meta->is_extend() ? std::make_pair(true, coh::cmd_for_probe_release()) : std::make_pair(false, coh::cmd_for_null());
   }
 
-  virtual void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) const override {
-    if(cmd.id == -1) this->meta_after_release(cmd, meta, meta_inner);
+  static __always_inline void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) {
+    if(cmd.id == -1) MSIPolicy<false, isLLC, Outer>::meta_after_release(cmd, meta, meta_inner);
     else {
       meta->get_outer_meta()->copy(meta_inner);
       meta_inner->to_invalid();
@@ -58,39 +47,34 @@ public:
     }
   }
 
-  virtual std::pair<bool, coh_cmd_t> release_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, const CMMetadataBase* meta_inner) const override {
+  static __always_inline std::pair<bool, coh_cmd_t> release_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, const CMMetadataBase* meta_inner) {
     // if the inner cache is not exclusive (M/O/E), probe to see whether there are other copies
-    return std::make_pair(!meta_inner->allow_write(), cmd_for_probe_writeback(cmd.id));
+    return std::make_pair(!meta_inner->allow_write(), coh::cmd_for_probe_writeback(cmd.id));
   }
 
-  virtual std::pair<bool, coh_cmd_t> inner_need_release() override {
-    return std::make_pair(true, cmd_for_release());
+  static __always_inline std::pair<bool, coh_cmd_t> inner_need_release() {
+    return std::make_pair(true, coh::cmd_for_release());
   }
 
-  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const override {
+  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) {
     if (isLLC || uncached) {
-      if(is_evict(cmd)) return std::make_tuple(true, true, cmd_for_probe_release());
+      if(coh::is_evict(cmd)) return std::make_tuple(true, true, coh::cmd_for_probe_release());
       else if(meta && meta->is_shared())
-        return std::make_tuple(true, false, cmd_for_null());
+        return std::make_tuple(true, false, coh::cmd_for_null());
       else
-        return std::make_tuple(true, true, cmd_for_probe_writeback());
+        return std::make_tuple(true, true, coh::cmd_for_probe_writeback());
     } else
-      return std::make_tuple(false, false, cmd_for_null());
+      return std::make_tuple(false, false, coh::cmd_for_null());
   }
 };
 
-template<typename MT, bool EnDir, bool isLLC> requires C_DERIVE<MT, MetadataDirectoryBase> && (EnDir)
-class ExclusiveMESIPolicy : public ExclusiveMSIPolicy<MT, true, isLLC>
+template<bool isL1, bool isLLC, typename Outer, bool EnDir = true> requires (EnDir)
+struct ExclusiveMESIPolicy : public ExclusiveMSIPolicy<isL1, isLLC, Outer, EnDir>
 {
-protected:
-  using CohPolicyBase::is_fetch_read;
-  using CohPolicyBase::is_fetch_write;
-public:
-
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const override { // after grant to inner
+  static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) { // after grant to inner
     int32_t id = cmd.id;
     if(id != -1) { // inner cache is cached
-      if(is_fetch_read(cmd)) {
+      if(coh::is_fetch_read(cmd)) {
         meta->to_shared(id);
         if(static_cast<MetadataDirectoryBase *>(meta)->is_exclusive_sharer(id)) { // add the support for exclusive
           meta->to_exclusive(id);
@@ -98,13 +82,13 @@ public:
         } else
           meta_inner->to_shared(-1);
       } else {
-        assert(is_fetch_write(cmd));
+        assert(coh::is_fetch_write(cmd));
         meta->to_modified(id);
         meta_inner->to_modified(-1);
       }
     } else { // acquire from an uncached inner, still cache it in normal way as the inner does not exist
-      if(is_fetch_read(cmd)) meta_inner->to_shared(-1);
-      else                   meta_inner->to_modified(-1);
+      if(coh::is_fetch_read(cmd)) meta_inner->to_shared(-1);
+      else                        meta_inner->to_modified(-1);
       meta->to_shared(-1); // as the inner does not exist, state is shared
     }
     assert(!meta_inner->is_dirty());

@@ -16,65 +16,64 @@ typedef MetadataMIBase MetadataMI;
 template <int AW, int IW, int TOfst>
 using MetadataMIBroadcast = MetadataBroadcast<AW, IW, TOfst, MetadataMIBase>;
 
-template<typename MT, bool isL1, bool isLLC> requires C_DERIVE<MT, CMMetadataBase>
-class MIPolicy : public CohPolicyBase
+template<bool isL1, bool isLLC, typename Outer> requires C_DERIVE<Outer, CohPolicyBase>
+struct MIPolicy : public CohPolicyBase
 {
-protected:
-  using CohPolicyBase::outer;
-  using CohPolicyBase::cmd_for_probe_release;
-  using CohPolicyBase::cmd_for_probe_writeback;
-  using CohPolicyBase::cmd_for_null;
-  using CohPolicyBase::is_evict;
+  static __always_inline coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) { return coh::cmd_for_write(); }
 
-public:
-  virtual coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) const override {
-    return cmd_for_write();
+  static __always_inline std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
+    return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
   }
 
-  virtual std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
-    return std::make_pair(true, cmd_for_probe_release(cmd.id));
+  static __always_inline std::tuple<bool, bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) {
+    return std::make_tuple(false, false, coh::cmd_for_null());
   }
 
-  virtual std::tuple<bool, bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) const override {
-    return std::make_tuple(false, false, cmd_for_null());
-  }
-
-  virtual void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) const override {
+  static __always_inline void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) {
     meta->init(addr);
-    assert(is_fetch_write(outer_cmd) && meta->allow_write());
+    assert(coh::is_fetch_write(outer_cmd) && meta->allow_write());
     meta->to_modified(-1);
   }
 
-  virtual void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) const override {
+  static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) {
     meta->to_modified(cmd.id);
     meta_inner->to_modified(-1);
   }
 
-  virtual std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) const override {
+  static __always_inline std::pair<bool, coh_cmd_t> probe_need_sync(coh_cmd_t outer_cmd, const CMMetadataBase *meta) {
     if constexpr (!isL1) {
-      assert(is_probe(outer_cmd));
-      if(is_evict(outer_cmd) || is_downgrade(outer_cmd))
-        return std::make_pair(true, cmd_for_probe_release());
+      assert(coh::is_probe(outer_cmd));
+      if(coh::is_evict(outer_cmd) || coh::is_downgrade(outer_cmd))
+        return std::make_pair(true, coh::cmd_for_probe_release());
       else
-        return std::make_pair(true, cmd_for_probe_writeback());
-    } else return std::make_pair(false, cmd_for_null());
+        return std::make_pair(true, coh::cmd_for_probe_writeback());
+    } else return std::make_pair(false, coh::cmd_for_null());
   }
 
-  virtual void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) const override {
+  static __always_inline void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) {
     CohPolicyBase::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
     if(meta) {
-      if(is_evict(outer_cmd) || is_downgrade(outer_cmd)) meta->to_invalid();
+      if(coh::is_evict(outer_cmd) || coh::is_downgrade(outer_cmd)) meta->to_invalid();
     }
   }
 
-  virtual std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) const override {
+  static __always_inline std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta, bool uncached) {
+    if(meta->is_dirty())
+      return std::make_pair(true, coh::cmd_for_release());
+    else if(!uncached)
+      return Outer::inner_need_release();
+    else
+      return std::make_pair(false, coh::cmd_for_null());
+  }
+
+  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) {
     if (isLLC || uncached) {
       if(meta){
-        if(is_evict(cmd)) return std::make_tuple(true, true, cmd_for_probe_release());
-        else              return std::make_tuple(true, true, cmd_for_probe_writeback());
-      } else              return std::make_tuple(true, false, cmd_for_null());
+        if(coh::is_evict(cmd)) return std::make_tuple(true, true,  coh::cmd_for_probe_release());
+        else                   return std::make_tuple(true, true,  coh::cmd_for_probe_writeback());
+      } else                   return std::make_tuple(true, false, coh::cmd_for_null());
     } else
-      return std::make_tuple(false, false, cmd_for_null());
+      return std::make_tuple(false, false, coh::cmd_for_null());
   }
 
 };

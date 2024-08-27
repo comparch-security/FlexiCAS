@@ -52,17 +52,14 @@ public:
 };
 
 // MirageMSI protocol
-template<typename MT, typename CT>
+template<typename MT, typename CT, typename Outer>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
-class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
+struct MirageMSIPolicy : public MSIPolicy<false, true, Outer> // always LLC, always not L1
 {
-  using CohPolicyBase::is_flush;
-  using CohPolicyBase::is_evict;
-public:
-  virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const override {
-    assert(is_flush(cmd));
-    if(is_evict(cmd)) {
-      static_cast<CT *>(CohPolicyBase::cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
+  static __always_inline void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta, CacheBase *cache) {
+    assert(coh::is_flush(cmd));
+    if(coh::is_evict(cmd)) {
+      static_cast<CT *>(cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
       meta->to_invalid();
     }
   }
