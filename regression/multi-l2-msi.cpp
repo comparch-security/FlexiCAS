@@ -26,12 +26,14 @@ PrintPool *globalPrinter;
 #endif
 
 int main(){
-  auto l1d = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIPolicy, false, false, void, true>(NCore, "l1d");
+  using policy_l2 = MSIPolicy<false, true, policy_memory>;
+  using policy_l1d = MSIPolicy<true, false, policy_l2>;
+  using policy_l1i = MSIPolicy<true, true, policy_l2>;
+  auto l1d = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1d, false, void, true, true>(NCore, "l1d");
   auto core_data = get_l1_core_interface(l1d);
-  auto l1i = cache_gen_multi_thread_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIPolicy, false, true, void, true>(NCore, "l1i");
+  auto l1i = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, true, void, true, true>(NCore, "l1i");
   auto core_inst = get_l1_core_interface(l1i);
-
-  auto l2 = cache_gen_multi_thread_l2<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRU_MT, MSIPolicy, true, void, true>(1, "l2")[0];
+  auto l2 = cache_gen_inc<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l2, true, void, true, true>(1, "l2")[0];
   auto mem = new SimpleMemoryModel<Data64B, void, true, true>("mem");
   globalPrinter = new PrintPool(256);
   SimpleTracerMT tracer(true);
