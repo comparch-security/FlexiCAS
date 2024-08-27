@@ -216,17 +216,13 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename CT, bool EnMT>
-  requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
-class MirageInnerPortUncached : public InnerCohPortUncached<EnMT>
+template<typename Policy, bool EnMT, typename MT, typename CT>
+  requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase> && C_DERIVE<Policy, CohPolicyBase>
+class MirageInnerPortUncached : public InnerCohPortUncached<Policy, EnMT>
 {
 protected:
-  using InnerCohPortBase::policy;
   using InnerCohPortBase::outer;
-public:
-  MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
 
-protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) override { // common function for access a line in the cache
     uint32_t ai, s, w;
@@ -236,12 +232,12 @@ protected:
     bool hit = cache->hit(addr, &ai, &s, &w, prio, EnMT);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
-      auto sync = policy->access_need_sync(cmd, meta);
+      auto sync = Policy::access_need_sync(cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
       }
-      auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
+      auto [promote, promote_local, promote_cmd] = Policy::access_need_promote(cmd, meta);
       if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
       else if(promote_local) meta->to_modified(-1);
     } else { // miss
@@ -268,14 +264,13 @@ protected:
       static_cast<MT *>(meta)->bind(data_pointer.first, data_pointer.second);
       data_meta->bind(ai, s, w);
 
-      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
+      outer->acquire_req(addr, meta, data, Policy::cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
   }
 };
 
-template<typename MT, typename CT, bool EnMT>
-  requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
-using MirageInnerCohPort = InnerCohPortT<MirageInnerPortUncached<MT, CT, EnMT>, EnMT>;
+template<typename Policy, bool EnMT, typename MT, typename CT>
+using MirageInnerCohPort = InnerCohPortT<MirageInnerPortUncached, Policy, EnMT, MT, CT>;
 
 #endif
