@@ -119,9 +119,6 @@ public:
   }
 };
 
-template<int IW, int NW, bool EF = true, bool DUO = true>
-using ReplaceFIFO_MT = ReplaceFIFO<IW, NW, EF, DUO>;
-
 /////////////////////////////////
 // LRU replacement
 // IW: index width, NW: number of ways
@@ -150,9 +147,6 @@ public:
     RPT::delist_from_free(s, w, demand_acc);
   }
 };
-
-template<int IW, int NW, bool EF = true, bool DUO = true>
-using ReplaceLRU_MT = ReplaceLRU<IW, NW, EF, DUO>;
 
 /////////////////////////////////
 // Static RRIP replacement
@@ -197,9 +191,6 @@ public:
   }
 };
 
-template<int IW, int NW, bool EF = true, bool DUO = true>
-using ReplaceSRRIP_MT = ReplaceSRRIP<IW, NW, EF, DUO>;
-
 /////////////////////////////////
 // Random replacement
 // IW: index width, NW: number of ways
@@ -226,8 +217,5 @@ public:
     RPT::delist_from_free(s, w, demand_acc);
   }
 };
-
-template<int IW, int NW, bool EF = true, bool DUO = true>
-using ReplaceRandom_MT = ReplaceRandom<IW, NW, EF, DUO>;
 
 #endif
