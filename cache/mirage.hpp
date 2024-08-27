@@ -75,18 +75,17 @@ public:
 // DIDX: data indexer type, DRPC: data replacer type
 // EnMon: whether to enable monitoring
 // EnableRelocation : whether to enable relocation
-// EF: empty first in replacer
 template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation,
-         bool EF = true, bool EnMT = false, int MSHR = 4>
+         bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<DTMT, MirageDataMeta>  && C_DERIVE<MIDX, IndexFuncBase>   && C_DERIVE<DIDX, IndexFuncBase> &&
-           C_DERIVE<MRPC, ReplaceFuncBase<EF> > && C_DERIVE<DRPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase>
-class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR>
+           C_DERIVE_OR_VOID<DLY, DelayBase>
+class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EnMT, MSHR>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
 
-  typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR> CacheT;
+  typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EnMT, MSHR> CacheT;
 protected:
   using CacheBase::arrays;
   using CacheT::indexer;
