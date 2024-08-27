@@ -145,26 +145,34 @@ inline auto cache_gen_exc(int size, const std::string& name_prefix) {
   return cache_gen<IW, WN, DW, DT, MT, RPT, DRPT, CPT, Policy, false, uncached, DLY, EnMon, false>(size, name_prefix);
 }
 
-template<int IW, int WN, int EW, int P, int MaxRelocN, typename DT,
-         template <int, int, bool> class MRPT,
-         template <int, int, bool> class DRPT,
-         typename DLY, bool EnMon, bool EnableRelocation>
-inline auto cache_gen_llc_mirage(int size, const std::string& name_prefix) {
-  typedef MirageMetadataMSIBroadcast<48,0,6> meta_metadata_type;
-  typedef MirageDataMeta data_metadata_type;
-  typedef IndexSkewed<IW, 6, P> meta_index_type;
-  typedef IndexRandom<IW, 6> data_index_type;
-  typedef MRPT<IW, WN, true> meta_replace_type;
-  typedef DRPT<IW, WN*P, true> data_replace_type;
-
-  typedef MirageCache<IW, WN, EW, P, MaxRelocN,
-                      meta_metadata_type, DT, data_metadata_type,
-                      meta_index_type, data_index_type,
-                      meta_replace_type, data_replace_type,
-                      DLY, EnMon, EnableRelocation> cache_base_type;
-  typedef MSIPolicy<meta_metadata_type, false, true> policy_type;
-  typedef CoherentCacheNorm<cache_base_type, OuterCohPortUncached<false>, MirageInnerCohPort<meta_metadata_type, cache_base_type, false> > cache_type;
-  return cache_generator<cache_type, policy_type>(size, name_prefix);
+namespace ct {
+  namespace mirage {
+    template<int IW, int WN, int EW, int P, int MaxRelocN, typename DT,
+             template <int, int, bool> class MRPT,
+             template <int, int, bool> class DRPT,
+             typename Outer,
+             typename DLY, bool EnMon, bool EnableRelocation>
+    struct types {
+      using meta_index_type = IndexSkewed<IW, 6, P>;
+      using data_index_type = IndexRandom<IW, 6>;
+      using meta_replace_type = MRPT<IW, WN, true>;
+      using data_replace_type = DRPT<IW, WN*P, true>;
+      using meta_metadata_type = MirageMetadataMSIBroadcast<48,0,6>;
+      using data_metadata_type = MirageDataMeta;
+      using cache_base_type = MirageCache<IW, WN, EW, P, MaxRelocN,
+                                          meta_metadata_type, DT, data_metadata_type,
+                                          meta_index_type, data_index_type,
+                                          meta_replace_type, data_replace_type,
+                                          DLY, EnMon, EnableRelocation>;
+      using policy_type = MirageMSIPolicy<meta_metadata_type, cache_base_type, Outer>;
+      using input_type = MirageInnerCohPort<policy_type, false, meta_metadata_type, cache_base_type>;
+      using output_type = OuterCohPortUncached<policy_type, false>;
+      using cache_type = CoherentCacheNorm<cache_base_type, output_type, input_type>;
+      static inline auto cache_gen_mirage(int size, const std::string& name_prefix) {
+        return cache_generator<cache_type>(size, name_prefix);
+      }
+    };
+  }
 }
 
 #endif
