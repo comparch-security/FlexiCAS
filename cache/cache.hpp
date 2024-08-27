@@ -189,12 +189,11 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-// EF: empty first in replacer
 // EnMT: enable multithread, MSHR: maximal number of transactions on the fly
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY,
-         bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
+         bool EnMon, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
-           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase> &&
+           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE_OR_VOID<DLY, DelayBase> &&
            (MSHR >= 2) // 2 buffers are required even for single-thread simulation
 class CacheSkewed : public CacheBase
 {
@@ -396,7 +395,7 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
-using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon, EF, EnMT, MSHR>;
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EnMT = false, int MSHR = 4>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon, EnMT, MSHR>;
 
 #endif

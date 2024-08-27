@@ -15,11 +15,14 @@
 #define L2DW 4
 
 int main() {
-  auto l1d = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NCore, "l1d");
+  using policy_l2 = ExclusiveMESIPolicy<false, true, policy_memory, true>;
+  using policy_l1d = MSIPolicy<true, false, policy_l2>;
+  using policy_l1i = MSIPolicy<true, true, policy_l2>;
+  auto l1d = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1d, false, void, true>(NCore, "l1d");
   auto core_data = get_l1_core_interface(l1d);
-  auto l1i = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, true, void, true>(NCore, "l1i");
+  auto l1i = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, true, void, true>(NCore, "l1i");
   auto core_inst = get_l1_core_interface(l1i);
-  auto l2 = cache_gen_l2_exc<L2IW, L2WN, L2DW, Data64B, MetadataDirectoryBase, ReplaceSRRIP, ReplaceLRU, MESIPolicy, true, void, true>(1, "l2")[0];
+  auto l2 = cache_gen_exc<L2IW, L2WN, L2DW, Data64B, MetadataDirectoryBase, ReplaceSRRIP, ReplaceLRU, ExclusiveMESIPolicy, policy_l2, true, void, true>(1, "l2")[0];
   auto mem = new SimpleMemoryModel<Data64B,void,true>("mem");
   SimpleTracer tracer(true);
 
