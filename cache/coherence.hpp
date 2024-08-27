@@ -434,7 +434,7 @@ public:
         for(uint32_t way = 0; way < nway; way++){
           relocation_chain(ai, idx, way);
         }
-        static_cast<CT *>(cache)->move_SPtr(ai);
+        static_cast<CT *>(cache)->move_remap_pointer(ai);
       }
     }
     static_cast<CT *>(cache)->remap_end();

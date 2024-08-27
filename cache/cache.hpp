@@ -433,8 +433,8 @@ protected:
   using CacheT::loc_random;
 
   IDX indexer_next;
-  std::vector<uint64_t> next_seeds;
-  std::vector<uint64_t> SPtr;
+  std::vector<uint64_t> indexer_seed_next;
+  std::vector<uint64_t> remap_pointer;
   bool remap;
 
   virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int genre) override {
@@ -452,24 +452,24 @@ protected:
 public:
   CacheRemap(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0) 
   : CacheT(name, extra_par, extra_way), remap(false) {
-    SPtr.resize(P, 0);
-    next_seeds.resize(P);
-    std::generate(next_seeds.begin(), next_seeds.end(), cm_get_random_uint64);
-    indexer_next.seed(next_seeds);
+    remap_pointer.resize(P, 0);
+    indexer_seed_next.resize(P);
+    std::generate(indexer_seed_next.begin(), indexer_seed_next.end(), cm_get_random_uint64);
+    indexer_next.seed(indexer_seed_next);
   }
   virtual ~CacheRemap() {}
 
   void rotate_indexer() {
-    indexer.seed(next_seeds);
-    std::generate(next_seeds.begin(), next_seeds.end(), cm_get_random_uint64);
-    indexer_next.seed(next_seeds);
+    indexer.seed(indexer_seed_next);
+    std::generate(indexer_seed_next.begin(), indexer_seed_next.end(), cm_get_random_uint64);
+    indexer_next.seed(indexer_seed_next);
   }
 
   virtual bool hit(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, bool check_and_set) override {
     if(!remap) return CacheT::hit(addr, ai, s, w, prio, check_and_set);
     for(*ai=0; *ai<P; (*ai)++) {
       *s = indexer.index(addr, *ai);
-      if(*s >= SPtr[*ai]){
+      if(*s >= remap_pointer[*ai]){
         if (arrays[*ai]->hit(addr, *s, w)) return true;
       }
       *s = indexer_next.index(addr, *ai);
@@ -478,12 +478,12 @@ public:
     return false;
   }
 
-  void move_SPtr(uint32_t ai) { SPtr[ai]++; }
+  void move_remap_pointer(uint32_t ai) { remap_pointer[ai]++; }
 
   void remap_start() { remap = true; }
   void remap_end() {
     remap = false;
-    SPtr.resize(P, 0);
+    std::fill(remap_pointer.begin(), remap_pointer.end(), 0);
     rotate_indexer();
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < 1ul<<IW; idx++){
