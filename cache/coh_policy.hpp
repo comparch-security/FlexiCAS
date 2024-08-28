@@ -120,7 +120,7 @@ struct CohPolicyBase {
     return std::make_pair(true, coh::cmd_for_probe_release());
   }
 
-  // static __always_inline std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta, bool uncached, CohPolicyBase *outer);
+  // static __always_inline std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta);
 
   static __always_inline void meta_after_writeback(coh_cmd_t outer_cmd, CMMetadataBase *meta) {
     if(meta) meta->to_clean(); // flush may send out writeback request with null meta
@@ -143,7 +143,7 @@ struct CohPolicyBase {
   }
 
   // flush
-  // static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached);
+  // static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta);
 
   static __always_inline void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta, CacheBase *) {
     if(meta && coh::is_evict(cmd)) meta->to_invalid();

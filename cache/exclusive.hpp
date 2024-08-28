@@ -4,8 +4,8 @@
 #include "cache/msi.hpp"
 #include "cache/coherence.hpp"
 
-template<bool isL1, bool isLLC, typename Outer, bool EnDir = false> requires (!isL1)
-struct ExclusiveMSIPolicy : public MSIPolicy<false, isLLC, Outer>    // always not L1
+template<bool isL1, bool uncached, typename Outer, bool EnDir = false> requires (!isL1)
+struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // always not L1
 {
   static __always_inline std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
     if(coh::is_fetch_write(cmd))    return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
@@ -38,7 +38,7 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, isLLC, Outer>    // always n
   }
 
   static __always_inline void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) {
-    if(cmd.id == -1) MSIPolicy<false, isLLC, Outer>::meta_after_release(cmd, meta, meta_inner);
+    if(cmd.id == -1) MSIPolicy<false, uncached, Outer>::meta_after_release(cmd, meta, meta_inner);
     else {
       meta->get_outer_meta()->copy(meta_inner);
       meta_inner->to_invalid();
@@ -56,8 +56,8 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, isLLC, Outer>    // always n
     return std::make_pair(true, coh::cmd_for_release());
   }
 
-  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) {
-    if (isLLC || uncached) {
+  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
+    if constexpr (uncached) {
       if(coh::is_evict(cmd)) return std::make_tuple(true, true, coh::cmd_for_probe_release());
       else if(meta && meta->is_shared())
         return std::make_tuple(true, false, coh::cmd_for_null());
@@ -68,8 +68,8 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, isLLC, Outer>    // always n
   }
 };
 
-template<bool isL1, bool isLLC, typename Outer, bool EnDir = true> requires (EnDir)
-struct ExclusiveMESIPolicy : public ExclusiveMSIPolicy<isL1, isLLC, Outer, EnDir>
+template<bool isL1, bool uncached, typename Outer, bool EnDir = true> requires (EnDir)
+struct ExclusiveMESIPolicy : public ExclusiveMSIPolicy<isL1, uncached, Outer, EnDir>
 {
   static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) { // after grant to inner
     int32_t id = cmd.id;
@@ -303,7 +303,7 @@ protected:
     bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, false); // ToDo, here may be buggy do to concurrency
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
-    auto [flush, probe, probe_cmd] = Policy::flush_need_sync(cmd, meta, outer->is_uncached());
+    auto [flush, probe, probe_cmd] = Policy::flush_need_sync(cmd, meta);
     if(!flush) {
       // do not handle flush at this level, and send it to the outer cache
       outer->writeback_req(addr, nullptr, nullptr, coh::cmd_for_flush(), delay);
@@ -320,7 +320,7 @@ protected:
       if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
     }
 
-    auto writeback = Policy::writeback_need_writeback(meta, outer->is_uncached());
+    auto writeback = Policy::writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
     Policy::meta_after_flush(cmd, meta, cache);
@@ -493,7 +493,7 @@ protected:
     bool hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, true);
     if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
 
-    auto [flush, probe, probe_cmd] = Policy::flush_need_sync(cmd, meta, outer->is_uncached());
+    auto [flush, probe, probe_cmd] = Policy::flush_need_sync(cmd, meta);
     if(!flush) {
       // do not handle flush at this level, and send it to the outer cache
       outer->writeback_req(addr, nullptr, nullptr, coh::cmd_for_flush(), delay);
@@ -509,7 +509,7 @@ protected:
       if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
     }
 
-    auto writeback = Policy::writeback_need_writeback(meta, outer->is_uncached());
+    auto writeback = Policy::writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
     Policy::meta_after_flush(cmd, meta, cache);

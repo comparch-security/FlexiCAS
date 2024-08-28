@@ -14,8 +14,8 @@ class MetadataMESIBase : public BT
 template <int AW, int IW, int TOfst>
 using MetadataMESIDirectory = MetadataDirectory<AW, IW, TOfst, MetadataMESIBase<MetadataDirectoryBase> >;
 
-template<bool isL1, bool isLLC, typename Outer> requires (!isL1)
-struct MESIPolicy : public MSIPolicy<false, isLLC, Outer>
+template<bool isL1, bool uncached, typename Outer> requires (!isL1)
+struct MESIPolicy : public MSIPolicy<false, uncached, Outer>
 {
   static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) {
     int32_t id = cmd.id;

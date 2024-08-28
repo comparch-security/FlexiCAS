@@ -33,12 +33,13 @@ int main() {
   SimpleTracer tracer(true);
 
   for(int i=0; i<NCore; i++) {
-    l1i[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1i[i]->outer, true));
-    l1d[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1d[i]->outer));
+    l1i[i]->outer->connect(l2[i]->inner);
+    l1d[i]->outer->connect(l2[i]->inner);
     dispatcher->connect(l3[i]->inner);
-    l2[i]->outer->connect(dispatcher, l3[0]->inner->connect(l2[i]->outer));
-    if(i>0) for(int j=0; j<NCore; j++) l3[i]->inner->connect(l2[j]->outer);
-    l3[i]->outer->connect(mem, mem->connect(l3[i]->outer));
+    l2[i]->outer->connect_by_dispatch(dispatcher, l3[0]->inner);
+    if constexpr (!policy_l2::is_uncached()) // normally this check is useless as L2 is cached, but provied as an example
+      for(int j=1; j<NCore; j++) l3[j]->inner->connect(l2[i]->outer);
+    l3[i]->outer->connect(mem);
     l1i[i]->attach_monitor(&tracer);
     l1d[i]->attach_monitor(&tracer);
     l2[i]->attach_monitor(&tracer);

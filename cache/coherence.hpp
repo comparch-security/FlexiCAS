@@ -42,7 +42,8 @@ protected:
 public:
   virtual ~OuterCohPortBase() = default;
 
-  void connect(CohMasterBase *h, int32_t id) { coh = h; coh_id = id; }
+  virtual void connect(CohMasterBase *h) = 0;
+  virtual void connect_by_dispatch(CohMasterBase *dispatcher, CohMasterBase *h) = 0;
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
@@ -51,7 +52,6 @@ public:
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); }
   virtual void finish_req(uint64_t addr) {}
 
-  __always_inline bool is_uncached() const { return coh_id == -1; }
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) = 0;
   friend CoherentCacheBase; // deferred assignment for cache
 };
@@ -68,15 +68,11 @@ protected:
 public:
   virtual ~InnerCohPortBase() = default;
 
-  virtual uint32_t connect(CohClientBase *c, bool uncached = false) {
-    if(uncached) {
-      return -1;
-    } else {
-      coh.push_back(c);
-      assert(coh.size() <= 63 || 0 ==
-             "Only 63 coherent inner caches are supported for now as the directory in class MetadataDirectoryBase is implemented as a 64-bit bitmap.");
-      return coh.size()-1;
-    }
+  virtual uint32_t connect(CohClientBase *c) {
+    coh.push_back(c);
+    assert(coh.size() <= 63 || 0 ==
+           "Only 63 coherent inner caches are supported for now as the directory in class MetadataDirectoryBase is implemented as a 64-bit bitmap.");
+    return coh.size()-1;
   }
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
@@ -97,6 +93,22 @@ template<class Policy, bool EnMT> requires C_DERIVE<Policy, CohPolicyBase>
 class OuterCohPortUncached : public OuterCohPortBase
 {
 public:
+  virtual void connect(CohMasterBase *h) override { // auto detection of uncached cache
+    OuterCohPortBase::coh = h;
+    if constexpr (Policy::is_uncached())
+      OuterCohPortBase::coh_id = -1;
+    else
+      OuterCohPortBase::coh_id = h->connect(this);
+  }
+
+  virtual void connect_by_dispatch(CohMasterBase *dispatcher, CohMasterBase *h) override {
+    OuterCohPortBase::coh = dispatcher;
+    if constexpr (Policy::is_uncached())
+      OuterCohPortBase::coh_id = -1;
+    else
+      OuterCohPortBase::coh_id = h->connect(this);
+  }
+
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t outer_cmd, uint64_t *delay) override {
     outer_cmd.id = coh_id;
 
@@ -193,7 +205,7 @@ public:
   }
 
   virtual void finish_req(uint64_t addr) override {
-    assert(!this->is_uncached());
+    assert(!Policy::is_uncached());
     OuterCohPortBase::coh->finish_resp(addr, coh::cmd_for_finish(coh_id));
   }
 
@@ -238,7 +250,7 @@ protected:
       auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
     }
-    auto writeback = Policy::writeback_need_writeback(meta, outer->is_uncached());
+    auto writeback = Policy::writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     Policy::meta_after_evict(meta);
     cache->hook_manage(addr, ai, s, w, true, true, writeback.first, meta, data, delay);
@@ -325,7 +337,7 @@ protected:
       if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
     }
 
-    auto [flush, probe, probe_cmd] = Policy::flush_need_sync(cmd, meta, outer->is_uncached());
+    auto [flush, probe, probe_cmd] = Policy::flush_need_sync(cmd, meta);
     if(!flush) {
       // do not handle flush at this level, and send it to the outer cache
       outer->writeback_req(addr, nullptr, nullptr, coh::cmd_for_flush(), delay);
@@ -339,7 +351,7 @@ protected:
       if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
     }
 
-    auto writeback = Policy::writeback_need_writeback(meta, outer->is_uncached());
+    auto writeback = Policy::writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
     Policy::meta_after_flush(cmd, meta, cache);
@@ -484,7 +496,7 @@ public:
 
 private:
   // hide and prohibit calling these functions
-  virtual uint32_t connect(CohClientBase *, bool) override { return -1; }
+  virtual uint32_t connect(CohClientBase *) override { return -1; }
   virtual void acquire_resp(uint64_t, CMDataBase *, CMMetadataBase *, coh_cmd_t, uint64_t *) override {}
   virtual void writeback_resp(uint64_t, CMDataBase *, CMMetadataBase *, coh_cmd_t, uint64_t *) override {}
 };

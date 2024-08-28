@@ -10,7 +10,7 @@ int main() {
   auto l1d = cache[0];
   auto core = get_l1_core_interface(cache);
   auto mem = new SimpleMemoryModel<Data64B,void,true>("mem");
-  l1d->outer->connect(mem, mem->connect(l1d->outer));
+  l1d->outer->connect(mem);
 
   SimpleTracer tracer(true);
   l1d->attach_monitor(&tracer);

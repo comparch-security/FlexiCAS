@@ -19,8 +19,8 @@ using MetadataMSIBroadcast = MetadataBroadcast<AW, IW, TOfst, MetadataMSIBase<Me
 template <int AW, int IW, int TOfst>
 using MetadataMSIDirectory = MetadataDirectory<AW, IW, TOfst, MetadataMSIBase<MetadataDirectoryBase> >;
 
-template<bool isL1, bool isLLC, typename Outer>
-struct MSIPolicy : public MIPolicy<isL1, isLLC, Outer>
+template<bool isL1, bool uncached, typename Outer>
+struct MSIPolicy : public MIPolicy<isL1, uncached, Outer>
 {
   static __always_inline coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) {
     if(coh::is_fetch_write(cmd) || coh::is_evict(cmd) || coh::is_writeback(cmd))
@@ -81,7 +81,7 @@ struct MSIPolicy : public MIPolicy<isL1, isLLC, Outer>
   }
 
   static __always_inline void meta_after_probe(coh_cmd_t outer_cmd, CMMetadataBase *meta, CMMetadataBase* meta_outer, int32_t inner_id, bool writeback) {
-    MIPolicy<isL1, isLLC, Outer>::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
+    MIPolicy<isL1, uncached, Outer>::meta_after_probe(outer_cmd, meta, meta_outer, inner_id, writeback);
     if(meta) {
       if(coh::is_evict(outer_cmd))
         meta->to_invalid();
@@ -93,8 +93,8 @@ struct MSIPolicy : public MIPolicy<isL1, isLLC, Outer>
     }
   }
 
-  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) {
-    if (isLLC || uncached) {
+  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
+    if constexpr (uncached) {
       if(meta) {
         if(coh::is_evict(cmd)) return std::make_tuple(true, true, coh::cmd_for_probe_release());
         else if(meta->is_shared())
