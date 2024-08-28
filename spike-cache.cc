@@ -191,27 +191,32 @@ namespace flexicas {
   }
 
   void init(int ncore, const char *prefix) {
+    using policy_l3 = MESIPolicy<false, true, policy_memory>;
+    using policy_l2 = ExclusiveMSIPolicy<false, false, policy_l3, false>;
+    using policy_l1d = MSIPolicy<true, false, policy_l2>;
+    using policy_l1i = MSIPolicy<true, true, policy_l2>;
     NC = ncore;
     core_cycle.resize(NC, 0);
     wall_clock = 0;
-    auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, false, void, true>(NC, "l1d");
+    auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1d, false, void, true>(NC, "l1d");
     core_data = get_l1_core_interface(l1d);
-    auto l1i = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, false, true, void, true>(NC, "l1i");
+    auto l1i = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, true, void, true>(NC, "l1i");
     core_inst = get_l1_core_interface(l1i);
-    auto l2 = cache_gen_l2_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, MSIPolicy, false, void, true>(NC, "l2");
-    auto l3 = cache_gen_llc_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, void, true>(NC, "l3");
+    auto l2 = cache_gen_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, ExclusiveMSIPolicy, policy_l2, false, void, true>(NC, "l2");
+    auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, policy_l3, true, void, true>(NC, "l3");
     auto dispatcher = new SliceDispatcher<SliceHashNorm<> >("disp", NC);
     auto mem = new SimpleMemoryModel<void,void,true>("mem");
     tracer = new SimpleTracer(true);
     if(prefix) tracer->set_prefix(std::string(prefix));
 
     for(int i=0; i<NC; i++) {
-      l1i[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1i[i]->outer, true));
-      l1d[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1d[i]->outer));
+      l1i[i]->outer->connect(l2[i]->inner);
+      l1d[i]->outer->connect(l2[i]->inner);
       dispatcher->connect(l3[i]->inner);
-      l2[i]->outer->connect(dispatcher, l3[0]->inner->connect(l2[i]->outer));
-      if(i>0) for(int j=0; j<NC; j++) l3[i]->inner->connect(l2[j]->outer);
-      l3[i]->outer->connect(mem, mem->connect(l3[i]->outer));
+      l2[i]->outer->connect_by_dispatch(dispatcher, l3[0]->inner);
+      if constexpr (!policy_l2::is_uncached()) // normally this check is useless as L2 is cached, but provied as an example
+        for(int j=1; j<NC; j++) l3[j]->inner->connect(l2[i]->outer);
+      l3[i]->outer->connect(mem);
       l1i[i]->attach_monitor(tracer);
       l1d[i]->attach_monitor(tracer);
       l2[i]->attach_monitor(tracer);
