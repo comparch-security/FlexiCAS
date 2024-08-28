@@ -16,9 +16,11 @@ typedef MetadataMIBase MetadataMI;
 template <int AW, int IW, int TOfst>
 using MetadataMIBroadcast = MetadataBroadcast<AW, IW, TOfst, MetadataMIBase>;
 
-template<bool isL1, bool isLLC, typename Outer> requires C_DERIVE<Outer, CohPolicyBase>
+template<bool isL1, bool uncached, typename Outer> requires C_DERIVE<Outer, CohPolicyBase>
 struct MIPolicy : public CohPolicyBase
 {
+  constexpr static __always_inline bool is_uncached() { return uncached; }
+
   static __always_inline coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) { return coh::cmd_for_write(); }
 
   static __always_inline std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
@@ -57,17 +59,19 @@ struct MIPolicy : public CohPolicyBase
     }
   }
 
-  static __always_inline std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta, bool uncached) {
+  static __always_inline std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta) {
     if(meta->is_dirty())
       return std::make_pair(true, coh::cmd_for_release());
-    else if(!uncached)
-      return Outer::inner_need_release();
-    else
-      return std::make_pair(false, coh::cmd_for_null());
+    else {
+      if constexpr (!uncached)
+        return Outer::inner_need_release();
+      else
+        return std::make_pair(false, coh::cmd_for_null());
+    }
   }
 
-  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, bool uncached) {
-    if (isLLC || uncached) {
+  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
+    if constexpr (uncached) {
       if(meta){
         if(coh::is_evict(cmd)) return std::make_tuple(true, true,  coh::cmd_for_probe_release());
         else                   return std::make_tuple(true, true,  coh::cmd_for_probe_writeback());

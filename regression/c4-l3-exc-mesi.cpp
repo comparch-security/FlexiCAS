@@ -32,15 +32,15 @@ int main() {
   SimpleTracer tracer(true);
 
   for(int i=0; i<NCore; i++) {
-    l1i[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1i[i]->outer, true));
-    l1d[i]->outer->connect(l2[i]->inner, l2[i]->inner->connect(l1d[i]->outer));
+    l1i[i]->outer->connect(l2[i]->inner);
+    l1d[i]->outer->connect(l2[i]->inner);
     l1i[i]->attach_monitor(&tracer);
     l1d[i]->attach_monitor(&tracer);
-    l2[i]->outer->connect(l3->inner, l3->inner->connect(l2[i]->outer));
+    l2[i]->outer->connect(l3->inner);
     l2[i]->attach_monitor(&tracer);
   }
 
-  l3->outer->connect(mem, mem->connect(l3->outer));
+  l3->outer->connect(mem);
   l3->attach_monitor(&tracer);
   mem->attach_monitor(&tracer);
   tracer.start();
