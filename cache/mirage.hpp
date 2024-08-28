@@ -8,11 +8,10 @@
 class MirageDataMeta : public CMMetadataCommon
 {
 protected:
-  bool state; // false: invalid, true: valid
-  uint32_t mai, ms, mw; // data meta pointer to meta
+  bool state = false; // false: invalid, true: valid
+  uint32_t mai = 0, ms = 0, mw = 0; // data meta pointer to meta
 
 public:
-  MirageDataMeta() : state(false), mai(0), ms(0), mw(0) {}
   __always_inline void bind(uint32_t ai, uint32_t s, uint32_t w) { mai = ai; ms = s; mw = w; state = true; }
   __always_inline std::tuple<uint32_t, uint32_t, uint32_t> pointer() { return std::make_tuple(mai, ms, mw);} // return the pointer to data
   virtual void to_invalid() override { state = false; }
@@ -26,10 +25,8 @@ public:
 class MirageMetadataSupport
 {
 protected:
-  uint32_t ds, dw;
+  uint32_t ds = 0, dw = 0;
 public:
-  MirageMetadataSupport() : ds(0), dw(0) {}
-
   // special methods needed for Mirage Cache
   __always_inline void bind(uint32_t s, uint32_t w) { ds = s; dw = w; }                     // initialize meta pointer
   __always_inline std::pair<uint32_t, uint32_t> pointer() { return std::make_pair(ds, dw);} // return meta pointer to data meta
@@ -55,17 +52,14 @@ public:
 };
 
 // MirageMSI protocol
-template<typename MT, typename CT>
+template<typename MT, typename CT, typename Outer>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
-class MirageMSIPolicy : public MSIPolicy<MT, false, true> // always LLC, always not L1
+struct MirageMSIPolicy : public MSIPolicy<false, true, Outer> // always LLC, always not L1
 {
-  using CohPolicyBase::is_flush;
-  using CohPolicyBase::is_evict;
-public:
-  virtual void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta) const override {
-    assert(is_flush(cmd));
-    if(is_evict(cmd)) {
-      static_cast<CT *>(CohPolicyBase::cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
+  static __always_inline void meta_after_flush(coh_cmd_t cmd, CMMetadataBase *meta, CacheBase *cache) {
+    assert(coh::is_flush(cmd));
+    if(coh::is_evict(cmd)) {
+      static_cast<CT *>(cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
       meta->to_invalid();
     }
   }
@@ -78,18 +72,17 @@ public:
 // DIDX: data indexer type, DRPC: data replacer type
 // EnMon: whether to enable monitoring
 // EnableRelocation : whether to enable relocation
-// EF: empty first in replacer
 template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
          typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation,
-         bool EF = true, bool EnMT = false, int MSHR = 4>
+         bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<DTMT, MirageDataMeta>  && C_DERIVE<MIDX, IndexFuncBase>   && C_DERIVE<DIDX, IndexFuncBase> &&
-           C_DERIVE<MRPC, ReplaceFuncBase<EF> > && C_DERIVE<DRPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase>
-class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR>
+           C_DERIVE_OR_VOID<DLY, DelayBase>
+class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EnMT, MSHR>
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
 
-  typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EF, EnMT, MSHR> CacheT;
+  typedef CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EnMT, MSHR> CacheT;
 protected:
   using CacheBase::arrays;
   using CacheT::indexer;
@@ -223,17 +216,13 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename MT, typename CT, bool EnMT>
-  requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
-class MirageInnerPortUncached : public InnerCohPortUncached<EnMT>
+template<typename Policy, bool EnMT, typename MT, typename CT>
+  requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase> && C_DERIVE<Policy, CohPolicyBase>
+class MirageInnerPortUncached : public InnerCohPortUncached<Policy, EnMT>
 {
 protected:
-  using InnerCohPortBase::policy;
   using InnerCohPortBase::outer;
-public:
-  MirageInnerPortUncached(policy_ptr policy) : InnerCohPortUncached<EnMT>(policy) {}
 
-protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) override { // common function for access a line in the cache
     uint32_t ai, s, w;
@@ -243,12 +232,12 @@ protected:
     bool hit = cache->hit(addr, &ai, &s, &w, prio, EnMT);
     if(hit) {
       std::tie(meta, data) = cache->access_line(ai, s, w);
-      auto sync = policy->access_need_sync(cmd, meta);
+      auto sync = Policy::access_need_sync(cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
       }
-      auto [promote, promote_local, promote_cmd] = policy->access_need_promote(cmd, meta);
+      auto [promote, promote_local, promote_cmd] = Policy::access_need_promote(cmd, meta);
       if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
       else if(promote_local) meta->to_modified(-1);
     } else { // miss
@@ -275,14 +264,13 @@ protected:
       static_cast<MT *>(meta)->bind(data_pointer.first, data_pointer.second);
       data_meta->bind(ai, s, w);
 
-      outer->acquire_req(addr, meta, data, policy->cmd_for_outer_acquire(cmd), delay); // fetch the missing block
+      outer->acquire_req(addr, meta, data, Policy::cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
   }
 };
 
-template<typename MT, typename CT, bool EnMT>
-  requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase>
-using MirageInnerCohPort = InnerCohPortT<MirageInnerPortUncached<MT, CT, EnMT>, EnMT>;
+template<typename Policy, bool EnMT, typename MT, typename CT>
+using MirageInnerCohPort = InnerCohPortT<MirageInnerPortUncached, Policy, EnMT, MT, CT>;
 
 #endif

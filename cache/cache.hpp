@@ -21,11 +21,7 @@
 // base class for a cache array:
 class CacheArrayBase
 {
-protected:
-  const std::string name;               // an optional name to describe this cache
-
 public:
-  CacheArrayBase(std::string name = "") : name(name) {}
   virtual ~CacheArrayBase() = default;
 
   virtual bool hit(uint64_t addr, uint32_t s, uint32_t *w) const = 0;
@@ -48,14 +44,14 @@ class CacheArrayNorm : public CacheArrayBase
   typedef typename std::conditional<EnMT, MetaLock<MT>, MT>::type C_MT;
 protected:
   std::vector<C_MT *> meta;   // meta array
-  std::vector<DT *> data;   // data array, could be null
+  std::vector<DT *> data;     // data array, could be null
   const unsigned int way_num;
   std::vector<AtomicVar<uint16_t> > cache_set_state;  // record current transactions for multithread support
 
 public:
   static constexpr uint32_t nset = 1ul<<IW;  // number of sets
 
-  CacheArrayNorm(unsigned int extra_way = 0, std::string name = "") : CacheArrayBase(name), way_num(NW+extra_way){
+  CacheArrayNorm(unsigned int extra_way = 0) : way_num(NW+extra_way){
     size_t meta_num = nset * way_num;
     constexpr size_t data_num = nset * NW;
 
@@ -193,35 +189,34 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-// EF: empty first in replacer
 // EnMT: enable multithread, MSHR: maximal number of transactions on the fly
 template<int IW, int NW, int P, typename MT, typename DT, typename IDX, typename RPC, typename DLY,
-         bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
+         bool EnMon, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, CMMetadataBase> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
-           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE<RPC, ReplaceFuncBase<EF> > && C_DERIVE_OR_VOID<DLY, DelayBase> &&
+           C_DERIVE<IDX, IndexFuncBase> && C_DERIVE_OR_VOID<DLY, DelayBase> &&
            (MSHR >= 2) // 2 buffers are required even for single-thread simulation
 class CacheSkewed : public CacheBase
 {
 protected:
   IDX indexer;      // index resolver
   RPC replacer[P];  // replacer
-  RandomGen<uint32_t> * loc_random; // a local randomizer for better thread parallelism
+  RandomGen<uint32_t> * loc_random = nullptr; // a local randomizer for better thread parallelism
 
   std::unordered_set<CMDataBase *> data_buffer_pool_set;
   std::vector<CMDataBase *>        data_buffer_pool;
-  uint16_t                         data_buffer_state;
+  uint16_t                         data_buffer_state = MSHR;
   std::mutex                       data_buffer_mutex;
   std::condition_variable          data_buffer_cv;
 
   std::unordered_set<CMMetadataBase *> meta_buffer_pool_set;
   std::vector<CMMetadataBase *>        meta_buffer_pool;
-  uint16_t                             meta_buffer_state;
+  uint16_t                             meta_buffer_state = MSHR;
   std::mutex                           meta_buffer_mutex;
   std::condition_variable              meta_buffer_cv;
 
 public:
-  CacheSkewed(std::string name = "", unsigned int extra_par = 0, unsigned int extra_way = 0)
-    : CacheBase(name), loc_random(nullptr), data_buffer_state(MSHR), meta_buffer_pool(MSHR), meta_buffer_state(MSHR)
+  CacheSkewed(std::string name, unsigned int extra_par = 0, unsigned int extra_way = 0)
+    : CacheBase(name), meta_buffer_pool(MSHR)
   {
     arrays.resize(P+extra_par);
     for(int i=0; i<P; i++) arrays[i] = new CacheArrayNorm<IW,NW,MT,DT,EnMT>(extra_way);
@@ -400,7 +395,7 @@ public:
 // MT: metadata type, DT: data type (void if not in use)
 // IDX: indexer type, RPC: replacer type
 // EnMon: whether to enable monitoring
-template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EF = true, bool EnMT = false, int MSHR = 4>
-using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon, EF, EnMT, MSHR>;
+template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon, bool EnMT = false, int MSHR = 4>
+using CacheNorm = CacheSkewed<IW, NW, 1, MT, DT, IDX, RPC, DLY, EnMon, EnMT, MSHR>;
 
 #endif
