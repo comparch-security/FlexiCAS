@@ -180,18 +180,28 @@ public:
     }
 
     if(hit) {
-      if constexpr (EnMT) meta_outer->lock();
       // sync if necessary
       auto sync = Policy::probe_need_sync(outer_cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = OuterCohPortBase::inner->probe_req(addr, meta, data, sync.second, delay);
         if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
+        if constexpr (EnMT) { 
+          hit = meta->match(addr); 
+          if(!hit) {
+            meta->unlock();
+            cache->reset_mt_state(ai, s, XactPrio::probe);
+            meta = nullptr;
+          }
+        }
       }
+    }
 
+    if(hit){
       // writeback if dirty
       if((writeback = Policy::probe_need_writeback(outer_cmd, meta))) {
         if(data_outer) data_outer->copy(data);
       }
+      if constexpr (EnMT) meta_outer->lock();
       Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
       cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(outer_cmd), writeback, meta, data, delay);
       if constexpr (EnMT) { meta_outer->unlock(); meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
@@ -396,11 +406,11 @@ public:
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) override {
     auto [valid, forward, meta, ai, s] = pending_xact.read(addr, outer_cmd.id);
     if(valid) {
-      if(forward) outer->finish_req(addr);
       // avoid probe to the same cache line happens between a grant and a finish,
       // unlock the cache line until a finish is received (only needed for coherent inner cache)
       if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
       pending_xact.remove(addr, outer_cmd.id);
+      if(forward) outer->finish_req(addr);
     }
   }
 };
