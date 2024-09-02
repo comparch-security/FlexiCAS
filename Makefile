@@ -59,7 +59,7 @@ $(REGRESSION_TESTS_LOG): %.log:%
 $(REGRESSION_TESTS_RST): %.out: %.log %.expect
 	diff $^ 2>$@
 
-PARALLEL_REGRESSION_TESTS = multi-l2-msi
+PARALLEL_REGRESSION_TESTS = multi-l2-msi multi-l3-msi
 
 PARALLEL_REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(PARALLEL_REGRESSION_TESTS))
 PARALLEL_REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(PARALLEL_REGRESSION_TESTS))
