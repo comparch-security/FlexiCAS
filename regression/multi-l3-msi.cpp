@@ -37,7 +37,7 @@ int main(){
   auto core_inst = get_l1_core_interface(l1i);
 
   auto l2 = cache_gen_inc<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l2, false, void, true, true>(NCore, "l2");
-  auto l3 = cache_gen_inc<L3IW, L3WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l3, true, void, true>(1, "llc")[0];
+  auto l3 = cache_gen_inc<L3IW, L3WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l3, true, void, true, true>(1, "llc")[0];
   
   auto mem = new SimpleMemoryModel<Data64B, void, true, true>("mem");
   globalPrinter = new PrintPool(256);
