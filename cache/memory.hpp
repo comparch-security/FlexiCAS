@@ -14,17 +14,28 @@ template<typename DT, typename DLY, bool EnMon = false, bool EnMT = false>
 class SimpleMemoryModel : public InnerCohPortUncached<policy_memory, EnMT>, public CacheMonitorSupport
 {
 #ifdef CHECK_MULTI
+#ifdef BOOST_STACKTRACE_LINK
+  std::unordered_map<uint64_t, std::string> active_addr_set;
+#else
   std::unordered_set<uint64_t> active_addr_set;
+#endif
   std::mutex                   active_addr_mutex;
 
-  void active_addr_add(uint64_t addr) {
+  __always_inline void active_addr_add(uint64_t addr) {
     std::lock_guard lock(active_addr_mutex);
+#ifdef BOOST_STACKTRACE_LINK
+    if(active_addr_set.count(addr)) std::cout << active_addr_set[addr] << std::endl;
+#endif
     assert(!active_addr_set.count(addr) || 0 ==
            "Two parallel memory accesses operating on the same memory location!");
+#ifdef BOOST_STACKTRACE_LINK
+    active_addr_set[addr] = boost::stacktrace::to_string(boost::stacktrace::stacktrace());
+#else
     active_addr_set.insert(addr);
+#endif
   }
 
-  void active_addr_remove(uint64_t addr) {
+  __always_inline void active_addr_remove(uint64_t addr) {
     std::lock_guard lock(active_addr_mutex);
     assert(active_addr_set.count(addr) || 0 ==
            "memory access corrupted!");
