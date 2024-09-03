@@ -41,26 +41,26 @@ int main(){
   
   auto mem = new SimpleMemoryModel<Data64B, void, true, true>("mem");
   globalPrinter = new PrintPool(256);
-  SimpleTracerMT truer(true);
+  SimpleTracerMT tracer(true);
 
   for(int i=0; i<NCore; i++) {
     l1i[i]->outer->connect(l2[i]->inner);
     l1d[i]->outer->connect(l2[i]->inner);
     l2[i]->outer->connect(l3->inner);
-    l1i[i]->attach_monitor(&truer);
-    l1d[i]->attach_monitor(&truer);
-    l2[i]->attach_monitor(&truer);
+    l1i[i]->attach_monitor(&tracer);
+    l1d[i]->attach_monitor(&tracer);
+    l2[i]->attach_monitor(&tracer);
   }
 
   l3->outer->connect(mem);
-  l3->attach_monitor(&truer);
-  mem->attach_monitor(&truer);
-  truer.start();
+  l3->attach_monitor(&tracer);
+  mem->attach_monitor(&tracer);
+  tracer.start();
   ParallelRegressionGen<NCore, true, false, PAddrN, SAddrN, Data64B> tgen;
 
   tgen.run(TestN, &core_inst, &core_data);
 
-  truer.stop();
+  tracer.stop();
   delete_caches(l1d);
   delete_caches(l1i);
   delete_caches(l2);
