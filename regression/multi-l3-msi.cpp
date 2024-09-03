@@ -33,7 +33,7 @@ int main(){
 
   auto l1d = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1d, false, void, true, true>(NCore, "l1d");
   auto core_data = get_l1_core_interface(l1d);
-  auto l1i = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, false, void, true, true>(NCore, "l1i");
+  auto l1i = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, true, void, true, true>(NCore, "l1i");
   auto core_inst = get_l1_core_interface(l1i);
 
   auto l2 = cache_gen_inc<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l2, false, void, true, true>(NCore, "l2");
@@ -72,4 +72,5 @@ int main(){
   delete global_lock_checker;
 #endif
 
+  return 0;
 }

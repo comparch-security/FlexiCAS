@@ -60,4 +60,10 @@ int main(){
   delete l2;
   delete mem;
   delete globalPrinter;
+
+#ifdef CHECK_MULTI
+  delete global_lock_checker;
+#endif
+
+  return 0;
 }
