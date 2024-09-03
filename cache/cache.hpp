@@ -95,7 +95,7 @@ public:
       while(true) {
         auto state = cache_set_state[s].read();
         if(prio <= state) { cache_set_state[s].wait(); continue; }
-        if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+        if(cache_set_state[s].swap(state, state|prio)) break;
       }
     }
   }
