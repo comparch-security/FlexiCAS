@@ -167,7 +167,7 @@ public:
         hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
         if(hit) {
           std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
-          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
+          if(!meta->match(addr)) { // cache line is invalidated potentially by a simultaneous acquire
             meta->unlock(); meta = nullptr; data = nullptr;
             cache->reset_mt_state(ai, s, XactPrio::probe); continue; // redo the hit check
           }
@@ -180,7 +180,6 @@ public:
     }
 
     if(hit) {
-      if constexpr (EnMT) meta_outer->lock();
       // sync if necessary
       auto sync = Policy::probe_need_sync(outer_cmd, meta);
       if(sync.first) {
@@ -188,10 +187,9 @@ public:
         if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
       }
 
-      // writeback if dirty
-      if((writeback = Policy::probe_need_writeback(outer_cmd, meta))) {
-        if(data_outer) data_outer->copy(data);
-      }
+      // now we should be able to safely operate on the cache line
+      if constexpr (EnMT) {assert(meta->match(addr)); meta_outer->lock(); }
+      if((writeback = Policy::probe_need_writeback(outer_cmd, meta))) { if(data_outer) data_outer->copy(data); } // writeback if dirty
       Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
       cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(outer_cmd), writeback, meta, data, delay);
       if constexpr (EnMT) { meta_outer->unlock(); meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
@@ -268,7 +266,7 @@ protected:
         hit = cache->hit(addr, &ai, &s, &w, prio, true);
         if(hit) {
           std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
-          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
+          if(!cache->check_mt_state(ai, s, prio) || !meta->match(addr)) { // hitted acquire is intercepted by a probe and even invalidated
             meta->unlock(); meta = nullptr; data = nullptr;
             cache->reset_mt_state(ai, s, prio);
             continue; // redo the hit check
@@ -277,6 +275,11 @@ protected:
           if(cache->replace(addr, &ai, &s, &w, prio)) { // lock the cache set and get a replacement candidate
             std::tie(meta, data) = cache->access_line(ai, s, w);
             meta->lock();
+            while(!cache->check_mt_state(ai, s, prio)) { // yield to an active probe
+              meta->unlock();
+              cache->wait_mt_state(ai, s, prio);
+              meta->lock();
+            }
           } else
             continue; // redo the hit check
         }
@@ -396,11 +399,11 @@ public:
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) override {
     auto [valid, forward, meta, ai, s] = pending_xact.read(addr, outer_cmd.id);
     if(valid) {
-      if(forward) outer->finish_req(addr);
       // avoid probe to the same cache line happens between a grant and a finish,
-      // unlock the cache line until a finish is received (only needed for coherent inner cache)
+      // do not unlock the cache line until a finish is received (only needed for coherent inner cache)
       if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
       pending_xact.remove(addr, outer_cmd.id);
+      if(forward) outer->finish_req(addr);
     }
   }
 };

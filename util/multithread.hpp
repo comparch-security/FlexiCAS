@@ -38,14 +38,14 @@ public:
 
   __always_inline void write(T v, bool notify = false) {
     var->store(v);
-    if(notify) cv.notify_all();
+    if(notify) cv.notify_one();
   }
 
   __always_inline bool swap(T& expect, T v, bool notify = false) {
     bool rv = var->compare_exchange_strong(expect, v);
     if(rv && notify) {
       std::unique_lock lk(mtx);
-      cv.notify_all();
+      cv.notify_one();
     }
     return rv;
   }
@@ -161,33 +161,18 @@ public:
   }
 
   void push(void *p) {
-    bool hit;
     auto id = thread_id();
-    {
-      std::shared_lock lock(lock_map_mtx);
-      hit = lock_map.count(id);
-      if(hit) {
-        #ifdef BOOST_STACKTRACE_LINK
-          lock_map[id].push(std::make_pair(p, boost::stacktrace::to_string(boost::stacktrace::stacktrace())));
-        #else
-          lock_map[id].push(p);
-        #endif
-      }
-    }
-
-    if(!hit) {
-      std::lock_guard lock(lock_map_mtx);
-      #ifdef BOOST_STACKTRACE_LINK
-        lock_map[id].push(std::make_pair(p, boost::stacktrace::to_string(boost::stacktrace::stacktrace())));
-      #else
-        lock_map[id].push(p);
-      #endif
-    }
+    std::lock_guard lock(lock_map_mtx);
+#ifdef BOOST_STACKTRACE_LINK
+      lock_map[id].push(std::make_pair(p, boost::stacktrace::to_string(boost::stacktrace::stacktrace())));
+#else
+      lock_map[id].push(p);
+#endif
   }
 
   void pop(void *p) {
     auto id = thread_id();
-    std::shared_lock lock(lock_map_mtx);
+    std::lock_guard lock(lock_map_mtx);
     assert(lock_map.count(id));
     #ifdef BOOST_STACKTRACE_LINK
       auto [pm, trace] = lock_map[id].top();
