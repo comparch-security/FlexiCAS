@@ -33,7 +33,7 @@ int main(){
   auto core_data = get_l1_core_interface(l1d);
   auto l1i = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, true, void, true, true>(NCore, "l1i");
   auto core_inst = get_l1_core_interface(l1i);
-  auto l2 = cache_gen_inc<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l2, true, void, true, true>(1, "l2")[0];
+  auto l2 = cache_gen_inc<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l2, true, void, true, true, true>(1, "l2")[0];
   auto mem = new SimpleMemoryModel<Data64B, void, true, true>("mem");
   globalPrinter = new PrintPool(256);
   SimpleTracerMT tracer(true);
