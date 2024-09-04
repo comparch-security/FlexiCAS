@@ -268,7 +268,7 @@ protected:
         hit = cache->hit(addr, &ai, &s, &w, prio, true);
         if(hit) {
           std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
-          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
+          if(!cache->check_mt_state(ai, s, prio) || !meta->match(addr)) { // hitted acquire is intercepted by a probe and even invalidated
             meta->unlock(); meta = nullptr; data = nullptr;
             cache->reset_mt_state(ai, s, prio);
             continue; // redo the hit check
@@ -277,6 +277,11 @@ protected:
           if(cache->replace(addr, &ai, &s, &w, prio)) { // lock the cache set and get a replacement candidate
             std::tie(meta, data) = cache->access_line(ai, s, w);
             meta->lock();
+            while(!cache->check_mt_state(ai, s, prio)) { // yield to an active probe
+              meta->unlock();
+              cache->wait_mt_state(ai, s, prio);
+              meta->lock();
+            }
           } else
             continue; // redo the hit check
         }
