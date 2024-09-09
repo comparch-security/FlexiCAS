@@ -28,7 +28,7 @@ protected:
   const unsigned int total;
   std::vector<uint64_t> addr_pool;   // random addresses
   std::unordered_map<uint64_t, int> addr_map;
-  std::vector<DT>       data_pool;   // data copy
+  std::vector<DT* >       data_pool;   // data copy
   std::vector<bool>     wflag;       // whether written
   std::vector<bool>     iflag;       // belong to instruction
 
@@ -37,7 +37,10 @@ public:
     : gi(703), hasher(1201), total(NC*PAddrN+SAddrN)
   {
     addr_pool.resize(total);
-    data_pool.resize(total);
+    if constexpr (!C_VOID<DT>) {
+      data_pool.resize(total);
+      for(auto &d:data_pool) d = new DT();
+    }
     wflag.resize(total);
     iflag.resize(total);
     for(unsigned int i=0; i<total; i++) {
@@ -51,6 +54,10 @@ public:
       else
         iflag[i] = false;
     }
+  }
+
+  ~RegressionGen(){
+    if constexpr (!C_VOID<DT>) for(auto d:data_pool) delete d; 
   }
 
   unsigned int locality_scale(unsigned int num, unsigned int mod, double rate) {
@@ -70,7 +77,8 @@ public:
       PAddrN*NC   + locality_scale(hasher(gi++), SAddrN, 0.2) :
       PAddrN*core + locality_scale(hasher(gi++), PAddrN, 0.2) ;
     uint64_t addr = addr_pool[index];
-    DT *data = &(data_pool[index]);
+    DT *data;
+    if constexpr (!C_VOID<DT>) data = data_pool[index];
     auto ran_num = hasher(gi++);
     bool rw = 0 == (ran_num & 0x11); // 25% write
     int flush = TestFlush && (0 == (ran_num & 0x17)) ? 3 : 0; // 25% of write is flush
@@ -88,7 +96,7 @@ public:
     }
 
     if(rw) {
-      data->write(0, hasher(gi++), 0xffffffffffffffffull);
+      if constexpr (!C_VOID<DT>) data->write(0, hasher(gi++), 0xffffffffffffffffull);
       wflag[index] = true;
     }
 
@@ -97,9 +105,12 @@ public:
 
   bool check(uint64_t addr, const CMDataBase *data) {
     assert(addr_map.count(addr));
-    int index = addr_map[addr];
-    assert(data_pool[index].read(0) == data->read(0));
-    return data_pool[index].read(0) == data->read(0);
+    if constexpr (!C_VOID<DT>) {
+      int index = addr_map[addr];
+      assert(data_pool[index]->read(0) == data->read(0));
+      return data_pool[index]->read(0) == data->read(0);
+    } else
+      return true;
   }
 
   bool run(uint64_t TestN, std::vector<CoreInterfaceBase *>& core_inst, std::vector<CoreInterfaceBase *>& core_data) {
