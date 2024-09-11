@@ -409,20 +409,16 @@ public:
   }
 };
 
-template <typename IPUC, typename CT, typename MT, bool EnMT = false> 
-  requires C_DERIVE<IPUC, InnerCohPortUncached<EnMT>>
-class InnerCohPortRemapT : public InnerCohPortT<IPUC, EnMT>, protected RemapHelper
+template <typename CT, typename MT, typename Policy, bool EnMT = false> 
+class InnerCohPortRemapT : public InnerCohPortT<InnerCohPortUncached, Policy, EnMT>, protected RemapHelper
 {
-  typedef InnerCohPortT<IPUC, EnMT> InnerT;
+  typedef InnerCohPortT<InnerCohPortUncached, Policy, EnMT> InnerT;
 
 
 protected:
   using InnerT::cache;
 
 public:
-  InnerCohPortRemapT(policy_ptr policy) : InnerT(policy){}
-  virtual ~InnerCohPortRemapT() {} 
-
   void remap(){
     auto[P, nset, nway] = cache->size();
     // TODO: pause monitors.
