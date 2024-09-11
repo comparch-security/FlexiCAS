@@ -11,15 +11,19 @@ CXXSTD = --std=c++17 -fconcepts
 
 ifeq ($(MODE), release)
 	CXXFLAGS = $(CXXSTD) -O3 -DNDEBUG -I. -fPIC
+	CXXFLAGS_MULTI = $(CXXFLAGS)
 	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug)
-	CXXFLAGS = $(CXXSTD) -O0 -g -I. -Wall -Werror -fPIC -DCHECK_MULTI
+	CXXFLAGS = $(CXXSTD) -O0 -g -I. -Wall -Werror -fPIC
+	CXXFLAGS_MULTI = $(CXXFLAGS) -DCHECK_MULTI
 	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug-multi)
-	CXXFLAGS = $(CXXSTD) -O0 -g -I. -Wall -fPIC -DCHECK_MULTI -DBOOST_STACKTRACE_LINK -DBOOST_STACKTRACE_USE_BACKTRACE
+	CXXFLAGS = $(CXXSTD) -O0 -g -I. -Wall -Werror -fPIC
+	CXXFLAGS_MULTI = $(CXXFLAGS) -DCHECK_MULTI -DBOOST_STACKTRACE_LINK -DBOOST_STACKTRACE_USE_BACKTRACE
 	REGRESS_LD_FLAGS = -lboost_stacktrace_backtrace -ldl -lbacktrace
 else
 	CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
+	CXXFLAGS_MULTI = $(CXXFLAGS)
 	REGRESS_LD_FLAGS =
 endif
 
@@ -37,7 +41,7 @@ $(CRYPTO_LIB):
 	$(MAKE) -C cryptopp -j$(NCORE)
 
 $(UTIL_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS_MULTI) -c $< -o $@
 
 
 REGRESSION_TESTS = \
@@ -59,16 +63,16 @@ $(REGRESSION_TESTS_LOG): %.log:%
 $(REGRESSION_TESTS_RST): %.out: %.log %.expect
 	diff $^ 2>$@
 
-PARALLEL_REGRESSION_TESTS = multi-l2-msi
+PARALLEL_REGRESSION_TESTS = multi-l2-msi multi-l3-msi
 
 PARALLEL_REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(PARALLEL_REGRESSION_TESTS))
 PARALLEL_REGRESSION_TESTS_RST = $(patsubst %, regression/%.out, $(PARALLEL_REGRESSION_TESTS))
 
 $(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
-	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@
+	$(CXX) $(CXXFLAGS_MULTI) $< $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@
 
 $(PARALLEL_REGRESSION_TESTS_RST): %.out: %
-	timeout 1m $< 2>$@
+	timeout 2m $< 2>$@
 
 regression: $(REGRESSION_TESTS_RST) $(PARALLEL_REGRESSION_TESTS_RST)
 

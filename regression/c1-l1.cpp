@@ -1,4 +1,3 @@
-#include "cache/memory.hpp"
 #include "util/cache_type.hpp"
 #include "util/regression.hpp"
 
@@ -6,11 +5,12 @@
 #define TestN 512
 
 int main() {
-  auto cache = cache_gen_l1<4, 4, Data64B, MetadataBroadcastBase, ReplaceFIFO, MSIPolicy, true, true, void, true>(1, "l1d");
+  using policy_l1 = MSIPolicy<true, true, policy_memory>;
+  auto cache = cache_gen_l1<4, 4, Data64B, MetadataBroadcastBase, ReplaceFIFO, MSIPolicy, policy_l1, true, void, true>(1, "l1d");
   auto l1d = cache[0];
   auto core = get_l1_core_interface(cache);
   auto mem = new SimpleMemoryModel<Data64B,void,true>("mem");
-  l1d->outer->connect(mem, mem->connect(l1d->outer));
+  l1d->outer->connect(mem);
 
   SimpleTracer tracer(true);
   l1d->attach_monitor(&tracer);
