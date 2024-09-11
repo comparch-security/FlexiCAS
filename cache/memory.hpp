@@ -1,30 +1,41 @@
 #ifndef CM_CACHE_MEMORY_HPP
 #define CM_CACHE_MEMORY_HPP
 
-#include "cache/coherence.hpp"
 #include "cache/mi.hpp"
+#include "cache/coherence.hpp"
 #include <sys/mman.h>
 #include <unordered_map>
 #include <shared_mutex>
 
+typedef MIPolicy<false,false,CohPolicyBase> policy_memory;
+
 template<typename DT, typename DLY, bool EnMon = false, bool EnMT = false>
   requires C_DERIVE_OR_VOID<DT, CMDataBase> && C_DERIVE_OR_VOID<DLY, DelayBase>
-  class SimpleMemoryModel : public InnerCohPortUncached<EnMT>, public CacheMonitorSupport
+class SimpleMemoryModel : public InnerCohPortUncached<policy_memory, EnMT>, public CacheMonitorSupport
 {
-  using InnerCohPortBase::policy;
-
 #ifdef CHECK_MULTI
+#ifdef BOOST_STACKTRACE_LINK
+  std::unordered_map<uint64_t, std::string> active_addr_set;
+#else
   std::unordered_set<uint64_t> active_addr_set;
+#endif
   std::mutex                   active_addr_mutex;
 
-  void active_addr_add(uint64_t addr) {
+  __always_inline void active_addr_add(uint64_t addr) {
     std::lock_guard lock(active_addr_mutex);
+#ifdef BOOST_STACKTRACE_LINK
+    if(active_addr_set.count(addr)) std::cout << active_addr_set[addr] << std::endl;
+#endif
     assert(!active_addr_set.count(addr) || 0 ==
            "Two parallel memory accesses operating on the same memory location!");
+#ifdef BOOST_STACKTRACE_LINK
+    active_addr_set[addr] = boost::stacktrace::to_string(boost::stacktrace::stacktrace());
+#else
     active_addr_set.insert(addr);
+#endif
   }
 
-  void active_addr_remove(uint64_t addr) {
+  __always_inline void active_addr_remove(uint64_t addr) {
     std::lock_guard lock(active_addr_mutex);
     assert(active_addr_set.count(addr) || 0 ==
            "memory access corrupted!");
@@ -68,10 +79,8 @@ protected:
   }
 
 public:
-  SimpleMemoryModel(const std::string &n)
-    : InnerCohPortUncached<EnMT>(nullptr), id(UniqueID::new_id(n)), name(n)
+  SimpleMemoryModel(const std::string &n) : id(UniqueID::new_id(n)), name(n)
   {
-    policy = policy_ptr(new MIPolicy<MetadataMI,false,false>());
     monitors = new CacheMonitorImp<DLY, EnMon>(id);
   }
 
