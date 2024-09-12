@@ -15,6 +15,10 @@
 class CMDataBase;
 class CMMetadataBase;
 
+struct MAGIC_ID {
+  static const unsigned int remap = 1ul;
+};
+
 // monitor base class
 class MonitorBase
 {
@@ -48,6 +52,8 @@ public:
   virtual ~MonitorContainerBase() = default;
 
   virtual void attach_monitor(MonitorBase *m) = 0;
+  virtual void pause_monitor() = 0;
+  virtual void resume_monitor() = 0;
 
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors.clear(); }
@@ -94,6 +100,18 @@ public:
   virtual void attach_monitor(MonitorBase *m) override {
     if constexpr (EnMon) {
       if(m->attach(id)) monitors.insert(m);
+    }
+  }
+
+  virtual void pause_monitor() override { 
+    if constexpr (EnMon) {
+      for(auto monitor : monitors) monitor->pause();
+    }
+  }
+
+  virtual void resume_monitor() override {
+    if constexpr (EnMon) {
+      for(auto monitor : monitors) monitor->resume();
     }
   }
 
@@ -262,6 +280,65 @@ public:
   }
 
   virtual void stop() { globalPrinter->stop(); print_thread.join(); }
+};
+
+// Simple Remap Monitor
+class SimpleRemapper : public MonitorBase
+{
+protected:
+  uint64_t cnt_access, cnt_miss, cnt_invalid;
+  uint64_t threshold;
+  bool active;
+  bool remap;
+
+public:
+  SimpleRemapper(uint64_t threshold) : cnt_access(0), cnt_miss(0), cnt_invalid(0), threshold(threshold), active(true), remap(false) {}
+  virtual ~SimpleRemapper() {}
+
+  virtual bool attach(uint64_t cache_id) override { return true; }
+
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    cnt_access++;
+  }
+
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    cnt_access++;
+    if(!hit) {
+      cnt_miss++;
+    }
+  }
+
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    cnt_invalid++;
+    if(cnt_invalid !=0 && (cnt_invalid % threshold) == 0) {
+      remap = true;
+    }
+  }
+
+  virtual void start() override { active = true;  }
+  virtual void stop() override { active = false; }
+  virtual void pause() override { active = false;  remap = false;}
+  virtual void resume() override { active = true; }
+  virtual void reset() override {
+    cnt_access = 0;
+    cnt_miss = 0;
+    cnt_invalid = 0;
+    active = false;
+    remap = false;
+  }
+
+  virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) override {
+    if (magic_id == MAGIC_ID::remap) {
+      if (magic_data) {
+        *static_cast<bool*>(magic_data) = remap;
+      }
+      return true;
+    }
+    return false;
+  } 
 };
 
 #endif
