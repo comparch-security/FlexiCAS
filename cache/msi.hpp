@@ -46,7 +46,7 @@ struct MSIPolicy : public MIPolicy<isL1, uncached, Outer>
 
   static __always_inline void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) {
     meta->init(addr);
-    if(coh::is_fetch_read(outer_cmd)) meta->to_shared(-1);
+    if(coh::is_fetch_read(outer_cmd)||coh::is_prefetch(outer_cmd)) meta->to_shared(-1);
     else {
       assert(coh::is_fetch_write(outer_cmd) && meta->allow_write());
       meta->to_modified(-1);

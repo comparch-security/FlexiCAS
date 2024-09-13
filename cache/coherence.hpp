@@ -47,6 +47,7 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void prefetch_req(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) = 0;
 
   // may not implement probe_resp() and finish_req() if the port is uncached
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); }
@@ -77,6 +78,7 @@ public:
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
+  virtual void prefetch_resp(uint64_t addr, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
 
   // may not implement probe_req() and finish_resp() if the port is uncached
   virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); }
@@ -140,6 +142,11 @@ public:
     CMMetadataBase *outer_meta = meta ? meta->get_outer_meta() : nullptr;
     coh->writeback_resp(addr, data, outer_meta, outer_cmd, delay);
     Policy::meta_after_writeback(outer_cmd, meta);
+  }
+
+  virtual void prefetch_req(uint64_t addr, coh_cmd_t outer_cmd, uint64_t *delay) override {
+    outer_cmd.id = coh_id;
+    coh->prefetch_resp(addr, outer_cmd, delay);
   }
 
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) override {
@@ -231,6 +238,10 @@ public:
       flush_line(addr, cmd, delay);
     else
       write_line(addr, data_inner, meta_inner, cmd, delay);
+  }
+
+  virtual void prefetch_resp(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) override {
+    prefetch_line(addr, cmd, delay);
   }
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) override {
@@ -348,6 +359,20 @@ protected:
     }
   }
 
+  virtual void prefetch_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
+    if constexpr (!Policy::is_uncached())
+      outer->prefetch_req(addr, coh::cmd_for_prefetch(), delay);
+    else {
+      auto [hit, meta, data, ai, s, w] = check_hit_or_replace(addr, XactPrio::acquire, true, true, delay);
+      if(!hit) {
+        if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
+        outer->acquire_req(addr, meta, data, coh::cmd_for_prefetch(), delay); // fetch the missing block
+        cache->hook_read(addr, ai, s, w, hit, true, meta, data, delay);
+        finish_record(addr, coh::cmd_for_finish(-1), !hit, meta, ai, s);
+        finish_resp(addr, coh::cmd_for_finish(-1));
+      }
+    }
+  }
 };
 
 template<template <typename, bool, typename...> class IPUC, typename Policy, bool EnMT, typename... Extra> requires C_DERIVE<IPUC<Policy, EnMT, Extra...>, InnerCohPortBase>
@@ -409,6 +434,8 @@ public:
   virtual void writeback(uint64_t addr, uint64_t *delay) = 0;
   // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
   virtual void writeback_invalidate(uint64_t *delay) = 0;
+  // prefetch a block
+  virtual void prefetch(uint64_t addr, uint64_t *delay) = 0;
 
   // flush the whole cache
   virtual void flush_cache(uint64_t *delay) = 0;
@@ -455,9 +482,10 @@ public:
 #endif
   }
 
-  virtual void flush(uint64_t addr, uint64_t *delay) override     { addr = normalize(addr); this->flush_line(addr, coh::cmd_for_flush(), delay); }
-  virtual void writeback(uint64_t addr, uint64_t *delay) override { addr = normalize(addr); this->flush_line(addr, coh::cmd_for_writeback(), delay); }
+  virtual void flush(uint64_t addr, uint64_t *delay) override     { this->flush_line(normalize(addr), coh::cmd_for_flush(), delay); }
+  virtual void writeback(uint64_t addr, uint64_t *delay) override { this->flush_line(normalize(addr), coh::cmd_for_writeback(), delay); }
   virtual void writeback_invalidate(uint64_t *delay) override     { assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!"); }
+  virtual void prefetch(uint64_t addr, uint64_t *delay) override  { this->prefetch_line(normalize(addr), coh::cmd_for_prefetch(), delay); }
 
   virtual void flush_cache(uint64_t *delay) override {
     auto [npar, nset, nway] = cache->size();
@@ -554,6 +582,9 @@ public:
   }
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     cohm[hasher(addr)]->writeback_resp(addr, data, meta_inner, cmd, delay);
+  }
+  virtual void prefetch_resp(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) override {
+    cohm[hasher(addr)]->prefetch_resp(addr, cmd, delay);
   }
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) override {
     cohm[hasher(addr)]->query_loc_resp(addr, locs);
