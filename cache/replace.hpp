@@ -5,6 +5,7 @@
 #include <cassert>
 #include <mutex>
 #include "util/random.hpp"
+#include "util/multithread.hpp"
 
 ///////////////////////////////////
 // Base class
@@ -18,6 +19,14 @@ protected:
   std::vector<std::vector<bool> > free_map;
   std::vector<int32_t> alloc_map; // record the way allocated for the next access (only one allocated ay at any time)
   std::vector<uint32_t> free_num;
+
+#ifdef CHECK_MULTI
+  #ifdef BOOST_STACKTRACE_LINK
+    std::vector<std::pair<uint64_t, std::string> > alloc_record;
+  #else
+    std::vector<uint64_t> alloc_record;
+  #endif
+#endif
 
   __always_inline uint32_t alloc_from_free(uint32_t s) {
     free_num[s]--;
@@ -41,9 +50,55 @@ protected:
     free_num[s]--;
   }
 
+  __always_inline void set_alloc_map(uint32_t s, int32_t v) {
+#ifdef CHECK_MULTI
+    auto thread_id = global_lock_checker->thread_id();
+#endif
+    if(v >= 0) {
+      // check there is no pending operations
+#ifdef CHECK_MULTI
+  #ifdef BOOST_STACKTRACE_LINK
+      if(alloc_record[s].first != 0) {
+        std::cout << "caceh set " << s << " is being operated by trhead " << alloc_record[s].first << std::endl;
+        std::cout << alloc_record[s].second << std::endl;
+      }
+      assert(alloc_record[s].first == 0);
+      alloc_record[s] = std::make_pair(thread_id, boost::stacktrace::to_string(boost::stacktrace::stacktrace()));
+  #else
+      assert(alloc_record[s] == 0);
+      alloc_record[s] = thread_id;
+  #endif
+#else
+      assert(alloc_map[s] == -1 || 0 == "potential parallel allocated cache blocks in one cache set!");
+#endif
+    } else {
+#ifdef CHECK_MULTI
+  #ifdef BOOST_STACKTRACE_LINK
+      if(alloc_record[s].first != thread_id) {
+        std::cout << "caceh set " << s << " is being operated by trhead " << alloc_record[s].first << std::endl;
+        std::cout << alloc_record[s].second << std::endl;
+      }
+      assert(alloc_record[s].first == thread_id);
+      alloc_record[s] = std::make_pair(0, boost::stacktrace::to_string(boost::stacktrace::stacktrace()));
+  #else
+      assert(alloc_record[s] == thread_id);
+      alloc_record[s] = 0;
+  #endif
+#endif
+    }
+    alloc_map[s] = v;
+  }
+
 public:
   ReplaceFuncBase(uint32_t nset, uint32_t nway)
     :NW(nway), used_map(nset), free_map(nset), alloc_map(nset, -1), free_num(nset, nway) {
+#ifdef CHECK_MULTI
+  #ifdef BOOST_STACKTRACE_LINK
+    alloc_record.resize(nset, {0, ""});
+  #else
+    alloc_record.resize(nset, 0);
+  #endif
+#endif
     for (auto &s: free_map) s.resize(NW, true);
   }
 
@@ -61,8 +116,7 @@ public:
       if(free_map[s][i]) { free_num[s]--; free_map[s][i] = false; }
     }
     assert(i < NW || 0 == "replacer used_map corrupted!");
-    assert(alloc_map[s] == -1 || 0 == "potential parallel allocated cache blocks in one cache set!");
-	alloc_map[s] = i;
+	this->set_alloc_map(s, i);
     *w = i;
   }
 
@@ -105,7 +159,7 @@ public:
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] && demand_acc) {
-      alloc_map[s] = -1;
+      this->set_alloc_map(s, -1);
       auto prio = used_map[s][w];
       if(!prefetch) {
         for(uint32_t i=0; i<NW; i++) if(used_map[s][i] > prio) used_map[s][i]--;
@@ -143,7 +197,7 @@ public:
         used_map[s][w] = 0; // insert at LRU position
       }
     }
-    if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    if((int32_t)w == alloc_map[s] && demand_acc) this->set_alloc_map(s, -1);
     RPT::delist_from_free(s, w, demand_acc);
   }
 };
@@ -181,7 +235,7 @@ public:
       else // prefetch
         used_map[s][w] = 3;
     }
-    if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    if((int32_t)w == alloc_map[s] && demand_acc) this->set_alloc_map(s, -1);
     RPT::delist_from_free(s, w, demand_acc);
   }
 
@@ -213,7 +267,7 @@ public:
   virtual ~ReplaceRandom() override { delete loc_random; }
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
-    if((int32_t)w == alloc_map[s] && demand_acc) alloc_map[s] = -1;
+    if((int32_t)w == alloc_map[s] && demand_acc) this->set_alloc_map(s, -1);
     RPT::delist_from_free(s, w, demand_acc);
   }
 };

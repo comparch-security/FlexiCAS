@@ -30,7 +30,8 @@ public:
 
   // support multithread
   virtual void set_mt_state(uint32_t s, uint16_t prio) = 0;   // preserve a cache set according to transaction priority
-  virtual void check_mt_state(uint32_t s, uint16_t prio) = 0; // check priority before continuing remaining work  on a cache set
+  virtual bool check_mt_state(uint32_t s, uint16_t prio) = 0; // check priority before continuing remaining work on a cache set
+  virtual void wait_mt_state(uint32_t s, uint16_t prio) = 0; // wait for priority before continuing remaining work on a cache set
   virtual void reset_mt_state(uint32_t s, uint16_t prio) = 0; // reset the state of a cache set after processing a transaction
 };
 
@@ -90,17 +91,27 @@ public:
     else                      return data[s*NW + w];
   }
 
-  virtual void set_mt_state(uint32_t s, uint16_t prio) override {
+  virtual __always_inline void set_mt_state(uint32_t s, uint16_t prio) override {
     if constexpr (EnMT) {
       while(true) {
         auto state = cache_set_state[s].read();
         if(prio <= state) { cache_set_state[s].wait(); continue; }
-        if(prio > state && cache_set_state[s].swap(state, state|prio)) break;
+        if(cache_set_state[s].swap(state, state|prio)) break;
       }
     }
   }
 
-  virtual void check_mt_state(uint32_t s, uint16_t prio) override {
+  virtual __always_inline bool check_mt_state(uint32_t s, uint16_t prio) override {
+    if constexpr (EnMT) {
+      auto prio_upper = (prio << 1) - 1;
+      auto state = cache_set_state[s].read();
+      assert(state >= prio);
+      return prio_upper >= state;
+    } else
+      return true;
+  }
+
+  virtual __always_inline void wait_mt_state(uint32_t s, uint16_t prio) override {
     if constexpr (EnMT) {
       auto prio_upper = (prio << 1) - 1;
       while(true) {
@@ -112,7 +123,7 @@ public:
     }
   }
 
-  virtual void reset_mt_state(uint32_t s, uint16_t prio) override {
+  virtual __always_inline void reset_mt_state(uint32_t s, uint16_t prio) override {
     if constexpr (EnMT) {
       while(true) {
         auto state = cache_set_state[s].read();
@@ -169,7 +180,8 @@ public:
   virtual CMMetadataBase *meta_copy_buffer() = 0;           // allocate a copy buffer, needed by exclusive cache with extended meta
   virtual void meta_return_buffer(CMMetadataBase *buf) = 0; // return a copy buffer, used to detect conflicts in copy buffer
   __always_inline void set_mt_state(uint32_t ai, uint32_t s, uint16_t prio)   { arrays[ai]->set_mt_state(s, prio);   }
-  __always_inline void check_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->check_mt_state(s, prio); }
+  __always_inline bool check_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { return arrays[ai]->check_mt_state(s, prio); }
+  __always_inline void wait_mt_state(uint32_t ai, uint32_t s, uint16_t prio)  { arrays[ai]->wait_mt_state(s, prio);  }
   __always_inline void reset_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->reset_mt_state(s, prio); }
 
   virtual std::tuple<int, int, int> size() const = 0;           // return the size parameters of the cache
@@ -304,8 +316,8 @@ public:
     }
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P) replacer[ai].access(s, w, true, false);
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if(ai < P) replacer[ai].access(s, w, true, prefetch);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
 

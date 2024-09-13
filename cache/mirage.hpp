@@ -156,12 +156,12 @@ public:
     return true; // ToDo: support multithread
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
-      d_replacer.access(ds, dw, true, false);
+      d_replacer.access(ds, dw, true, prefetch);
     }
-    CacheT::hook_read(addr, ai, s, w, hit, meta, data, delay);
+    CacheT::hook_read(addr, ai, s, w, hit, prefetch, meta, data, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
@@ -206,7 +206,7 @@ public:
       auto [meta, addr] = this->relocate(m_ai, m_s, m_w, *ai, *s, *w);
       get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
       CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
-      CacheT::hook_read(addr, *ai, *s, *w, false, nullptr, nullptr, delay); // read or write? // hit is true or false? may have impact on delay
+      CacheT::hook_read(addr, *ai, *s, *w, false, false, nullptr, nullptr, delay); // read or write? // hit is true or false? may have impact on delay
       std::tie(*ai, *s, *w) = std::make_tuple(m_ai, m_s, m_w);
     }
   }

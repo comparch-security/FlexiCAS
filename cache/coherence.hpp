@@ -47,6 +47,7 @@ public:
 
   virtual void acquire_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
   virtual void writeback_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) = 0;
+  virtual void prefetch_req(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) = 0;
 
   // may not implement probe_resp() and finish_req() if the port is uncached
   virtual std::pair<bool, bool> probe_resp(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); }
@@ -77,6 +78,7 @@ public:
 
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
   virtual void writeback_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
+  virtual void prefetch_resp(uint64_t addr, coh_cmd_t outer_cmd, uint64_t *delay) = 0;
 
   // may not implement probe_req() and finish_resp() if the port is uncached
   virtual std::pair<bool,bool> probe_req(uint64_t addr, CMMetadataBase *meta, CMDataBase *data, coh_cmd_t cmd, uint64_t *delay) { return std::make_pair(false,false); }
@@ -142,6 +144,11 @@ public:
     Policy::meta_after_writeback(outer_cmd, meta);
   }
 
+  virtual void prefetch_req(uint64_t addr, coh_cmd_t outer_cmd, uint64_t *delay) override {
+    outer_cmd.id = coh_id;
+    coh->prefetch_resp(addr, outer_cmd, delay);
+  }
+
   virtual void query_loc_req(uint64_t addr, std::list<LocInfo> *locs) override {
     coh->query_loc_resp(addr, locs);
   }
@@ -167,7 +174,7 @@ public:
         hit = cache->hit(addr, &ai, &s, &w, XactPrio::probe, true);
         if(hit) {
           std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
-          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
+          if(!meta->match(addr)) { // cache line is invalidated potentially by a simultaneous acquire
             meta->unlock(); meta = nullptr; data = nullptr;
             cache->reset_mt_state(ai, s, XactPrio::probe); continue; // redo the hit check
           }
@@ -180,7 +187,6 @@ public:
     }
 
     if(hit) {
-      if constexpr (EnMT) meta_outer->lock();
       // sync if necessary
       auto sync = Policy::probe_need_sync(outer_cmd, meta);
       if(sync.first) {
@@ -188,10 +194,9 @@ public:
         if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
       }
 
-      // writeback if dirty
-      if((writeback = Policy::probe_need_writeback(outer_cmd, meta))) {
-        if(data_outer) data_outer->copy(data);
-      }
+      // now we should be able to safely operate on the cache line
+      if constexpr (EnMT) {assert(meta->match(addr)); meta_outer->lock(); }
+      if((writeback = Policy::probe_need_writeback(outer_cmd, meta))) { if(data_outer) data_outer->copy(data); } // writeback if dirty
       Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
       cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(outer_cmd), writeback, meta, data, delay);
       if constexpr (EnMT) { meta_outer->unlock(); meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
@@ -223,7 +228,7 @@ public:
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, coh::is_prefetch(cmd), meta, data, delay);
     finish_record(addr, coh::cmd_for_finish(cmd.id), !hit, meta, ai, s);
     if(cmd.id == -1) finish_resp(addr, coh::cmd_for_finish(cmd.id));
   }
@@ -233,6 +238,10 @@ public:
       flush_line(addr, cmd, delay);
     else
       write_line(addr, data_inner, meta_inner, cmd, delay);
+  }
+
+  virtual void prefetch_resp(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) override {
+    prefetch_line(addr, cmd, delay);
   }
 
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) override {
@@ -256,27 +265,34 @@ protected:
     cache->hook_manage(addr, ai, s, w, true, true, writeback.first, meta, data, delay);
   }
 
-  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
-  access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) { // common function for access a line in the cache
+  virtual std::tuple<bool, CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
+  check_hit_or_replace(uint64_t addr, uint16_t prio, bool do_replace, bool prefetch, uint64_t *delay) { // check hit or get a replacement target
     uint32_t ai, s, w;
-    CMMetadataBase *meta;
-    CMDataBase *data;
+    CMMetadataBase *meta = nullptr;
+    CMDataBase *data = nullptr;
     bool hit;
-
     if constexpr (EnMT) {
       while(true) {
-        hit = cache->hit(addr, &ai, &s, &w, prio, true);
+        hit = cache->hit(addr, &ai, &s, &w, prio, !prefetch);
         if(hit) {
-          std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
-          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
-            meta->unlock(); meta = nullptr; data = nullptr;
-            cache->reset_mt_state(ai, s, prio);
-            continue; // redo the hit check
+          std::tie(meta, data) = cache->access_line(ai, s, w);
+          if(!prefetch) { // no need to lock for prefetch
+            meta->lock();
+            if(!cache->check_mt_state(ai, s, prio) || !meta->match(addr)) { // acquire is intercepted by a probe and even invalidated
+              meta->unlock(); meta = nullptr; data = nullptr;
+              cache->reset_mt_state(ai, s, prio);
+              continue; // redo the hit check
+            }
           }
-        } else { // miss
+        } else if(do_replace) { // miss
           if(cache->replace(addr, &ai, &s, &w, prio)) { // lock the cache set and get a replacement candidate
             std::tie(meta, data) = cache->access_line(ai, s, w);
             meta->lock();
+            while(!cache->check_mt_state(ai, s, prio)) { // yield to an active probe
+              meta->unlock();
+              cache->wait_mt_state(ai, s, prio);
+              meta->lock();
+            }
           } else
             continue; // redo the hit check
         }
@@ -284,9 +300,15 @@ protected:
       }
     } else {
       hit = cache->hit(addr, &ai, &s, &w);
-      if(!hit) cache->replace(addr, &ai, &s, &w, prio);
-      std::tie(meta, data) = cache->access_line(ai, s, w);
+      if(!hit && do_replace) cache->replace(addr, &ai, &s, &w, prio);
+      if(hit || do_replace)  std::tie(meta, data) = cache->access_line(ai, s, w);
     }
+    return std::make_tuple(hit, meta, data, ai, s, w);
+  }
+
+  virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
+  access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) { // common function for access a line in the cache
+    auto [hit, meta, data, ai, s, w] = check_hit_or_replace(addr, prio, true, false, delay);
 
     if(hit) {
       auto sync = Policy::access_need_sync(cmd, meta);
@@ -315,51 +337,42 @@ protected:
   }
 
   virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
-    uint32_t ai, s, w;
-    CMMetadataBase *meta = nullptr;
-    CMDataBase *data = nullptr;
-    bool hit;
-
-    if constexpr (EnMT) {
-      while(true) {
-        hit = cache->hit(addr, &ai, &s, &w, XactPrio::flush, true);
-        if(hit) {
-          std::tie(meta, data) = cache->access_line(ai, s, w); meta->lock();
-          if(!meta->match(addr)) { // cache line is invalidated by transactions with higher priority
-            meta->unlock(); meta = nullptr; data = nullptr;
-            cache->reset_mt_state(ai, s, XactPrio::flush); continue; // redo the hit check
-          }
-        }
-        break;
-      }
-    } else {
-      hit = cache->hit(addr, &ai, &s, &w);
-      if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
-    }
-
-    auto [flush, probe, probe_cmd] = Policy::flush_need_sync(cmd, meta);
-    if(!flush) {
-      // do not handle flush at this level, and send it to the outer cache
+    if constexpr (!Policy::is_uncached())
       outer->writeback_req(addr, nullptr, nullptr, coh::cmd_for_flush(), delay);
-      return;
+    else {
+      auto [hit, meta, data, ai, s, w] = check_hit_or_replace(addr, XactPrio::flush, false, false, delay);
+      auto [probe, probe_cmd] = Policy::flush_need_sync(cmd, meta);
+      if(!hit) return;
+
+      if(probe) {
+        auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
+        if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+      }
+
+      auto writeback = Policy::writeback_need_writeback(meta);
+      if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
+
+      Policy::meta_after_flush(cmd, meta, cache);
+      cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(cmd), writeback.first, meta, data, delay);
+
+      if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::flush); }
     }
-
-    if(!hit) return;
-
-    if(probe) {
-      auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
-      if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
-    }
-
-    auto writeback = Policy::writeback_need_writeback(meta);
-    if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
-
-    Policy::meta_after_flush(cmd, meta, cache);
-    cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(cmd), writeback.first, meta, data, delay);
-
-    if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::flush); }
   }
 
+  virtual void prefetch_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
+    if constexpr (!Policy::is_uncached())
+      outer->prefetch_req(addr, coh::cmd_for_prefetch(), delay);
+    else {
+      auto [hit, meta, data, ai, s, w] = check_hit_or_replace(addr, XactPrio::acquire, true, true, delay);
+      if(!hit) {
+        if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
+        outer->acquire_req(addr, meta, data, coh::cmd_for_prefetch(), delay); // fetch the missing block
+        cache->hook_read(addr, ai, s, w, hit, true, meta, data, delay);
+        finish_record(addr, coh::cmd_for_finish(-1), !hit, meta, ai, s);
+        finish_resp(addr, coh::cmd_for_finish(-1));
+      }
+    }
+  }
 };
 
 template<template <typename, bool, typename...> class IPUC, typename Policy, bool EnMT, typename... Extra> requires C_DERIVE<IPUC<Policy, EnMT, Extra...>, InnerCohPortBase>
@@ -396,11 +409,11 @@ public:
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) override {
     auto [valid, forward, meta, ai, s] = pending_xact.read(addr, outer_cmd.id);
     if(valid) {
-      if(forward) outer->finish_req(addr);
       // avoid probe to the same cache line happens between a grant and a finish,
-      // unlock the cache line until a finish is received (only needed for coherent inner cache)
+      // do not unlock the cache line until a finish is received (only needed for coherent inner cache)
       if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
       pending_xact.remove(addr, outer_cmd.id);
+      if(forward) outer->finish_req(addr);
     }
   }
 };
@@ -421,6 +434,8 @@ public:
   virtual void writeback(uint64_t addr, uint64_t *delay) = 0;
   // writeback and invalidate all dirty cache blocks, sync with NVM (wbinvd in x86-64)
   virtual void writeback_invalidate(uint64_t *delay) = 0;
+  // prefetch a block
+  virtual void prefetch(uint64_t addr, uint64_t *delay) = 0;
 
   // flush the whole cache
   virtual void flush_cache(uint64_t *delay) = 0;
@@ -444,7 +459,7 @@ public:
     addr = normalize(addr);
     auto cmd = coh::cmd_for_read();
     auto [meta, data, ai, s, w, hit] = this->access_line(addr, cmd, XactPrio::acquire, delay);
-    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, false, meta, data, delay);
     if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);}
     if(!hit) outer->finish_req(addr);
 #ifdef CHECK_MULTI
@@ -467,9 +482,10 @@ public:
 #endif
   }
 
-  virtual void flush(uint64_t addr, uint64_t *delay) override     { addr = normalize(addr); this->flush_line(addr, coh::cmd_for_flush(), delay); }
-  virtual void writeback(uint64_t addr, uint64_t *delay) override { addr = normalize(addr); this->flush_line(addr, coh::cmd_for_writeback(), delay); }
+  virtual void flush(uint64_t addr, uint64_t *delay) override     { this->flush_line(normalize(addr), coh::cmd_for_flush(), delay); }
+  virtual void writeback(uint64_t addr, uint64_t *delay) override { this->flush_line(normalize(addr), coh::cmd_for_writeback(), delay); }
   virtual void writeback_invalidate(uint64_t *delay) override     { assert(nullptr == "Error: L1.writeback_invalidate() is not implemented yet!"); }
+  virtual void prefetch(uint64_t addr, uint64_t *delay) override  { this->prefetch_line(normalize(addr), coh::cmd_for_prefetch(), delay); }
 
   virtual void flush_cache(uint64_t *delay) override {
     auto [npar, nset, nway] = cache->size();
@@ -566,6 +582,9 @@ public:
   }
   virtual void writeback_resp(uint64_t addr, CMDataBase *data, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     cohm[hasher(addr)]->writeback_resp(addr, data, meta_inner, cmd, delay);
+  }
+  virtual void prefetch_resp(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) override {
+    cohm[hasher(addr)]->prefetch_resp(addr, cmd, delay);
   }
   virtual void query_loc_resp(uint64_t addr, std::list<LocInfo> *locs) override {
     cohm[hasher(addr)]->query_loc_resp(addr, locs);

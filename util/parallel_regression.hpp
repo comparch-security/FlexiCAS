@@ -53,7 +53,7 @@ public:
   bool check(uint64_t caddr, const CMDataBase* data){
     assert(caddr == addr);
     std::unique_lock lk(*mtx);
-    if(data_deque.size() == 0) return true;
+    if(data_deque.size() == 0 || data->read(0) == 0) return true;
     for(auto d : data_deque){
       if(d.read(0) == data->read(0)) return true;
     }
@@ -72,7 +72,7 @@ public:
 
 
 template<int NC, bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
-class ParallelRegressionGen : public RegressionGen<NC, EnIC, TestFlush, PAddrN, SAddrN, DT>, public ParallelRegressionSupport
+class ParallelRegressionGen : public RegressionGen<NC, EnIC, TestFlush, PAddrN, SAddrN, DT>
 {
   typedef RegressionGen<NC, EnIC, TestFlush, PAddrN, SAddrN, DT> ReT;
 protected:
@@ -107,6 +107,7 @@ public:
   virtual ~ParallelRegressionGen() {
     for(auto dq : dq_pool) delete dq;
     for(auto m : xact_mutux) delete m;
+    for(auto c : xact_cond) delete c;
   }
 
   virtual void xact_queue_add(int test_num){
@@ -115,9 +116,8 @@ public:
     act.core = hasher(gi++) % NC;
     while(num < test_num){
       auto [addr, data, rw, core, ic, flush] = gen();
-      //int index = addr_map[addr];
       Data64B d;
-      d.copy(data);
+      if constexpr (!C_VOID<DT>) d.copy(data);
       act = cache_xact{rw, core, ic, flush, addr, d};
       if(flush == 2){ // share instruction flush
         for(int i = 0; i < NC; i++){
@@ -141,8 +141,8 @@ public:
     dq->write(data);
   }
 
-  static void cache_producer(int test_num, ParallelRegressionSupport* pgr){
-    pgr->xact_queue_add(test_num);
+  void cache_producer(int test_num){
+    xact_queue_add(test_num);
   }
 
   virtual std::pair<bool, cache_xact> get_xact(int core){
@@ -164,10 +164,10 @@ public:
     return true;
   }
 
-  static void cache_server(int core, ParallelRegressionSupport* prg, std::vector<CoreInterfaceBase *>* core_inst, std::vector<CoreInterfaceBase *>* core_data, bool* exit)
+  void cache_server(int core, std::vector<CoreInterfaceBase *>* core_inst, std::vector<CoreInterfaceBase *>* core_data, bool* exit)
   {
     while(true){
-      auto act = prg->get_xact(core);
+      auto act = get_xact(core);
       if(*exit && !act.first) break;
       else if(act.first){
         auto [rw, act_core, ic, flush, addr, data] = act.second;
@@ -175,26 +175,26 @@ public:
           if(flush == 3)  (*core_data)[core]->flush(addr, nullptr);
           else            (*core_inst)[core]->flush(addr, nullptr);
           if(rw){
-            (*core_data)[core]->write(addr, &data, nullptr);
-            prg->write_dq(addr, &data);
+            if constexpr (!C_VOID<DT>) { write_dq(addr, &data); (*core_data)[core]->write(addr, &data, nullptr); }
+            else  (*core_data)[core]->write(addr, nullptr, nullptr);
           }
         } else if(rw){
-          (*core_data)[core]->write(addr, &data, nullptr);
-          prg->write_dq(addr, &data);
+          if constexpr (!C_VOID<DT>) { write_dq(addr, &data); (*core_data)[core]->write(addr, &data, nullptr); }
+          else  (*core_data)[core]->write(addr, nullptr, nullptr);
         }else{
           auto rdata = ic ? (*core_inst)[core]->read(addr, nullptr) : (*core_data)[core]->read(addr, nullptr);
-          prg->check(addr, rdata);
+          if constexpr (!C_VOID<DT>) check(addr, rdata);
         }
       }
     }
   }
 
   void run(int test_num, std::vector<CoreInterfaceBase *>* core_inst, std::vector<CoreInterfaceBase *>* core_data){
-    std::thread add_thread(cache_producer, test_num, this);
+    std::thread add_thread(&ParallelRegressionGen::cache_producer, this, test_num);
     std::vector<std::thread> server_thread;
     bool exit = false;
     for(int i = 0; i < NC; i++){
-      server_thread.emplace_back(cache_server, i, this, core_inst, core_data, &exit);
+      server_thread.emplace_back(&ParallelRegressionGen::cache_server, this, i, core_inst, core_data, &exit);
     }
     add_thread.join();
     exit = true;
