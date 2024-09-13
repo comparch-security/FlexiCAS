@@ -101,7 +101,7 @@ public:
       data_inner->write(mem_addr);
     }
     if(meta_inner) meta_inner->to_modified(-1);
-    hook_read(addr, 0, 0, 0, true, meta_inner, data_inner, delay);
+    hook_read(addr, 0, 0, 0, true, false, meta_inner, data_inner, delay);
 #ifdef CHECK_MULTI
     if constexpr (EnMT) active_addr_remove(addr);
 #endif
@@ -130,7 +130,7 @@ public:
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors->detach_monitor(); }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
   }
 

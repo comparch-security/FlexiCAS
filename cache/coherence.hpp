@@ -221,7 +221,7 @@ public:
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, coh::is_prefetch(cmd), meta, data, delay);
     finish_record(addr, coh::cmd_for_finish(cmd.id), !hit, meta, ai, s);
     if(cmd.id == -1) finish_resp(addr, coh::cmd_for_finish(cmd.id));
   }
@@ -447,7 +447,7 @@ public:
     addr = normalize(addr);
     auto cmd = coh::cmd_for_read();
     auto [meta, data, ai, s, w, hit] = this->access_line(addr, cmd, XactPrio::acquire, delay);
-    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, false, meta, data, delay);
     if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);}
     if(!hit) outer->finish_req(addr);
 #ifdef CHECK_MULTI

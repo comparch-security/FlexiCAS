@@ -131,10 +131,10 @@ public:
     return true; // ToDo: support multithread
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if(w >= NW) ext_replacer[ai].access(s, w-NW, true, false);
-      else        replacer[ai].access(s, w, true, false);
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, true, prefetch);
+      else        replacer[ai].access(s, w, true, prefetch);
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
     } else {
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
@@ -187,7 +187,7 @@ public:
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, coh::is_prefetch(cmd), meta, data, delay);
 
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
@@ -355,18 +355,18 @@ protected:
   using InnerCohPortBase::outer;
 
 public:
-  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t outer_cmd, uint64_t *delay) override {
-    auto [meta, data, ai, s, w, hit] = access_line(addr, outer_cmd, XactPrio::acquire, delay);
+  virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
+    auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
 
     if (data_inner && data) data_inner->copy(data);
-    Policy::meta_after_grant(outer_cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    Policy::meta_after_grant(cmd, meta, meta_inner);
+    cache->hook_read(addr, ai, s, w, hit, coh::is_prefetch(cmd), meta, data, delay);
 
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
 
-    this->finish_record(addr, coh::cmd_for_finish(outer_cmd.id), !hit, meta, ai, s);
-    if(outer_cmd.id == -1) this->finish_resp(addr, coh::cmd_for_finish(outer_cmd.id));
+    this->finish_record(addr, coh::cmd_for_finish(cmd.id), !hit, meta, ai, s);
+    if(cmd.id == -1) this->finish_resp(addr, coh::cmd_for_finish(cmd.id));
   }
 
 protected:
