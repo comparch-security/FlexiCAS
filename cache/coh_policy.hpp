@@ -30,6 +30,7 @@ namespace coh {
   const uint32_t evict_act       = 2;
   const uint32_t writeback_act   = 3;
   const uint32_t downgrade_act   = 4;
+  const uint32_t prefetch_act    = 5;
 
   // message type
   constexpr inline bool is_acquire(coh_cmd_t cmd)        { return cmd.msg == acquire_msg;     }
@@ -45,10 +46,12 @@ namespace coh {
   constexpr inline bool is_writeback(coh_cmd_t cmd)      { return cmd.act == writeback_act;   }
   constexpr inline bool is_downgrade(coh_cmd_t cmd)      { return cmd.act == downgrade_act;   }
   constexpr inline bool is_write(coh_cmd_t cmd)          { return cmd.act == fetch_write_act || cmd.act == evict_act || cmd.act == writeback_act; }
+  constexpr inline bool is_prefetch(coh_cmd_t cmd)       { return cmd.act == prefetch_act;    }
 
   // generate command
   constexpr inline coh_cmd_t cmd_for_read()              { return {-1, acquire_msg, fetch_read_act }; }
   constexpr inline coh_cmd_t cmd_for_write()             { return {-1, acquire_msg, fetch_write_act}; }
+  constexpr inline coh_cmd_t cmd_for_prefetch()          { return {-1, acquire_msg, prefetch_act   }; }
   constexpr inline coh_cmd_t cmd_for_flush()             { return {-1, flush_msg,   evict_act      }; }
   constexpr inline coh_cmd_t cmd_for_writeback()         { return {-1, flush_msg,   writeback_act  }; }
   constexpr inline coh_cmd_t cmd_for_release()           { return {-1, release_msg, evict_act      }; }

@@ -46,7 +46,7 @@ struct MSIPolicy : public MIPolicy<isL1, uncached, Outer>
 
   static __always_inline void meta_after_fetch(coh_cmd_t outer_cmd, CMMetadataBase *meta, uint64_t addr) {
     meta->init(addr);
-    if(coh::is_fetch_read(outer_cmd)) meta->to_shared(-1);
+    if(coh::is_fetch_read(outer_cmd)||coh::is_prefetch(outer_cmd)) meta->to_shared(-1);
     else {
       assert(coh::is_fetch_write(outer_cmd) && meta->allow_write());
       meta->to_modified(-1);
@@ -93,18 +93,13 @@ struct MSIPolicy : public MIPolicy<isL1, uncached, Outer>
     }
   }
 
-  static __always_inline std::tuple<bool, bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
-    if constexpr (uncached) {
-      if(meta) {
-        if(coh::is_evict(cmd)) return std::make_tuple(true, true, coh::cmd_for_probe_release());
-        else if(meta->is_shared())
-          return std::make_tuple(true, false, coh::cmd_for_null());
-        else
-          return std::make_tuple(true, true, coh::cmd_for_probe_writeback());
-      } else
-        return std::make_tuple(true, false, coh::cmd_for_null());
-    } else
-      return std::make_tuple(false, false, coh::cmd_for_null());
+  static __always_inline std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
+    assert(uncached);
+    if(meta) {
+      if(coh::is_evict(cmd))     return std::make_pair(true,  coh::cmd_for_probe_release());
+      else if(meta->is_shared()) return std::make_pair(false, coh::cmd_for_null());
+      else                       return std::make_pair(true,  coh::cmd_for_probe_writeback());
+    } else                       return std::make_pair(false, coh::cmd_for_null());
   }
 };
 
