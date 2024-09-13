@@ -30,11 +30,12 @@
 // multithread support
 #define ENABLE_FLEXICAS_THREAD
 
-#define CACHE_OP_READ        0
-#define CACHE_OP_WRITE       1
-#define CACHE_OP_FLUSH       2
-#define CACHE_OP_WRITEBACK   3
-#define CACHE_OP_FLUSH_CACHE 4
+#define CACHE_OP_READ         0
+#define CACHE_OP_WRITE        1
+#define CACHE_OP_FLUSH        2
+#define CACHE_OP_WRITEBACK    3
+#define CACHE_OP_FLUSH_CACHE  4
+#define CACHE_OP_PREFETCH_LLC 5
 
 #define XACT_QUEUE_HIGH    320
 #define XACT_QUEUE_LOW     240
@@ -110,6 +111,10 @@ namespace {
     core_inst[core]->flush_cache(nullptr);
   }
 
+  inline void prefetch_llc_detailed(uint64_t addr, int core) {
+    core_data[core]->prefetch(addr, nullptr);
+  }
+
   void cache_server() {
     std::unique_lock queue_empty_lock(xact_queue_empty_mutex, std::defer_lock);
     int burst_size = 0;
@@ -125,11 +130,12 @@ namespace {
       for(int i=0; i<burst_size; i++) {
         cache_xact &xact = xact_output[i];
         switch(xact.op_t) {
-        case CACHE_OP_READ:        read_detailed(xact.addr, xact.core, xact.ic); break; // read
-        case CACHE_OP_WRITE:       write_detailed(xact.addr, xact.core); break;         // write
-        case CACHE_OP_FLUSH:       flush_detailed(xact.addr, xact.core); break;         // flush
-        case CACHE_OP_WRITEBACK:   writeback_detailed(xact.addr, xact.core); break;     // writeback
-        case CACHE_OP_FLUSH_CACHE: flush_icache_detailed(xact.core); break;             // flush the whole cache
+        case CACHE_OP_READ:         read_detailed(xact.addr, xact.core, xact.ic); break; // read
+        case CACHE_OP_WRITE:        write_detailed(xact.addr, xact.core); break;         // write
+        case CACHE_OP_FLUSH:        flush_detailed(xact.addr, xact.core); break;         // flush
+        case CACHE_OP_WRITEBACK:    writeback_detailed(xact.addr, xact.core); break;     // writeback
+        case CACHE_OP_FLUSH_CACHE:  flush_icache_detailed(xact.core); break;             // flush the whole cache
+        case CACHE_OP_PREFETCH_LLC: prefetch_llc_detailed(xact.addr, xact.core); break;  // prefetch
         default: assert(0 == "unknown op type!");
         }
       }
@@ -280,6 +286,15 @@ namespace flexicas {
 #endif
   }
 
+  void prefetch_llc(uint64_t addr, int core) {
+    assert(core < NC);
+#ifdef ENABLE_FLEXICAS_THREAD
+    xact_queue_add({CACHE_OP_PREFETCH_LLC, false, core, addr});
+#else
+    prefetch_llc_detailed(addr, core);
+#endif
+  }
+
   void csr_write(uint64_t cmd, int core, tlb_translate_func translator) {
     if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CMD && (cmd & FLEXICAS_PFC_CMD_MASK) == FLEXICAS_PFC_START) {
       tracer->start();
@@ -337,6 +352,14 @@ namespace flexicas {
       uint64_t paddr = translator(addr);
       cache_sync();
       pfc_value = coloc_query_cache->query_coloc(coloc_query_target, paddr);
+      return;
+    }
+
+    if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_PREFETCH_LLC) {
+      uint64_t addr = FLEXICAS_PFC_EXTRACT_ADDR(cmd);
+      uint64_t paddr = translator(addr);
+      prefetch_llc(paddr, core);
+      cache_sync();
       return;
     }
 
