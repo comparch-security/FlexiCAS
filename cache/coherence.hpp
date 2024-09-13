@@ -423,7 +423,7 @@ public:
   InnerCohPortRemapT() : remap_flag(false){}
   void remap(){
     auto[P, nset, nway] = cache->size();
-    cache->monitors->pause_monitor();
+    cache->monitors->pause();
     static_cast<CT *>(cache)->remap_start();
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
@@ -434,11 +434,11 @@ public:
       }
     }
     static_cast<CT *>(cache)->remap_end();
-    cache->monitors->resume_monitor();
+    cache->monitors->resume();
   }
   
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd){
-    cache->monitors->magic_func(addr, MAGIC_ID::remap, &remap_flag);
+    cache->monitors->magic_func(addr, MAGIC_ID_REMAP, &remap_flag);
     if(remap_flag) remap();
     remap_flag = false;
     InnerT::finish_resp(addr, outer_cmd);
