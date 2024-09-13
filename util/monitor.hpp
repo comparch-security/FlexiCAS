@@ -15,7 +15,7 @@
 class CMDataBase;
 class CMMetadataBase;
 
-#define MAGIC_ID_REMAP 0x24091300ul
+#define MAGIC_ID_REMAP 2024091300ul
 
 // monitor base class
 class MonitorBase
@@ -50,8 +50,6 @@ public:
   virtual ~MonitorContainerBase() = default;
 
   virtual void attach_monitor(MonitorBase *m) = 0;
-  virtual void pause() = 0;
-  virtual void resume() = 0;
 
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors.clear(); }
@@ -60,6 +58,8 @@ public:
   virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void magic_func(uint64_t addr, uint64_t magic_id, void *magic_data) = 0; // an interface for special communication with a specific monitor if attached
+  virtual void pause() = 0;
+  virtual void resume() = 0;
 };
 
 // class monitor helper
@@ -101,18 +101,6 @@ public:
     }
   }
 
-  virtual void pause() override {
-    if constexpr (EnMon) {
-      for(auto monitor : monitors) monitor->pause();
-    }
-  }
-
-  virtual void resume() override {
-    if constexpr (EnMon) {
-      for(auto monitor : monitors) monitor->resume();
-    }
-  }
-
   virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
     if constexpr (EnMon) for(auto m:monitors) m->read(id, addr, ai, s, w, hit, meta, data);
     if constexpr (!C_VOID<DLY>) timer->read(addr, ai, s, w, hit, delay);
@@ -137,17 +125,29 @@ public:
           return;
     }
   }
+
+  virtual void pause() override {
+    if constexpr (EnMon) {
+      for(auto monitor : monitors) monitor->pause();
+    }
+  }
+
+  virtual void resume() override {
+    if constexpr (EnMon) {
+      for(auto monitor : monitors) monitor->resume();
+    }
+  }
 };
 
 // Simple Access Monitor
 class SimpleAccMonitor : public MonitorBase
 {
 protected:
-  uint64_t cnt_access, cnt_miss, cnt_write, cnt_write_miss, cnt_invalid;
+  uint64_t cnt_access = 0, cnt_miss = 0, cnt_write = 0, cnt_write_miss = 0, cnt_invalid = 0;
   bool active;
 
 public:
-  SimpleAccMonitor(bool active = false) : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(active) {}
+  SimpleAccMonitor(bool active = false) : active(active) {}
 
   virtual bool attach(uint64_t cache_id) override { return true; }
 
@@ -285,10 +285,10 @@ class SimpleEVRemapper : public SimpleAccMonitor
 {
 protected:
   uint64_t period;
-  bool remap;
+  bool remap = false;
 
 public:
-  SimpleEVRemapper(uint64_t period) :SimpleAccMonitor(true), period(period), remap(false) {}
+  SimpleEVRemapper(uint64_t period) : SimpleAccMonitor(true), period(period) {}
   virtual ~SimpleEVRemapper() {}
 
   virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
@@ -313,7 +313,7 @@ public:
       return true;
     }
     return false;
-  } 
+  }
 };
 
 #endif
