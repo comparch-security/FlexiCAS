@@ -15,8 +15,6 @@
 class CMDataBase;
 class CMMetadataBase;
 
-#define MAGIC_ID_REMAP 2024091300ul
-
 // monitor base class
 class MonitorBase
 {
@@ -278,42 +276,6 @@ public:
   }
 
   virtual void stop() { globalPrinter->stop(); print_thread.join(); }
-};
-
-// Simple Remap Monitor
-class SimpleEVRemapper : public SimpleAccMonitor
-{
-protected:
-  uint64_t period;
-  bool remap = false;
-
-public:
-  SimpleEVRemapper(uint64_t period) : SimpleAccMonitor(true), period(period) {}
-  virtual ~SimpleEVRemapper() {}
-
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
-    if(!active) return;
-    cnt_invalid++;
-    if(cnt_invalid !=0 && (cnt_invalid % period) == 0) {
-      remap = true;
-    }
-  }
-
-  virtual void reset() override {
-    remap = false;
-    SimpleAccMonitor::reset();
-  }
-
-  virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) override {
-    if (magic_id == MAGIC_ID_REMAP) {
-      if (magic_data) {
-        *static_cast<bool*>(magic_data) = remap;
-        remap = false;
-      }
-      return true;
-    }
-    return false;
-  }
 };
 
 #endif
