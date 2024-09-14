@@ -218,17 +218,6 @@ using MetadataBroadcast = MetadataMixer<AW, IW, TOfst, MT>;
 template <int AW, int IW, int TOfst, typename MT> requires C_DERIVE<MT, MetadataDirectoryBase>
 using MetadataDirectory = MetadataMixer<AW, IW, TOfst, MT>;
 
-// support a relocated bit in the metadata for dynamic remap randomized caches
-template<typename MT> requires C_DERIVE<MT, CMMetadataBase>
-class MetadataWithRelocate : public MT
-{
-protected:
-  bool relocated = false;
-public:
-  __always_inline void to_relocated()   { relocated = true;  }
-  __always_inline void to_unrelocated() { relocated = false; }
-  __always_inline bool is_relocated()   { return relocated;  }
-};
 
 // A wrapper for implementing the multithread required cache line lock utility
 template <typename MT> requires C_DERIVE<MT, CMMetadataCommon>
