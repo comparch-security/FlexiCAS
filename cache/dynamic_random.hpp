@@ -2,6 +2,7 @@
 #define CM_CACHE_DYNAMIC_RANDOM_HPP
 
 #include "cache/coherence.hpp"
+#include "util/monitor.hpp"
 
 #define MAGIC_ID_REMAP 2024091300ul
 
