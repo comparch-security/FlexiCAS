@@ -5,18 +5,6 @@
 
 #define MAGIC_ID_REMAP 2024091300ul
 
-// support a relocated bit in the metadata for dynamic remap randomized caches
-template<typename MT> requires C_DERIVE<MT, CMMetadataBase>
-class MetadataWithRelocate : public MT
-{
-protected:
-  bool relocated = false;
-public:
-  __always_inline void to_relocated()   { relocated = true;  }
-  __always_inline void to_unrelocated() { relocated = false; }
-  __always_inline bool is_relocated()   { return relocated;  }
-};
-
 struct RemapHelper {
   static const unsigned int replace_for_relocate = 2408200ul;
   static const unsigned int replace_during_remap = 2408201ul;
