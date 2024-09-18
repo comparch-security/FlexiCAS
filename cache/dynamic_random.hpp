@@ -174,24 +174,15 @@ protected:
   }
 };
 
-// Simple Remap Monitor
-class SimpleEVRemapper : public SimpleAccMonitor
+// Remap Monitor Base
+class RemapperBase : public SimpleAccMonitor
 {
 protected:
-  uint64_t period;
   bool remap = false;
+  bool remap_enable;
 
 public:
-  SimpleEVRemapper(uint64_t period) : SimpleAccMonitor(true), period(period) {}
-  virtual ~SimpleEVRemapper() {}
-
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
-    if(!active) return;
-    cnt_invalid++;
-    if(cnt_invalid !=0 && (cnt_invalid % period) == 0) {
-      remap = true;
-    }
-  }
+  RemapperBase(bool remap_enable = true) : SimpleAccMonitor(true), remap_enable(remap_enable) {}
 
   virtual void reset() override {
     remap = false;
@@ -208,6 +199,24 @@ public:
     }
     return false;
   } 
+};
+
+// Simple Remap Monitor
+class SimpleEVRemapper : public RemapperBase
+{
+protected:
+  uint64_t period;
+
+public:
+  SimpleEVRemapper(uint64_t period) : period(period) {}
+
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    cnt_invalid++;
+    if(remap_enable && cnt_invalid !=0 && (cnt_invalid % period) == 0) {
+      remap = true;
+    }
+  }
 };
 
 #endif
