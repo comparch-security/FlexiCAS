@@ -192,10 +192,8 @@ public:
 
   virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) override {
     if (magic_id == MAGIC_ID_REMAP) {
-      if (magic_data) {
-        *static_cast<bool*>(magic_data) = remap;
-        remap = false;
-      }
+      if(remap_enable) *static_cast<bool*>(magic_data) = remap;
+      remap = false;
       return true;
     }
     return false;
@@ -260,7 +258,7 @@ public:
     if(!active) return;
     cnt_access++;
     if(!hit) cnt_miss++;
-    if(remap_enable && access_period != 0 && (cnt_access % access_period) == 0) {
+    if(access_period != 0 && (cnt_access % access_period) == 0) {
       if(Z_Score_detect()) {
         remap = true;
       }
@@ -271,7 +269,7 @@ public:
     if(!active) return;
     cnt_access++; cnt_write++;
     if(!hit) {  cnt_miss++; cnt_write_miss++;}
-    if(remap_enable && access_period != 0 && (cnt_access % access_period) == 0) {
+    if(access_period != 0 && (cnt_access % access_period) == 0) {
       if(Z_Score_detect()) {
         remap = true;
       }
@@ -282,7 +280,7 @@ public:
     if(!active) return;
     cnt_invalid++;
     evicts[s]++;
-    if(remap_enable && evict_period != 0 && (cnt_invalid % evict_period) == 0) {
+    if(evict_period != 0 && (cnt_invalid % evict_period) == 0) {
       remap = true;
       // std::cerr << " remapped by eviction limit @" << cnt_invalid  << std::endl;
     }
