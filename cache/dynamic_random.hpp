@@ -192,7 +192,7 @@ public:
 
   virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) override {
     if (magic_id == MAGIC_ID_REMAP) {
-      if(remap_enable) *static_cast<bool*>(magic_data) = remap;
+      if(remap_enable) *static_cast<bool*>(magic_data) |= remap;
       remap = false;
       return true;
     }
