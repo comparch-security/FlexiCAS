@@ -3,6 +3,7 @@
 
 #include "cache/coherence.hpp"
 #include "util/monitor.hpp"
+#include <numeric>
 
 #define MAGIC_ID_REMAP 2024091300ul
 
@@ -191,10 +192,8 @@ public:
 
   virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) override {
     if (magic_id == MAGIC_ID_REMAP) {
-      if (magic_data) {
-        *static_cast<bool*>(magic_data) = remap;
-        remap = false;
-      }
+      if(remap_enable) *static_cast<bool*>(magic_data) |= remap;
+      remap = false;
       return true;
     }
     return false;
@@ -216,6 +215,81 @@ public:
     if(remap_enable && cnt_invalid !=0 && (cnt_invalid % period) == 0) {
       remap = true;
     }
+  }
+};
+
+template<int IW>
+class ZSEVRemapper : public RemapperBase
+{
+protected:
+  static constexpr uint32_t nset = 1ul << IW;
+  const double factor;
+  const double threshold;
+  const uint64_t access_period, evict_period;
+  std::array<uint64_t, nset> evicts{};
+  std::array<double, nset> set_evict_history{};
+
+  bool Z_Score_detect(){
+    double qrm  = sqrt(std::accumulate(evicts.begin(), evicts.end(), 0.0,
+                                      [](double q, const uint64_t& d){return q + d * d;})
+                      / (nset-1.0)
+                      );
+    double mu   = std::accumulate(evicts.begin(), evicts.end(), 0.0) / (double)(nset);
+    for(size_t i=0; i<nset; i++) {
+      double delta = qrm == 0.0 ? 0.0 : (evicts[i] - mu) * evicts[i] / qrm;
+      set_evict_history[i] = (1 - factor) * set_evict_history[i] + factor * (evicts[i] > mu ? delta : -delta);
+    }
+
+    for(size_t i=0; i<nset; i++){
+      if(set_evict_history[i] >= threshold) {
+        // std::cerr << "found set " << i << std::endl;
+        return true;
+      }
+    }
+    return false;
+  }
+
+public:
+  ZSEVRemapper(const double factor, uint64_t access_period, uint64_t evict_period, double th, bool remap_enable = true)
+    : RemapperBase(remap_enable), factor(factor), threshold(th),
+      access_period(access_period), evict_period(evict_period){}
+
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    cnt_access++;
+    if(!hit) cnt_miss++;
+    if(access_period != 0 && (cnt_access % access_period) == 0) {
+      if(Z_Score_detect()) {
+        remap = true;
+      }
+      evicts.fill(0);
+    }
+  }
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    cnt_access++; cnt_write++;
+    if(!hit) {  cnt_miss++; cnt_write_miss++;}
+    if(access_period != 0 && (cnt_access % access_period) == 0) {
+      if(Z_Score_detect()) {
+        remap = true;
+      }
+      evicts.fill(0);
+    }
+  }
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active) return;
+    cnt_invalid++;
+    evicts[s]++;
+    if(evict_period != 0 && (cnt_invalid % evict_period) == 0) {
+      remap = true;
+      // std::cerr << " remapped by eviction limit @" << cnt_invalid  << std::endl;
+    }
+  }
+
+  virtual void reset() override {
+    evicts.fill(0);
+    set_evict_history.fill(0.0);
+    RemapperBase::reset();
   }
 };
 
