@@ -320,8 +320,8 @@ public:
     }
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P) replacer[ai].access(s, w, true, false);
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if(ai < P) replacer[ai].access(s, w, true, prefetch);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
   }
 

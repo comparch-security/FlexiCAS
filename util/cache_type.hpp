@@ -85,14 +85,14 @@ inline auto get_l1_core_interface(std::vector<CoherentCacheBase *>& array) {
 }
 
 template<int IW, int WN, int DW, typename DT, typename MT,
-         template <int, int, bool> class RPT,
-         template <int, int, bool> class DRPT,
+         template <int, int, bool, bool, bool> class RPT,
+         template <int, int, bool, bool, bool> class DRPT,
          template <bool, bool, typename> class CPT, typename Policy,
          bool isL1, bool uncached, typename DLY, bool EnMon, bool EnMT>
 inline auto cache_gen(int size, const std::string& name_prefix) {
   using index_type = IndexNorm<IW,6>;
-  using replace_type = RPT<IW,WN,true>;
-  using ext_replace_type = DRPT<IW,DW,true>;
+  using replace_type = RPT<IW,WN,true,true,EnMT>;
+  using ext_replace_type = DRPT<IW,DW,true,true,EnMT>;
   constexpr bool isDir = ct::is_dir<MT>();
   constexpr bool isExc = ct::is_exc_msi<CPT>() || ct::is_exc_mesi<CPT>();
   static_assert(!(isExc && EnMT), "multithread support ia not available for exclusive caches!");
@@ -111,7 +111,7 @@ inline auto cache_gen(int size, const std::string& name_prefix) {
 }
 
 template<int IW, int WN, typename DT, typename MT,
-         template <int, int, bool> class RPT,
+         template <int, int, bool, bool, bool> class RPT,
          template <bool, bool, typename> class CPT, typename Policy,
          bool uncached, typename DLY, bool EnMon, bool EnMT = false>
 inline auto cache_gen_l1(int size, const std::string& name_prefix) {
@@ -119,7 +119,7 @@ inline auto cache_gen_l1(int size, const std::string& name_prefix) {
 }
 
 template<int IW, int WN, typename DT, typename MT,
-         template <int, int, bool> class RPT,
+         template <int, int, bool, bool, bool> class RPT,
          template <bool, bool, typename> class CPT, typename Policy,
          bool uncached, typename DLY, bool EnMon, bool EnMT = false>
 inline auto cache_gen_inc(int size, const std::string& name_prefix) {
@@ -127,7 +127,7 @@ inline auto cache_gen_inc(int size, const std::string& name_prefix) {
 }
 
 template<int IW, int WN, typename DT, typename MT,
-         template <int, int, bool> class RPT,
+         template <int, int, bool, bool, bool> class RPT,
          template <bool, bool, typename> typename CPT, typename Policy,
          bool uncached, typename DLY, bool EnMon>
 inline auto cache_gen_exc(int size, const std::string& name_prefix) {
@@ -136,8 +136,8 @@ inline auto cache_gen_exc(int size, const std::string& name_prefix) {
 }
 
 template<int IW, int WN, int DW, typename DT, typename MT,
-         template <int, int, bool> class RPT,
-         template <int, int, bool> class DRPT,
+         template <int, int, bool, bool, bool> class RPT,
+         template <int, int, bool, bool, bool> class DRPT,
          template <bool, bool, typename> class CPT, typename Policy,
          bool uncached, typename DLY, bool EnMon>
 inline auto cache_gen_exc(int size, const std::string& name_prefix) {
@@ -148,15 +148,15 @@ inline auto cache_gen_exc(int size, const std::string& name_prefix) {
 namespace ct {
   namespace mirage {
     template<int IW, int WN, int EW, int P, int MaxRelocN, typename DT,
-             template <int, int, bool> class MRPT,
-             template <int, int, bool> class DRPT,
+             template <int, int, bool, bool, bool> class MRPT,
+             template <int, int, bool, bool, bool> class DRPT,
              typename Outer,
              typename DLY, bool EnMon, bool EnableRelocation>
     struct types {
       using meta_index_type = IndexSkewed<IW, 6, P>;
       using data_index_type = IndexRandom<IW, 6>;
-      using meta_replace_type = MRPT<IW, WN, true>;
-      using data_replace_type = DRPT<IW, WN*P, true>;
+      using meta_replace_type = MRPT<IW, WN, true, true, false>;
+      using data_replace_type = DRPT<IW, WN*P, true, true, false>;
       using meta_metadata_type = MirageMetadataMSIBroadcast<48,0,6>;
       using data_metadata_type = MirageDataMeta;
       using cache_base_type = MirageCache<IW, WN, EW, P, MaxRelocN,
