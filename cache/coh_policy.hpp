@@ -119,9 +119,9 @@ struct CohPolicyBase {
   }
 
   // writeback due to conflict, probe, flush
-  static __always_inline std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) {
-    return std::make_pair(true, coh::cmd_for_probe_release());
-  }
+  // static __always_inline std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) {
+  //   return std::make_pair(true, coh::cmd_for_probe_release());
+  // }
 
   // static __always_inline std::pair<bool, coh_cmd_t> writeback_need_writeback(const CMMetadataBase *meta);
 

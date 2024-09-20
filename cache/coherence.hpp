@@ -254,17 +254,17 @@ protected:
     // evict a block due to conflict
     auto addr = meta->addr(s);
     assert(cache->hit(addr));
-    if constexpr (EnMT && Policy::evict_need_lock()) cache->set_mt_state(ai, s, XactPrio::evict);
     auto sync = Policy::writeback_need_sync(meta);
     if(sync.first) {
+      if constexpr (EnMT && Policy::probe_need_lock()) cache->set_mt_state(ai, s, XactPrio::evict);
       auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+      if constexpr (EnMT && Policy::probe_need_lock()) cache->reset_mt_state(ai, s, XactPrio::evict);
     }
     auto writeback = Policy::writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     Policy::meta_after_evict(meta);
     cache->hook_manage(addr, ai, s, w, true, true, writeback.first, meta, data, delay);
-    if constexpr (EnMT && Policy::evict_need_lock()) cache->reset_mt_state(ai, s, XactPrio::evict);
   }
 
   virtual std::tuple<bool, CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
@@ -315,8 +315,10 @@ protected:
     if(hit) {
       auto sync = Policy::access_need_sync(cmd, meta);
       if(sync.first) {
+        if constexpr (EnMT && Policy::probe_need_lock()) { assert(prio < XactPrio::evict); cache->set_mt_state(ai, s, XactPrio::evict); }
         auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+        if constexpr (EnMT && Policy::probe_need_lock()) cache->reset_mt_state(ai, s, XactPrio::evict); 
       }
       auto [promote, promote_local, promote_cmd] = Policy::access_need_promote(cmd, meta);
       if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
@@ -346,10 +348,11 @@ protected:
       auto [probe, probe_cmd] = Policy::flush_need_sync(cmd, meta);
       if(!hit) return;
 
-      if constexpr (EnMT && Policy::evict_need_lock()) cache->set_mt_state(ai, s, XactPrio::evict);
       if(probe) {
+        if constexpr (EnMT && Policy::probe_need_lock()) cache->set_mt_state(ai, s, XactPrio::evict);
         auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
         if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+        if constexpr (EnMT && Policy::probe_need_lock()) cache->reset_mt_state(ai, s, XactPrio::evict);
       }
 
       auto writeback = Policy::writeback_need_writeback(meta);
@@ -358,10 +361,7 @@ protected:
       Policy::meta_after_flush(cmd, meta, cache);
       cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(cmd), writeback.first, meta, data, delay);
 
-      if constexpr (EnMT) { 
-        if constexpr (Policy::evict_need_lock()) cache->reset_mt_state(ai, s, XactPrio::evict);
-        meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::flush); 
-      }
+      if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::flush); }
     }
   }
 

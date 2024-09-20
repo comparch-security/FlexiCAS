@@ -30,10 +30,12 @@ struct MSIPolicy : public MIPolicy<isL1, uncached, Outer>
   }
 
   static __always_inline std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
-    if(coh::is_release(cmd))     return std::make_pair(false, coh::cmd_for_null()); // for inclusive cache, release is always hit and exclusive/modified
-    if(coh::is_fetch_write(cmd)) return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
-    if(meta->is_shared())        return std::make_pair(false, coh::cmd_for_null());
-    return std::make_pair(true, coh::cmd_for_probe_downgrade(cmd.id));
+    if constexpr (!isL1){
+      if(coh::is_release(cmd))     return std::make_pair(false, coh::cmd_for_null()); // for inclusive cache, release is always hit and exclusive/modified
+      if(coh::is_fetch_write(cmd)) return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
+      if(meta->is_shared())        return std::make_pair(false, coh::cmd_for_null());
+      return std::make_pair(true, coh::cmd_for_probe_downgrade(cmd.id));
+    } else return std::make_pair(false, coh::cmd_for_null());
   }
 
   static __always_inline std::tuple<bool, bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) {
@@ -95,11 +97,13 @@ struct MSIPolicy : public MIPolicy<isL1, uncached, Outer>
 
   static __always_inline std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
     assert(uncached);
-    if(meta) {
-      if(coh::is_evict(cmd))     return std::make_pair(true,  coh::cmd_for_probe_release());
-      else if(meta->is_shared()) return std::make_pair(false, coh::cmd_for_null());
-      else                       return std::make_pair(true,  coh::cmd_for_probe_writeback());
-    } else                       return std::make_pair(false, coh::cmd_for_null());
+    if constexpr (!isL1){
+      if(meta) {
+        if(coh::is_evict(cmd))     return std::make_pair(true,  coh::cmd_for_probe_release());
+        else if(meta->is_shared()) return std::make_pair(false, coh::cmd_for_null());
+        else                       return std::make_pair(true,  coh::cmd_for_probe_writeback());
+      } else                       return std::make_pair(false, coh::cmd_for_null());
+    } else return std::make_pair(false, coh::cmd_for_null());
   }
 };
 
