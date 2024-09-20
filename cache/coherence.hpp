@@ -6,7 +6,6 @@
 #include "cache/slicehash.hpp"
 #include <tuple>
 #include <memory>
-#include <unordered_map>
 
 /////////////////////////////////
 // Priority of transactions (only useful for multithread simulation):
