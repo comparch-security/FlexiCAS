@@ -320,6 +320,16 @@ public:
     }
   }
 
+  __always_inline void swap(uint64_t a_addr, uint64_t b_addr, CMMetadataBase *a_meta, CMMetadataBase *b_meta, CMDataBase *a_data, CMDataBase *b_data) {
+    auto buffer_meta = meta_copy_buffer();
+    auto buffer_data = a_data ? data_copy_buffer() : nullptr;
+    relocate(a_addr, a_meta, buffer_meta, a_data, buffer_data);
+    relocate(b_addr, b_meta, a_meta, b_data, a_data);
+    relocate(a_addr, buffer_meta, b_meta, buffer_data, b_data);
+    meta_return_buffer(buffer_meta);
+    data_return_buffer(buffer_data);
+  }
+
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) replacer[ai].access(s, w, true, prefetch);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);

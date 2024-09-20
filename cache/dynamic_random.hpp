@@ -136,24 +136,14 @@ protected:
     cache->replace(c_addr, &new_ai, &new_idx, &new_way, XactPrio::acquire, replace_for_relocate);
     auto[m_meta, m_data] = cache->access_line(new_ai, new_idx, new_way);
     uint64_t m_addr = m_meta->addr(new_idx); 
-    auto c_m_meta = cache->meta_copy_buffer();
-    auto c_m_data = m_data ? cache->data_copy_buffer() : nullptr;
-
     if (m_meta->is_valid()) {
       if (static_cast<MT *>(m_meta)->is_relocated()) this->evict(m_meta, m_data, new_ai, new_idx, new_way, nullptr);
       else cache->hook_manage(m_addr, new_ai, new_idx, new_way, true, true, false, m_meta, m_data, nullptr);
     }
-    static_cast<CT *>(cache)->relocate(m_addr, m_meta, c_m_meta, m_data, c_m_data);
-
-    static_cast<CT *>(cache)->relocate(c_addr, c_meta, m_meta, c_data, m_data);
+    static_cast<CT *>(cache)->swap(m_addr, c_addr, m_meta, c_meta, m_data, c_data);
     cache->hook_read(c_addr, new_ai, new_idx, new_way, true, m_meta, m_data, nullptr);
-
     static_cast<MT *>(m_meta)->to_relocated();
     c_addr = m_addr;
-    static_cast<CT *>(cache)->relocate(m_addr, c_m_meta, c_meta, c_m_data, c_data);
-
-    cache->meta_return_buffer(c_m_meta);
-    cache->data_return_buffer(c_m_data);
   }
 
   void relocation_chain(uint32_t ai, uint32_t idx, uint32_t way) {
@@ -191,10 +181,8 @@ public:
 
   virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) override {
     if (magic_id == MAGIC_ID_REMAP) {
-      if (magic_data) {
-        *static_cast<bool*>(magic_data) = remap;
-        remap = false;
-      }
+      if(remap_enable) *static_cast<bool*>(magic_data) |= remap;
+      remap = false;
       return true;
     }
     return false;
@@ -213,7 +201,7 @@ public:
   virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_invalid++;
-    if(remap_enable && cnt_invalid !=0 && (cnt_invalid % period) == 0) {
+    if(cnt_invalid !=0 && (cnt_invalid % period) == 0) {
       remap = true;
     }
   }
