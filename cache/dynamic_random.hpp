@@ -108,7 +108,9 @@ protected:
 public:
   InnerCohPortRemapT() : remap_flag(false){}
   void remap(){
-    auto[P, nset, nway] = cache->size();
+    auto [p, s, w] = cache->size();
+    uint32_t P, nset, nway;
+    std::tie(P, nset, nway) = std::make_tuple(static_cast<uint32_t>(p), static_cast<uint32_t>(s), static_cast<uint32_t>(w));
     cache->monitors->pause();
     static_cast<CT *>(cache)->remap_start();
     for(uint32_t ai = 0; ai < P; ai++){
