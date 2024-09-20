@@ -141,7 +141,7 @@ protected:
       else cache->hook_manage(m_addr, new_ai, new_idx, new_way, true, true, false, m_meta, m_data, nullptr);
     }
     static_cast<CT *>(cache)->swap(m_addr, c_addr, m_meta, c_meta, m_data, c_data);
-    cache->hook_read(c_addr, new_ai, new_idx, new_way, true, m_meta, m_data, nullptr);
+    cache->hook_read(c_addr, new_ai, new_idx, new_way, false, false, m_meta, m_data, nullptr);
     static_cast<MT *>(m_meta)->to_relocated();
     c_addr = m_addr;
   }
