@@ -167,7 +167,7 @@ public:
 // EnMon: whether to enable monitoring
 // EnDir: whether to enable use directory
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
-using CacheNormExclusiveBroadcast = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, ReplaceRandom<1,1>, DLY, EnMon, false>;
+using CacheNormExclusiveBroadcast = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, ReplaceRandom<1,1,true,true,false>, DLY, EnMon, false>;
 
 template<typename Policy, bool EnMT>
 class ExclusiveInnerCohPortUncachedBroadcast : public InnerCohPortUncached<Policy, EnMT>
