@@ -91,6 +91,20 @@ protected:
   DIDX d_indexer;   // data index resolver
   DRPC d_replacer;  // data replacer
 
+  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int genre) override {
+    int max_free = -1, p = 0;
+    std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
+    uint32_t m_s;
+    for(int i=0; i<P; i++) {
+      m_s = indexer.index(addr, i);
+      int free_num = replacer[i].get_free_num(m_s);
+      if(free_num > max_free) { p = 0; max_free = free_num; }
+      if(free_num >= max_free)
+        candidates[p++] = std::make_pair(i, m_s);
+    }
+    std::tie(*ai, *s) = candidates[(*loc_random)() % p];
+  }
+
 public:
   MirageCache(std::string name = "") : CacheT(name, 1)
   { 
@@ -138,22 +152,6 @@ public:
     d_s =  d_indexer.index(addr, 0);
     d_replacer.replace(d_s, &d_w);
     return std::make_pair(d_s, d_w);
-  }
-
-  virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
-    int max_free = -1, p = 0;
-    std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
-    uint32_t m_s;
-    for(int i=0; i<P; i++) {
-      m_s = indexer.index(addr, i);
-      int free_num = replacer[i].get_free_num(m_s);
-      if(free_num > max_free) { p = 0; max_free = free_num; }
-      if(free_num >= max_free)
-        candidates[p++] = std::make_pair(i, m_s);
-    }
-    std::tie(*ai, *s) = candidates[(*loc_random)() % p];
-    replacer[*ai].replace(*s, w);
-    return true; // ToDo: support multithread
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {

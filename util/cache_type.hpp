@@ -5,6 +5,7 @@
 
 #include "cache/exclusive.hpp"
 #include "cache/mirage.hpp"
+#include "cache/dynamic_random.hpp"
 #include "cache/mesi.hpp"
 #include "cache/index.hpp"
 #include "cache/replace.hpp"
@@ -169,6 +170,29 @@ namespace ct {
       using output_type = OuterCohPortUncached<policy_type, false>;
       using cache_type = CoherentCacheNorm<cache_base_type, output_type, input_type>;
       static inline auto cache_gen_mirage(int size, const std::string& name_prefix) {
+        return cache_generator<cache_type>(size, name_prefix);
+      }
+    };
+  }
+}
+
+namespace ct {
+  namespace remap {
+    template<int IW, int WN, typename DT,
+             template <int, int, bool, bool, bool> class RPT,
+             typename Outer,
+             typename DLY, bool EnMon>
+    struct types {
+      using index_type = IndexRandom<IW, 6>;
+      using replace_type = RPT<IW, WN, true, true, false>;
+      using metadata_base_type = MetadataMSIBroadcast<48,0,0+6>;
+      using metadata_type = MetadataWithRelocate<metadata_base_type>;
+      using cache_base_type = CacheRemap<IW, WN, 1, metadata_type, DT, index_type, replace_type, DLY, EnMon>;
+      using policy_type = MSIPolicy<false, true, Outer>;
+      using input_type = InnerCohPortRemapT<cache_base_type, metadata_type, policy_type>;
+      using output_type = OuterCohPortUncached<policy_type, false>;
+      using cache_type = CoherentCacheNorm<cache_base_type, output_type, input_type>;
+      static inline auto cache_gen_remap(int size, const std::string& name_prefix) {
         return cache_generator<cache_type>(size, name_prefix);
       }
     };

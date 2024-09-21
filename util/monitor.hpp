@@ -56,6 +56,8 @@ public:
   virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void magic_func(uint64_t addr, uint64_t magic_id, void *magic_data) = 0; // an interface for special communication with a specific monitor if attached
+  virtual void pause() = 0;
+  virtual void resume() = 0;
 };
 
 // class monitor helper
@@ -121,17 +123,29 @@ public:
           return;
     }
   }
+
+  virtual void pause() override {
+    if constexpr (EnMon) {
+      for(auto monitor : monitors) monitor->pause();
+    }
+  }
+
+  virtual void resume() override {
+    if constexpr (EnMon) {
+      for(auto monitor : monitors) monitor->resume();
+    }
+  }
 };
 
 // Simple Access Monitor
 class SimpleAccMonitor : public MonitorBase
 {
 protected:
-  uint64_t cnt_access, cnt_miss, cnt_write, cnt_write_miss, cnt_invalid;
+  uint64_t cnt_access = 0, cnt_miss = 0, cnt_write = 0, cnt_write_miss = 0, cnt_invalid = 0;
   bool active;
 
 public:
-  SimpleAccMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
+  SimpleAccMonitor(bool active = false) : active(active) {}
 
   virtual bool attach(uint64_t cache_id) override { return true; }
 

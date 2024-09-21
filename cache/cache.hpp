@@ -226,6 +226,12 @@ protected:
   std::mutex                           meta_buffer_mutex;
   std::condition_variable              meta_buffer_cv;
 
+  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int) {
+    if constexpr (P==1) *ai = 0;
+    else                *ai = ((*loc_random)() % P);
+    *s = indexer.index(addr, *ai);
+  }
+
 public:
   CacheSkewed(std::string name, unsigned int extra_par = 0, unsigned int extra_way = 0)
     : CacheBase(name), meta_buffer_pool(MSHR)
@@ -273,9 +279,7 @@ public:
   }
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
-    if constexpr (P==1) *ai = 0;
-    else                *ai = ((*loc_random)() % P);
-    *s = indexer.index(addr, *ai);
+    replace_choose_set(addr, ai, s, genre);
     if(EnMT) {
       this->set_mt_state(*ai, *s, prio);
       // double check the miss status
@@ -314,6 +318,16 @@ public:
       relocate(addr, s_meta, d_meta); d_data->copy(s_data);
       return std::make_pair(static_cast<MT *>(d_meta), addr);
     }
+  }
+
+  __always_inline void swap(uint64_t a_addr, uint64_t b_addr, CMMetadataBase *a_meta, CMMetadataBase *b_meta, CMDataBase *a_data, CMDataBase *b_data) {
+    auto buffer_meta = meta_copy_buffer();
+    auto buffer_data = a_data ? data_copy_buffer() : nullptr;
+    relocate(a_addr, a_meta, buffer_meta, a_data, buffer_data);
+    relocate(b_addr, b_meta, a_meta, b_data, a_data);
+    relocate(a_addr, buffer_meta, b_meta, buffer_data, b_data);
+    meta_return_buffer(buffer_meta);
+    data_return_buffer(buffer_data);
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
