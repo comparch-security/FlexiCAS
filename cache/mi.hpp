@@ -26,7 +26,8 @@ struct MIPolicy : public CohPolicyBase
   static __always_inline coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) { return coh::cmd_for_write(); }
 
   static __always_inline std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
-    return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
+    if constexpr (isL1) return std::make_pair(false, coh::cmd_for_null());
+    else                return std::make_pair(true,  coh::cmd_for_probe_release(cmd.id));
   }
 
   static __always_inline std::tuple<bool, bool, coh_cmd_t> access_need_promote(coh_cmd_t cmd, const CMMetadataBase *meta) {
@@ -74,10 +75,17 @@ struct MIPolicy : public CohPolicyBase
 
   static __always_inline std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
     assert(uncached);
-    if(meta){
-      if(coh::is_evict(cmd)) return std::make_pair(true,  coh::cmd_for_probe_release());
-      else                   return std::make_pair(true,  coh::cmd_for_probe_writeback());
-    } else                   return std::make_pair(false, coh::cmd_for_null());
+    if constexpr (!isL1){
+      if(meta){
+        if(coh::is_evict(cmd)) return std::make_pair(true,  coh::cmd_for_probe_release());
+        else                   return std::make_pair(true,  coh::cmd_for_probe_writeback());
+      } else                   return std::make_pair(false, coh::cmd_for_null());
+    } else return std::make_pair(false, coh::cmd_for_null());
+  }
+
+  static __always_inline std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) {
+    if constexpr (isL1) return std::make_pair(false, coh::cmd_for_null());
+    else                return std::make_pair(true,  coh::cmd_for_probe_release());
   }
 
 };

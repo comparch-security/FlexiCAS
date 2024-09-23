@@ -8,8 +8,10 @@ template<bool isL1, bool uncached, typename Outer, bool EnDir = false> requires 
 struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // always not L1
 {
   static __always_inline std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
-    if(coh::is_fetch_write(cmd))    return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
-    else                            return std::make_pair(true, coh::cmd_for_probe_downgrade(cmd.id));
+    if constexpr (!isL1){
+      if(coh::is_fetch_write(cmd))    return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
+      else                            return std::make_pair(true, coh::cmd_for_probe_downgrade(cmd.id));
+    } else return std::make_pair(false, coh::cmd_for_null());
   }
 
   static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) { // after grant to inner
@@ -34,7 +36,8 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // alway
 
   static __always_inline std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) {
     // for exclusive cache, no sync is needed for normal way, always sync for extended way
-    return meta->is_extend() ? std::make_pair(true, coh::cmd_for_probe_release()) : std::make_pair(false, coh::cmd_for_null());
+    if constexpr (isL1) return std::make_pair(false, coh::cmd_for_null());
+    else                return meta->is_extend() ? std::make_pair(true, coh::cmd_for_probe_release()) : std::make_pair(false, coh::cmd_for_null());
   }
 
   static __always_inline void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) {
@@ -49,7 +52,8 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // alway
 
   static __always_inline std::pair<bool, coh_cmd_t> release_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, const CMMetadataBase* meta_inner) {
     // if the inner cache is not exclusive (M/O/E), probe to see whether there are other copies
-    return std::make_pair(!meta_inner->allow_write(), coh::cmd_for_probe_writeback(cmd.id));
+    if constexpr (isL1) return std::make_pair(false, coh::cmd_for_null());
+    else                return std::make_pair(!meta_inner->allow_write(), coh::cmd_for_probe_writeback(cmd.id));
   }
 
   static __always_inline std::pair<bool, coh_cmd_t> inner_need_release() {
@@ -58,9 +62,11 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // alway
 
   static __always_inline std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
     assert(uncached);
-    if(coh::is_evict(cmd))             return std::make_pair(true,  coh::cmd_for_probe_release());
-    else if(meta && meta->is_shared()) return std::make_pair(false, coh::cmd_for_null());
-    else                               return std::make_pair(true,  coh::cmd_for_probe_writeback());
+    if constexpr (!isL1){
+      if(coh::is_evict(cmd))             return std::make_pair(true,  coh::cmd_for_probe_release());
+      else if(meta && meta->is_shared()) return std::make_pair(false, coh::cmd_for_null());
+      else                               return std::make_pair(true,  coh::cmd_for_probe_writeback());
+    } else return std::make_pair(false, coh::cmd_for_null());
   }
 };
 
