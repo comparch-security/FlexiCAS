@@ -14,7 +14,8 @@ struct XactPrio{
   static const uint16_t acquire       = 0x0001;
   static const uint16_t flush         = 0x0001;
   static const uint16_t probe         = 0x0010; // acquire miss, requiring lower cahce which back-probe this cache
-  static const uint16_t evict         = 0x0100; // do we still need this priority level?
+  static const uint16_t evict         = 0x0100; 
+  static const uint16_t sync          = 0x0100; 
   static const uint16_t release       = 0x1000; // acquire hit but need back probe and writeback from inner
 };
 
@@ -315,8 +316,10 @@ protected:
     if(hit) {
       auto sync = Policy::access_need_sync(cmd, meta);
       if(sync.first) {
+        if constexpr (EnMT && Policy::sync_need_lock()) { assert(prio < XactPrio::sync); cache->set_mt_state(ai, s, XactPrio::sync);}
         auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+        if constexpr (EnMT && Policy::sync_need_lock()) cache->reset_mt_state(ai, s, XactPrio::sync);
       }
       auto [promote, promote_local, promote_cmd] = Policy::access_need_promote(cmd, meta);
       if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
