@@ -21,7 +21,7 @@ struct MIPolicy : public CohPolicyBase
 {
   constexpr static __always_inline bool is_uncached() { return uncached; }
 
-  constexpr static __always_inline bool evict_need_lock() { return !(uncached || isL1); }
+  constexpr static __always_inline bool sync_need_lock() { return !(uncached || isL1); }
 
   static __always_inline coh_cmd_t cmd_for_outer_acquire(coh_cmd_t cmd) { return coh::cmd_for_write(); }
 
