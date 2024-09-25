@@ -14,8 +14,8 @@ ifeq ($(MODE), release)
 	CXXFLAGS_MULTI = $(CXXFLAGS)
 	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug)
-	CXXFLAGS = $(CXXSTD) -O0 -g -I. -Wall -Werror -fPIC
-	CXXFLAGS_MULTI = $(CXXFLAGS) -DCHECK_MULTI
+	CXXFLAGS = $(CXXSTD) -O0 -DTRY_LOCK -I. -Wall -Werror -fPIC
+	CXXFLAGS_MULTI = $(CXXFLAGS) 
 	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug-multi)
 	CXXFLAGS = $(CXXSTD) -O0 -g -I. -Wall -Werror -fPIC
@@ -23,7 +23,7 @@ else ifeq ($(MODE), debug-multi)
 	REGRESS_LD_FLAGS = -lboost_stacktrace_backtrace -ldl -lbacktrace
 else
 	CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
-	CXXFLAGS_MULTI = $(CXXFLAGS)
+	CXXFLAGS_MULTI = $(CXXFLAGS) -DTRY_LOCK -DNDEBUG
 	REGRESS_LD_FLAGS =
 endif
 
@@ -80,6 +80,21 @@ clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 	-rm $(PARALLEL_REGRESSION_TESTS_EXE) $(PARALLEL_REGRESSION_TESTS_RST)
 
+PERFORMANCE_TESTS = multi-l2-msi multi-l3-msi
+ 
+PERFORMANCE_TESTS_EXE = $(patsubst %, performance/%, $(PERFORMANCE_TESTS))
+PERFORMANCE_TESTS_RST = $(patsubst %, performance/%.out, $(PERFORMANCE_TESTS))
+
+$(PERFORMANCE_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+	$(CXX) $(CXXFLAGS_MULTI) $< $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@
+
+$(PERFORMANCE_TESTS_RST): %.out: %
+
+performance: $(PERFORMANCE_TESTS_EXE)
+
+clean-performance:
+	-rm $(PERFORMANCE_TESTS_EXE) $(PERFORMANCE_TESTS_RST)
+
 libflexicas.a: $(UTIL_OBJS) $(CRYPTO_LIB)
 	ar rvs $@ $(UTIL_OBJS) $(CRYPTO_LIB)
 
@@ -88,6 +103,7 @@ libflexicas.a: $(UTIL_OBJS) $(CRYPTO_LIB)
 clean:
 	-$(MAKE) clean-regression
 	-$(MAKE) clean-parallel-regression temp.log
+	-$(MAKE) clean-performance
 	-rm $(UTIL_OBJS)
 
 .PHONY: clean

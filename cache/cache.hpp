@@ -95,7 +95,12 @@ public:
     if constexpr (EnMT) {
       while(true) {
         auto state = cache_set_state[s].read();
-        if(prio <= state) { cache_set_state[s].wait(); continue; }
+        if(prio <= state) { 
+#ifndef TRY_LOCK
+          cache_set_state[s].wait();
+#endif 
+          continue; 
+        }
         if(cache_set_state[s].swap(state, state|prio)) break;
       }
     }
@@ -118,7 +123,9 @@ public:
         auto state = cache_set_state[s].read();
         assert(state >= prio);
         if(prio_upper >= state) break;
+#ifndef TRY_LOCK
         cache_set_state[s].wait();
+#endif
       }
     }
   }

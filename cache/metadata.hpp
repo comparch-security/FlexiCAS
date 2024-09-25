@@ -233,7 +233,11 @@ public:
 // A wrapper for implementing the multithread required cache line lock utility
 template <typename MT> requires C_DERIVE<MT, CMMetadataCommon>
 class MetaLock : public MT {
+#ifdef TRY_LOCK
+  SpinLock mtx;
+#else
   std::mutex mtx;
+#endif
 
 #ifdef CHECK_MULTI
   // verify no double lock or unlock

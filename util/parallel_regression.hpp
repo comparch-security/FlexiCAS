@@ -10,9 +10,13 @@
 #include <utility>
 #include <vector>
 #include <queue>
+#include <boost/lockfree/spsc_queue.hpp>
 #include "cache/metadata.hpp"
 #include "util/regression.hpp"
 #include <thread>
+
+#define LOCK_FREE
+#define QUEUE_SIZE 10240000
 
 class cache_xact 
 {
@@ -86,28 +90,42 @@ protected:
   using ReT::gen;
 
   std::vector<DataQueue* > dq_pool;
+#ifndef LOCK_FREE
   std::vector<std::deque<cache_xact >> xact_queue;
   std::vector<std::mutex *> xact_mutux;
   std::vector<std::condition_variable *> xact_cond;
+#else
+  std::vector<boost::lockfree::spsc_queue<cache_xact, boost::lockfree::capacity<QUEUE_SIZE>>* > queue;
+#endif
 public:
   ParallelRegressionGen() {
-    xact_queue.resize(NC);
     dq_pool.resize(addr_pool.size());
     for(unsigned int i = 0; i < addr_pool.size(); i++){
       dq_pool[i] = new DataQueue(NC, addr_pool[i]);
     }
+#ifndef LOCK_FREE
+    xact_queue.resize(NC);
     xact_mutux.resize(NC);
     xact_cond.resize(NC);
     for(int i = 0; i < NC; i++) {
       xact_mutux[i] = new std::mutex();
       xact_cond[i] = new std::condition_variable();
     }
+#else
+  queue.resize(NC);
+  for(int i = 0; i < NC; i++){
+    queue[i] = new boost::lockfree::spsc_queue<cache_xact, boost::lockfree::capacity<QUEUE_SIZE>>();
   }
-
+#endif
+  }
   virtual ~ParallelRegressionGen() {
     for(auto dq : dq_pool) delete dq;
+#ifndef LOCK_FREE
     for(auto m : xact_mutux) delete m;
     for(auto c : xact_cond) delete c;
+#else
+    for(auto q : queue) delete q;
+#endif
   }
 
   virtual void xact_queue_add(int test_num){
@@ -122,14 +140,27 @@ public:
       if(flush == 2){ // share instruction flush
         for(int i = 0; i < NC; i++){
           if(i == core) continue;
+#ifndef LOCK_FREE
           std::unique_lock lk(*xact_mutux[i]);
           xact_cond[i]->wait(lk, [&, i]{return xact_queue[i].empty();});
           xact_queue[i].push_back(act);
+#else
+          while(!queue[i]->push(act)){}
+#endif
         }
-        xact_queue[core].push_back(act);
-      }else{
+#ifndef LOCK_FREE
         std::unique_lock lk(*xact_mutux[core]);
         xact_queue[core].push_back(act);
+#else
+        while(!queue[core]->push(act)){}
+#endif
+      }else{
+#ifndef LOCK_FREE
+        std::unique_lock lk(*xact_mutux[core]);
+        xact_queue[core].push_back(act);
+#else
+        while(!queue[core]->push(act)){}
+#endif
       }
       num++;
     }
@@ -146,8 +177,9 @@ public:
   }
 
   virtual std::pair<bool, cache_xact> get_xact(int core){
-    std::unique_lock lk(*xact_mutux[core]);
     cache_xact act;
+#ifndef LOCK_FREE
+    std::unique_lock lk(*xact_mutux[core]);
     if(xact_queue[core].empty()) return std::make_pair(false, act);
     else{
       act = xact_queue[core].front();
@@ -155,6 +187,11 @@ public:
       xact_cond[core]->notify_all();
       return std::make_pair(true, act);
     }
+#else
+    if(queue[core]->empty()) return std::make_pair(false, act);
+    while(queue[core]->pop(act)) return std::make_pair(true, act);
+#endif
+    return std::make_pair(false, act);
   }
 
   virtual bool check(uint64_t addr, const CMDataBase *data){
@@ -189,14 +226,22 @@ public:
     }
   }
 
-  void run(int test_num, std::vector<CoreInterfaceBase *>* core_inst, std::vector<CoreInterfaceBase *>* core_data){
-    std::thread add_thread(&ParallelRegressionGen::cache_producer, this, test_num);
+  void init(int plan, int test_num){
+    if(plan == 0){
+      std::thread add_thread(&ParallelRegressionGen::cache_producer, this, test_num);
+      add_thread.join();
+    }
+  }
+
+  void run(int plan, int test_num, std::vector<CoreInterfaceBase *>* core_inst, std::vector<CoreInterfaceBase *>* core_data){
+    std::vector<std::thread> add_thread;
     std::vector<std::thread> server_thread;
     bool exit = false;
+    if(plan == 1) add_thread.emplace_back(&ParallelRegressionGen::cache_producer, this, test_num);
     for(int i = 0; i < NC; i++){
       server_thread.emplace_back(&ParallelRegressionGen::cache_server, this, i, core_inst, core_data, &exit);
     }
-    add_thread.join();
+    if(plan == 1) add_thread[0].join();
     exit = true;
     for(auto &s : server_thread){
       s.join();

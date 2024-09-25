@@ -119,8 +119,9 @@ public:
     // use a copy buffer for the outer acquire
     CMMetadataBase * mmeta; CMDataBase * mdata;  // I think allocating data buffer is unnecessary, but play safe for now
     if constexpr (EnMT) {
-      mmeta = cache->meta_copy_buffer(); mdata = data ? cache->data_copy_buffer() : nullptr;
-      mmeta->copy(meta); // some derived cache may store key info inside the meta, such as the data set/way in MIRAGE
+      // mmeta = cache->meta_copy_buffer(); mdata = data ? cache->data_copy_buffer() : nullptr;
+      // mmeta->copy(meta); // some derived cache may store key info inside the meta, such as the data set/way in MIRAGE
+      mmeta = meta; mdata = data;
       meta->unlock();
     } else {
       mmeta = meta; mdata = data;

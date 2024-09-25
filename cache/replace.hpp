@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <cassert>
-#include <mutex>
 #include "util/random.hpp"
 #include "util/multithread.hpp"
 

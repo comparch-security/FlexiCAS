@@ -38,24 +38,43 @@ public:
 
   __always_inline void write(T v, bool notify = false) {
     var->store(v);
+#ifndef TRY_LOCK
     if(notify) cv.notify_one();
+#endif
   }
 
   __always_inline bool swap(T& expect, T v, bool notify = false) {
     bool rv = var->compare_exchange_strong(expect, v);
+#ifndef TRY_LOCK
     if(rv && notify) {
       std::unique_lock lk(mtx);
       cv.notify_one();
     }
+#endif
     return rv;
   }
 
   __always_inline void wait(bool report = false) {
+#ifndef TRY_LOCK
     using namespace std::chrono_literals;
     std::unique_lock lk(mtx);
     auto result = cv.wait_for(lk, 100us);
     if(report && std::cv_status::timeout == result)
       std::cerr << "cv [" << std::hex << this << "] waits timeout once ..." << std::endl;
+#endif
+  }
+};
+
+class SpinLock {
+private:
+  std::atomic_flag flag = ATOMIC_FLAG_INIT;  
+public:
+  void lock() {
+    while (flag.test_and_set(std::memory_order_acquire)) {}
+  }
+
+  void unlock() {
+    flag.clear(std::memory_order_release);
   }
 };
 
@@ -67,7 +86,11 @@ template<bool EnMT, int MSHR = 16>
 class PendingXact final {
   std::vector<std::tuple<uint64_t, bool, CMMetadataBase *, uint32_t, uint32_t> > xact;
   std::vector<bool> valid;
+#ifdef TRY_LOCK
+  SpinLock mtx;
+#else
   std::mutex mtx;
+#endif
 
   __always_inline uint64_t key(uint64_t addr, int32_t id) {
     assert(id < 63 || 0 == "We do not support more than 63 coherent inner cache for any cache level!");
@@ -84,7 +107,7 @@ public:
   PendingXact(): xact(MSHR), valid(MSHR, false) {}
 
   void insert(uint64_t addr, int32_t id, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) {
-    std::lock_guard lk(mtx);
+    mtx.lock();
     int index = 0;
 #ifdef CHECK_MULTI
     assert(-1 == find(addr, id) || "The transaction has already been inserted!");
@@ -94,23 +117,28 @@ public:
     assert(index < MSHR || 0 == "Pending transaction queue for finish message overflow!");
     valid[index] = true;
     xact[index] = std::make_tuple(key(addr, id), forward, meta, ai, s);
+    mtx.unlock();
   }
 
   void remove(uint64_t addr, int32_t id) {
-    std::lock_guard lk(mtx);
+    mtx.lock();
     int index = find(addr, id);
     if(index >= 0) valid[index] = false;
+    mtx.unlock();
   }
 
   std::tuple<bool, bool, CMMetadataBase *, uint32_t, uint32_t>
   read(uint64_t addr, int32_t id) {
-    std::lock_guard lk(mtx);
+    mtx.lock();
     auto index = find(addr, id);
     if(index >= 0) {
       auto [key, forward, meta, ai, s] = xact[index];
+      mtx.unlock();
       return std::make_tuple(true, forward, meta, ai, s);
-    } else
+    } else {
+      mtx.unlock();
       return std::make_tuple(false, false, nullptr, 0, 0);
+    }
   }
 };
 
