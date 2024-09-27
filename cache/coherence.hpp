@@ -385,8 +385,6 @@ protected:
 template<template <typename, bool, typename...> class IPUC, typename Policy, bool EnMT, typename... Extra> requires C_DERIVE<IPUC<Policy, EnMT, Extra...>, InnerCohPortBase>
 class InnerCohPortT : public IPUC<Policy, EnMT, Extra...>
 {
-private:
-  PendingXact<EnMT> pending_xact; // record the pending finish message from inner caches
 protected:
   using InnerCohPortBase::cache;
   using InnerCohPortBase::coh;
@@ -409,18 +407,24 @@ public:
 
   // record pending finish
   virtual void finish_record(uint64_t addr, coh_cmd_t outer_cmd, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) override {
-    pending_xact.insert(addr, outer_cmd.id, forward, meta, ai, s);
+    // pending_xact.insert(addr, outer_cmd.id, forward, meta, ai, s);
+    cache->xact_insert(addr, outer_cmd.id, forward, meta, ai, s);
   }
 
   // only forward the finish message recorded by previous acquire
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) override {
-    auto [valid, forward, meta, ai, s] = pending_xact.read(addr, outer_cmd.id);
-    if(valid) {
-      // avoid probe to the same cache line happens between a grant and a finish,
-      // do not unlock the cache line until a finish is received (only needed for coherent inner cache)
-      if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
-      pending_xact.remove(addr, outer_cmd.id);
-      if(forward) outer->finish_req(addr);
+    LocInfo info;
+    cache->query_fill_loc(&info, addr);
+    for(auto pair : info.locs){
+      auto [valid, forward, meta, ai] = cache->xact_read(addr, pair.first.idx, outer_cmd.id);
+      if(valid) {
+        // avoid probe to the same cache line happens between a grant and a finish,
+        // do not unlock the cache line until a finish is received (only needed for coherent inner cache)
+        if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, pair.first.idx, XactPrio::acquire); }
+        cache->xact_remove(addr, pair.first.idx, outer_cmd.id);
+        if(forward) outer->finish_req(addr);
+        break;
+      }
     }
   }
 };

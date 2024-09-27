@@ -191,6 +191,10 @@ public:
   __always_inline void wait_mt_state(uint32_t ai, uint32_t s, uint16_t prio)  { arrays[ai]->wait_mt_state(s, prio);  }
   __always_inline void reset_mt_state(uint32_t ai, uint32_t s, uint16_t prio) { arrays[ai]->reset_mt_state(s, prio); }
 
+  virtual std::tuple<bool, bool, CMMetadataBase *, uint32_t> xact_read(uint64_t addr, uint32_t s, int32_t id) = 0;
+  virtual void xact_insert(uint64_t addr, int32_t id, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) = 0;
+  virtual void xact_remove(uint64_t addr, uint32_t s, int32_t id) = 0;
+
   virtual std::tuple<int, int, int> size() const = 0;           // return the size parameters of the cache
   uint32_t get_id() const { return id; }
   const std::string& get_name() const { return name;} 
@@ -232,6 +236,8 @@ protected:
   uint16_t                             meta_buffer_state = MSHR;
   std::mutex                           meta_buffer_mutex;
   std::condition_variable              meta_buffer_cv;
+  
+  PendingXact<EnMT, IW> pending_xact; // record the pending finish message from inner caches
 
   virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int) {
     if constexpr (P==1) *ai = 0;
@@ -420,6 +426,17 @@ public:
     for(int i=0; i<P; i++){
       loc->insert(LocIdx(i, indexer.index(addr, i)), LocRange(0, NW-1));
     }
+  }
+
+  virtual void xact_insert(uint64_t addr, int32_t id, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) override {
+    pending_xact.insert(addr, id, forward, meta, ai, s);
+  }
+
+  virtual std::tuple<bool, bool, CMMetadataBase *, uint32_t> xact_read(uint64_t addr, uint32_t s, int32_t id) override {
+    return pending_xact.read(addr, s, id);
+  }
+  virtual void xact_remove(uint64_t addr, uint32_t s, int32_t id) override{
+    pending_xact.remove(addr, s, id);
   }
 };
 

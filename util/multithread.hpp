@@ -82,14 +82,14 @@ public:
 
 class CMMetadataBase; // forward declaration
 
-template<bool EnMT, int MSHR = 16>
+template<bool EnMT, int IW = 16, int MSHR = 16>
 class PendingXact final {
-  std::vector<std::tuple<uint64_t, bool, CMMetadataBase *, uint32_t, uint32_t> > xact;
-  std::vector<bool> valid;
+  std::vector<std::vector<std::tuple<uint64_t, bool, CMMetadataBase *, uint32_t>>> xact;
+  std::vector<std::vector<bool>> valid;
 #ifdef TRY_LOCK
-  SpinLock mtx;
+  std::vector<SpinLock* > mtxs;
 #else
-  std::mutex mtx;
+  std::vector<std::mutex* > mtxs;
 #endif
 
   __always_inline uint64_t key(uint64_t addr, int32_t id) {
@@ -97,47 +97,60 @@ class PendingXact final {
     return addr | (id & 0x3f);
   }
 
-  __always_inline int find(uint64_t addr, int32_t id) {
+  __always_inline int find(uint64_t addr, uint32_t s, int32_t id) {
     auto k = key(addr, id);
-    for(int i=0; i<MSHR; i++) if(valid[i] && k == std::get<0>(xact[i])) return i;
+    for(int i=0; i<MSHR; i++) if(valid[s][i] && k == std::get<0>(xact[s][i])) return i;
     return -1;
   }
 
 public:
-  PendingXact(): xact(MSHR), valid(MSHR, false) {}
+  PendingXact() {
+    xact.resize(1ull << IW, std::vector<std::tuple<uint64_t, bool, CMMetadataBase *, uint32_t>>(MSHR)); 
+    valid.resize(1ull << IW, std::vector<bool>(MSHR, false));
+    mtxs.resize(1ull << IW);
+#ifdef TRY_LOCK
+    for(auto& m : mtxs) m = new SpinLock();
+#else
+    for(auto& m : mtxs) m = new std::mutex();
+#endif
+  }
+
+  ~PendingXact(){
+    for(auto m : mtxs) delete m;
+  } 
 
   void insert(uint64_t addr, int32_t id, bool forward, CMMetadataBase *meta, uint32_t ai, uint32_t s) {
-    mtx.lock();
+    mtxs[s]->lock();
     int index = 0;
 #ifdef CHECK_MULTI
     assert(-1 == find(addr, id) || "The transaction has already been inserted!");
 #endif
     // get an empty place
-    for(int i=0; i<MSHR; i++) if(!valid[i]) { index = i; break; }
+    for(int i=0; i<MSHR; i++) if(!valid[s][i]) { index = i; break; }
     assert(index < MSHR || 0 == "Pending transaction queue for finish message overflow!");
-    valid[index] = true;
-    xact[index] = std::make_tuple(key(addr, id), forward, meta, ai, s);
-    mtx.unlock();
+    valid[s][index] = true;
+    xact[s][index] = std::make_tuple(key(addr, id), forward, meta, ai);
+    mtxs[s]->unlock();
   }
 
-  void remove(uint64_t addr, int32_t id) {
-    mtx.lock();
-    int index = find(addr, id);
-    if(index >= 0) valid[index] = false;
-    mtx.unlock();
+  void remove(uint64_t addr, uint32_t s, int32_t id) {
+    mtxs[s]->lock();
+    int index = find(addr, s, id);
+    if(index >= 0) valid[s][index] = false;
+    mtxs[s]->unlock();
   }
 
-  std::tuple<bool, bool, CMMetadataBase *, uint32_t, uint32_t>
-  read(uint64_t addr, int32_t id) {
-    mtx.lock();
-    auto index = find(addr, id);
+  std::tuple<bool, bool, CMMetadataBase *, uint32_t>
+  read(uint64_t addr, uint32_t s, int32_t id) {
+    mtxs[s]->lock();
+    auto index = find(addr, s, id);
     if(index >= 0) {
-      auto [key, forward, meta, ai, s] = xact[index];
-      mtx.unlock();
-      return std::make_tuple(true, forward, meta, ai, s);
+      auto [key, forward, meta, ai] = xact[s][index];
+      mtxs[s]->unlock();
+      return std::make_tuple(true, forward, meta, ai);
     } else {
-      mtx.unlock();
-      return std::make_tuple(false, false, nullptr, 0, 0);
+      mtxs[s]->unlock();
+      return std::make_tuple(false, false, nullptr, 0);
     }
   }
 };
@@ -159,14 +172,14 @@ public:
     this->forward = forward;
   }
 
-  void remove(uint64_t addr, int32_t id) {
+  void remove(uint64_t addr, uint32_t s, int32_t id) {
     if(this->addr == addr && this->id == id) this->addr = 0;
   }
 
-  std::tuple<bool, bool, CMMetadataBase *, uint32_t, uint32_t>
-  read(uint64_t addr, int32_t id) {
-    if(this->addr == addr && this->id == id) return std::make_tuple(true,  forward, nullptr, 0, 0);
-    else                                     return std::make_tuple(false, false,   nullptr, 0, 0);
+  std::tuple<bool, bool, CMMetadataBase *, uint32_t>
+  read(uint64_t addr, uint32_t s, int32_t id) {
+    if(this->addr == addr && this->id == id) return std::make_tuple(true,  forward, nullptr, 0);
+    else                                     return std::make_tuple(false, false,   nullptr, 0);
   }
 };
 

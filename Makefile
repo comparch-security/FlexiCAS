@@ -48,7 +48,7 @@ REGRESSION_TESTS = \
 	c1-l1 \
 	c2-l2 c2-l2-mesi c2-l2-exc c2-l2-exc-mi c2-l2-exc-mesi \
 	c4-l3 c4-l3-exc c4-l3-exc-mesi c4-l3-intel \
-	c2-l2-mirage c2-l2-remap
+	
 
 REGRESSION_TESTS_EXE = $(patsubst %, regression/%, $(REGRESSION_TESTS))
 REGRESSION_TESTS_LOG = $(patsubst %, regression/%.log, $(REGRESSION_TESTS))

@@ -16,7 +16,7 @@
 #define SAddrN 256
 #define MCore 4
 #define NCore 4
-#define TestN ((PAddrN + SAddrN) * 100 * 2)
+#define TestN ((PAddrN + SAddrN) * 200 * 2)
 
 #define Repe 10
 

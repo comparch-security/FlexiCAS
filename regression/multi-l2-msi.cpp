@@ -52,7 +52,8 @@ int main(){
 
   ParallelRegressionGen<NCore, true, false, PAddrN, SAddrN, Data64B> tgen;
 
-  tgen.run(TestN, &core_inst, &core_data);
+  int plan = 1;
+  tgen.run(plan, TestN, &core_inst, &core_data);
 
   tracer.stop();
   delete_caches(l1d);

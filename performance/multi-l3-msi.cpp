@@ -7,7 +7,7 @@
 #include <iostream>
 
 #define L1IW 4
-#define L1WN 6
+#define L1WN 4
 
 #define L2IW 5
 #define L2WN 8
@@ -17,13 +17,13 @@
 
 #define PAddrN 1024
 #define SAddrN 256
-#define MCore 8
-#define NCore 8
+#define MCore 4
+#define NCore 4
 #define TestN ((PAddrN + SAddrN) * 200 * 2)
 
 #define Repe 10
 
-typedef Data64B data_type;
+typedef void data_type;
 
 #ifdef CHECK_MULTI
   LockCheck * global_lock_checker = new LockCheck;
