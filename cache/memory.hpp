@@ -138,6 +138,16 @@ public:
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
+  void init_memory(std::map<uint64_t, char*>& mem){
+    assert(pages.size() == 0);
+    if constexpr (!C_VOID<DT>) {
+      for (auto pair : mem){
+        char* page = allocate(pair.first);
+        memcpy(page, pair.second, 4096);
+      }
+    }
+  }
+
 private:
   virtual void hook_manage(uint64_t, uint32_t, uint32_t, uint32_t, bool, bool, bool, const CMMetadataBase *, const CMDataBase *, uint64_t *) override {}
   virtual void query_loc_resp(uint64_t, std::list<LocInfo> *) override {}

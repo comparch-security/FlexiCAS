@@ -28,7 +28,7 @@
 #define L3WN 16
 
 // multithread support
-#define ENABLE_FLEXICAS_THREAD
+// #define ENABLE_FLEXICAS_THREAD
 
 #define CACHE_OP_READ         0
 #define CACHE_OP_WRITE        1
@@ -47,6 +47,7 @@ namespace {
   static uint64_t wall_clock;              // a wall clock shared by all cores
   static MonitorBase *tracer;
   static int NC = 0;
+  static SimpleMemoryModel<void,void,true>* mem;
   std::condition_variable xact_non_empty_notify, xact_non_full_notify;
   std::mutex xact_queue_op_mutex;
   std::mutex xact_queue_full_mutex;
@@ -211,7 +212,7 @@ namespace flexicas {
     auto l2 = cache_gen_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, ExclusiveMSIPolicy, policy_l2, false, void, true>(NC, "l2");
     auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, policy_l3, true, void, true>(NC, "l3");
     auto dispatcher = new SliceDispatcher<SliceHashNorm<> >("disp", NC);
-    auto mem = new SimpleMemoryModel<void,void,true>("mem");
+    mem = new SimpleMemoryModel<void,void,true>("mem");
     tracer = new SimpleTracer(true);
     if(prefix) tracer->set_prefix(std::string(prefix));
 
@@ -376,5 +377,9 @@ namespace flexicas {
 
   void bump_wall_clock(int step) {
     wall_clock += step;
+  }
+
+  void init_memory(std::map<uint64_t, char*>& map){
+    memory->init_memory(map);
   }
 }
