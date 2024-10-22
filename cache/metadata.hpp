@@ -2,7 +2,6 @@
 #define CM_CACHE_METADATA_HPP
 
 #include <string>
-#include <boost/format.hpp>
 #include "util/concept_macro.hpp"
 #include "util/multithread.hpp"
 
@@ -16,7 +15,9 @@ public:
   virtual void write(unsigned int index, uint64_t wdata, uint64_t wmask) {} // write a 64b data with wmask
   virtual void write(uint64_t *wdata) {} // write the whole cache block
   virtual void copy(const CMDataBase *block) = 0; // copy the content of block
+  virtual void copy(const CMDataBase *m_block, std::vector<uint64_t>& wmask) = 0;
   virtual std::string to_string() const = 0;
+  virtual const uint64_t* get_data() const { return nullptr; }
 };
 
 // typical 64B data block
@@ -36,10 +37,20 @@ public:
     for(int i=0; i<8; i++) data[i] = block->data[i];
   }
 
-  virtual std::string to_string() const override {
-    return (boost::format("%016x %016x %016x %016x %016x %016x %016x %016x")
-            % data[0] % data[1] % data[2] % data[3] % data[4] % data[5] % data[6] % data[7]).str();
+  virtual void copy(const CMDataBase *m_block, std::vector<uint64_t>& wmask) override {
+    auto block = static_cast<const Data64B *>(m_block);
+    for(int i=0; i<8; i++) write(i, block->data[i], wmask[i]);
   }
+  
+  Data64B() {}
+  Data64B(uint64_t* wdata) { for(int i=0; i<8; i++) data[i]= wdata[i]; }
+
+  virtual std::string to_string() const override {
+    // return (boost::format("%016x %016x %016x %016x %016x %016x %016x %016x")
+    //         % data[0] % data[1] % data[2] % data[3] % data[4] % data[5] % data[6] % data[7]).str();
+    return "";
+  }
+  virtual const uint64_t* get_data() const override { return data; }
 };
 
 // a common base between data metadata and normal coherence metadata

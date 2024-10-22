@@ -6,6 +6,7 @@
 #include "cache/slicehash.hpp"
 #include <tuple>
 #include <memory>
+#include <vector>
 
 /////////////////////////////////
 // Priority of transactions (only useful for multithread simulation):
@@ -427,7 +428,7 @@ class CoreInterfaceBase
 public:
   virtual const CMDataBase *read(uint64_t addr, uint64_t *delay) = 0;
   
-  virtual void write(uint64_t addr, const CMDataBase *m_data, uint64_t *delay) = 0;
+  virtual void write(uint64_t addr, const CMDataBase *m_data, std::vector<uint64_t>& wmask, uint64_t *delay) = 0;
   // flush a cache block from the whole cache hierarchy, (clflush in x86-64)
   virtual void flush(uint64_t addr, uint64_t *delay) = 0;
   // if the block is dirty, write it back to memory, while leave the block cache in shared state (clwb in x86-64)
@@ -468,12 +469,12 @@ public:
     return data; // potentially dangerous and the data pointer is returned without lock
   }
 
-  virtual void write(uint64_t addr, const CMDataBase *m_data, uint64_t *delay) override {
+  virtual void write(uint64_t addr, const CMDataBase *m_data, std::vector<uint64_t>& mask, uint64_t *delay) override {
     addr = normalize(addr);
     auto cmd = coh::cmd_for_write();
     auto [meta, data, ai, s, w, hit] = this->access_line(addr, cmd, XactPrio::acquire, delay);
     meta->to_dirty();
-    if(data) data->copy(m_data);
+    if(data) data->copy(m_data, mask);
     cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
     if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);}
     if(!hit) outer->finish_req(addr);

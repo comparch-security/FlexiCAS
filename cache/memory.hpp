@@ -140,11 +140,24 @@ public:
 
   void init_memory(std::map<uint64_t, char*>& mem){
     assert(pages.size() == 0);
-    if constexpr (!C_VOID<DT>) {
+    // if constexpr (!C_VOID<DT>) {  
       for (auto pair : mem){
-        char* page = allocate(pair.first);
+        auto ppn = pair.first + 0x80000;
+        char* page = allocate(ppn);
         memcpy(page, pair.second, 4096);
       }
+    // }
+  }
+
+  void write_uint64(uint64_t addr, uint64_t data){
+    if constexpr (!C_VOID<DT>) {
+      auto ppn = addr >> 12;
+      auto offset = addr & 0x0fffull;
+      char * page;
+      bool hit = get_page(ppn, &page); assert(hit);
+      uint64_t *mem_addr = reinterpret_cast<uint64_t *>(page + offset);
+      *mem_addr = data;
+      std::cout << "write memory addr " << std::hex << addr << ", data " << data << std::endl; 
     }
   }
 

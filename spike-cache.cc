@@ -1,9 +1,12 @@
 #include "cache/memory.hpp"
+#include "cache/metadata.hpp"
+#include "flexicas.h"
 #include "util/cache_type.hpp"
 #include "cache/slicehash.hpp"
 #include "util/query.hpp"
 #include "flexicas-pfc.h"
 
+#include <algorithm>
 #include <list>
 #include <deque>
 #include <mutex>
@@ -11,6 +14,14 @@
 #include <condition_variable>
 #include <chrono>
 #include <atomic>
+#include <vector>
+#include <unordered_set>
+
+#define insn_length(x) \
+  (((x) & 0x03) < 0x03 ? 2 : \
+   ((x) & 0x1f) < 0x1f ? 4 : \
+   ((x) & 0x3f) < 0x3f ? 6 : \
+   8)
 //#include <iostream>
 
 // intel coffe lake 9Gen: https://en.wikichip.org/wiki/intel/microarchitectures/coffee_lake
@@ -41,13 +52,17 @@
 #define XACT_QUEUE_LOW     240
 #define XACT_QUEUE_BURST   32
 
+#define TRACE false
+
 namespace {
   static std::vector<CoreInterfaceBase *> core_data, core_inst;
   static std::vector<uint64_t> core_cycle; // record the cycle time in each core
   static uint64_t wall_clock;              // a wall clock shared by all cores
   static MonitorBase *tracer;
   static int NC = 0;
-  static SimpleMemoryModel<void,void,true>* mem;
+  #define data_type Data64B
+  #define USE_DATA
+  static SimpleMemoryModel<data_type,void,TRACE>* mem;
   std::condition_variable xact_non_empty_notify, xact_non_full_notify;
   std::mutex xact_queue_op_mutex;
   std::mutex xact_queue_full_mutex;
@@ -55,6 +70,8 @@ namespace {
   static bool exit_flag = false;
   static uint64_t pfc_value = 0;
   static std::atomic_bool cache_idle = false;
+  static std::unordered_set<uint64_t> uncached_set;
+  static bool enable_log = false;
 
   struct cache_xact {
     char op_t;
@@ -91,13 +108,14 @@ namespace {
     if(input_index == XACT_QUEUE_BURST) xact_queue_flush();
   }
 
-  inline void read_detailed(uint64_t addr, int core, bool ic) {
-    if(ic) core_inst[core]->read(addr, nullptr);
-    else   core_data[core]->read(addr, nullptr);
+  inline const CMDataBase* read_detailed(uint64_t addr, int core, bool ic) {
+    if(ic) return core_inst[core]->read(addr, nullptr);
+    else   return core_data[core]->read(addr, nullptr);
+    
   }
 
-  inline void write_detailed(uint64_t addr, int core) {
-    core_data[core]->write(addr, nullptr, nullptr);
+  inline void write_detailed(uint64_t addr, int core, CMDataBase* data, std::vector<uint64_t>& wmask) {
+    core_data[core]->write(addr, data, wmask, nullptr);
   }
 
   inline void flush_detailed(uint64_t addr, int core) {
@@ -132,7 +150,7 @@ namespace {
         cache_xact &xact = xact_output[i];
         switch(xact.op_t) {
         case CACHE_OP_READ:         read_detailed(xact.addr, xact.core, xact.ic); break; // read
-        case CACHE_OP_WRITE:        write_detailed(xact.addr, xact.core); break;         // write
+        // case CACHE_OP_WRITE:        write_detailed(xact.addr, xact.core); break;         // write
         case CACHE_OP_FLUSH:        flush_detailed(xact.addr, xact.core); break;         // flush
         case CACHE_OP_WRITEBACK:    writeback_detailed(xact.addr, xact.core); break;     // writeback
         case CACHE_OP_FLUSH_CACHE:  flush_icache_detailed(xact.core); break;             // flush the whole cache
@@ -198,39 +216,33 @@ namespace flexicas {
   }
 
   void init(int ncore, const char *prefix) {
-    using policy_l3 = MESIPolicy<false, true, policy_memory>;
-    using policy_l2 = ExclusiveMSIPolicy<false, false, policy_l3, false>;
+    using policy_l2 = MESIPolicy<false, true, policy_memory>;
     using policy_l1d = MSIPolicy<true, false, policy_l2>;
     using policy_l1i = MSIPolicy<true, true, policy_l2>;
     NC = ncore;
     core_cycle.resize(NC, 0);
     wall_clock = 0;
-    auto l1d = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1d, false, void, true>(NC, "l1d");
+    auto l1d = cache_gen_l1<L1IW, L1WN, data_type, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1d, false, void, TRACE>(NC, "l1d");
     core_data = get_l1_core_interface(l1d);
-    auto l1i = cache_gen_l1<L1IW, L1WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, true, void, true>(NC, "l1i");
+    auto l1i = cache_gen_l1<L1IW, L1WN, data_type, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, true, void, TRACE>(NC, "l1i");
     core_inst = get_l1_core_interface(l1i);
-    auto l2 = cache_gen_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, ExclusiveMSIPolicy, policy_l2, false, void, true>(NC, "l2");
-    auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceSRRIP, MESIPolicy, policy_l3, true, void, true>(NC, "l3");
-    auto dispatcher = new SliceDispatcher<SliceHashNorm<> >("disp", NC);
-    mem = new SimpleMemoryModel<void,void,true>("mem");
+    auto l2 = cache_gen_inc<L2IW, L2WN, data_type, MetadataBroadcastBase, ReplaceSRRIP, MESIPolicy, policy_l2, true, void, TRACE>(NC, "l2")[0];
+    mem = new SimpleMemoryModel<data_type,void,TRACE>("mem");
     tracer = new SimpleTracer(true);
     if(prefix) tracer->set_prefix(std::string(prefix));
 
     for(int i=0; i<NC; i++) {
-      l1i[i]->outer->connect(l2[i]->inner);
-      l1d[i]->outer->connect(l2[i]->inner);
-      dispatcher->connect(l3[i]->inner);
-      l2[i]->outer->connect_by_dispatch(dispatcher, l3[0]->inner);
-      if constexpr (!policy_l2::is_uncached()) // normally this check is useless as L2 is cached, but provied as an example
-        for(int j=1; j<NC; j++) l3[j]->inner->connect(l2[i]->outer);
-      l3[i]->outer->connect(mem);
-      l1i[i]->attach_monitor(tracer);
-      l1d[i]->attach_monitor(tracer);
-      l2[i]->attach_monitor(tracer);
-      l3[i]->attach_monitor(tracer);
+      l1i[i]->outer->connect(l2->inner);
+      l1d[i]->outer->connect(l2->inner);
+      // l1i[i]->attach_monitor(tracer);
+      // l1d[i]->attach_monitor(tracer);
     }
 
-    mem->attach_monitor(tracer);
+    // l2->attach_monitor(tracer);
+    l2->outer->connect(mem);
+
+    // mem->attach_monitor(tracer);
+    // tracer->start();
 
 #ifdef ENABLE_FLEXICAS_THREAD
     // set up the cache server
@@ -243,21 +255,104 @@ namespace flexicas {
     exit_flag = true;
   }
 
-  void read(uint64_t addr, int core, bool ic) {
+  uint64_t read(uint64_t addr, int core, bool ic, uint64_t len) {
     assert(core < NC);
 #ifdef ENABLE_FLEXICAS_THREAD
     xact_queue_add({CACHE_OP_READ, ic, core, addr});
 #else
+  #ifdef USE_DATA
+    auto cache_data = (read_detailed(addr, core, ic))->get_data(); // normally more than one instruction is readed per refill
+    uint64_t caddr = addr & ~0x3f;
+    size_t offset = addr - caddr;
+    uint8_t *byte_ptr = (uint8_t *)cache_data;
+    uint64_t data = (uint64_t)(*(uint16_t*)(byte_ptr + offset));
+    if (ic) len = insn_length(data);
+
+    if (offset + len > 64){
+      auto second_data = (read_detailed(caddr + 64, core, ic))->get_data();
+      auto second_data_ptr = (uint8_t*)second_data;
+      if (len == 4) {
+        data |= (uint64_t)(*(const uint16_t*)(second_data_ptr)) << 16;
+      } else if (len == 2) {
+        // entire instruction already fetched
+      } else if (len == 6) {
+        data |= (uint64_t)(*(const uint16_t*)(second_data_ptr)) << 16;
+        data |= (uint64_t)(*(const uint16_t*)(second_data_ptr+2)) << 32;
+      } else {
+        data |= (uint64_t)(*(const uint16_t*)(second_data_ptr)) << 16;
+        data |= (uint64_t)(*(const uint16_t*)(second_data_ptr+2)) << 32;
+        data |= (uint64_t)(*(const uint16_t*)(second_data_ptr+4)) << 48;
+      }
+    } else {
+      if (len == 4) {
+        data |= (uint64_t)(*(const uint16_t*)(byte_ptr+offset+2)) << 16;
+      } else if (len == 2) {
+        // entire instruction already fetched
+      } else if (len == 1){
+        data &= 0xFF;
+      } else if (len == 6) {
+        data |= (uint64_t)(*(const uint16_t*)(byte_ptr+offset+2)) << 16;
+        data |= (uint64_t)(*(const uint16_t*)(byte_ptr+offset+4)) << 32;
+      } else {
+        data |= (uint64_t)(*(const uint16_t*)(byte_ptr+offset+2)) << 16;
+        data |= (uint64_t)(*(const uint16_t*)(byte_ptr+offset+4)) << 32;
+        data |= (uint64_t)(*(const uint16_t*)(byte_ptr+offset+6)) << 48;
+      }
+    }
+    return data;
+  #else
     read_detailed(addr, core, ic);
+    return 0;
+  #endif
 #endif
   }
 
-  void write(uint64_t addr, int core) {
+  void write(uint64_t addr, int core, uint64_t len, uint8_t* data) {
     assert(core < NC);
 #ifdef ENABLE_FLEXICAS_THREAD
     xact_queue_add({CACHE_OP_WRITE, false, core, addr});
 #else
-    write_detailed(addr, core);
+  #ifdef USE_DATA
+    std::vector<uint64_t> wmask(8, 0);
+    uint64_t array[8] = {0};
+    uint64_t caddr = addr & ~0x3f;
+    uint64_t taddr = addr;
+    int index = 0;
+    for (int i = 0; i < 8 && len > 0; i++){
+      uint64_t block_start = caddr + i * 8;
+      uint64_t block_end = block_start + 8;
+      if (taddr >= block_start && taddr < block_end) {
+        auto begin = taddr - block_start;
+        auto offset = std::min(len, block_end-taddr);
+        uint64_t temp = 0;
+        memcpy(&temp, data + index, offset);
+        array[i] = temp << (begin * 8);
+        for(uint64_t j = begin; j < begin + offset; j++) wmask[i] |= ((0xFFULL) << (j*8)); 
+        index += offset;
+        taddr += offset;
+        len -= offset;
+      } else {
+        array[i] = 0; wmask[i] = 0;
+      }       
+    }
+    Data64B d(array);
+    write_detailed(addr, core, &d, wmask);
+    if (taddr >= (caddr + 64) && len > 0){
+      auto begin = taddr - caddr - 64;
+      auto offset = len;
+      uint64_t second_array[8] = {0};
+      uint64_t temp = 0;
+      memcpy(&temp, data + index, offset);
+      second_array[0] = temp << (begin * 8);
+      std::vector<uint64_t> second_wmask(8, 0);
+      for(uint64_t j = begin; j < begin + offset; j++) second_wmask[0] |= (0xFFULL << (j * 8));
+      Data64B sd(second_array);
+      write_detailed(caddr + 64, core, &sd, second_wmask);
+    }
+  #else 
+    std::vector<uint64_t> wmask(8, 0);
+    write_detailed(addr, core, nullptr, wmask);
+  #endif
 #endif
   }
 
@@ -298,6 +393,7 @@ namespace flexicas {
 
   void csr_write(uint64_t cmd, int core, tlb_translate_func translator) {
     if((cmd & (~FLEXICAS_PFC_ADDR)) == FLEXICAS_PFC_CMD && (cmd & FLEXICAS_PFC_CMD_MASK) == FLEXICAS_PFC_START) {
+      enable_log = true;
       tracer->start();
       return;
     }
@@ -380,6 +476,22 @@ namespace flexicas {
   }
 
   void init_memory(std::map<uint64_t, char*>& map){
-    memory->init_memory(map);
+    mem->init_memory(map);
+  }
+
+  void write_memory(uint64_t addr, uint64_t data){
+    mem->write_uint64(addr, data);
+  }
+
+  void add_uncached_addr(uint64_t addr) {
+    uncached_set.insert(addr & ~0x3f);
+  }
+
+  bool contain_uncached_addr(uint64_t addr) {
+    return uncached_set.contains(addr & ~0x3f);
+  }
+
+  bool enable_write_log(){
+    return enable_log;
   }
 }

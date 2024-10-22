@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <fstream>
 #include <boost/format.hpp>
 #include "util/delay.hpp"
 #include "util/concept_macro.hpp"
@@ -188,11 +189,16 @@ class SimpleTracer : public MonitorBase
 {
   bool active;
   bool compact_data;
+  std::ofstream outputFile; 
 
-  virtual void print(std::string& msg) { std::cout << msg << std::endl; }
+  virtual void print(std::string& msg) { 
+    outputFile << msg << std::endl; 
+  }
 
 public:
-  SimpleTracer(bool cd = false): active(false), compact_data(cd) {}
+  SimpleTracer(bool cd = false): active(false), compact_data(cd) {
+    outputFile.open("/home/jinchi/Documents/graduate/spike-sdk-spec2017/tracer.log");
+  }
 
   virtual bool attach(uint64_t cache_id) { return true; }
 
@@ -207,7 +213,8 @@ public:
       msg.append("      ");
 
     if(data)
-      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+      msg.append(" ").append(compact_data ? (boost::format("%016x %016x %016x %016x %016x %016x %016x %016x ") \
+      % (data->read(0)) % (data->read(1)) % (data->read(2))% (data->read(3))% (data->read(4))% (data->read(5))% (data->read(6)) % (data->read(7))).str()  : data->to_string());
 
     print(msg);
   }
@@ -222,7 +229,8 @@ public:
       msg.append("      ");
 
     if(data)
-      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+      msg.append(" ").append(compact_data ? (boost::format("%016x %016x %016x %016x %016x %016x %016x %016x ") \
+      % (data->read(0)) % (data->read(1)) % (data->read(2))% (data->read(3))% (data->read(4))% (data->read(5))% (data->read(6)) % (data->read(7))).str()  : data->to_string());
 
     print(msg);
   }
