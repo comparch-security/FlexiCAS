@@ -205,6 +205,7 @@ public:
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
   virtual LocInfo query_loc(uint64_t addr) { return LocInfo(id, this, addr); }
   virtual void query_fill_loc(LocInfo *loc, uint64_t addr) = 0;
+  virtual void query_fill_loc(std::vector<uint64_t>& loc, uint64_t addr) = 0;
 };
 
 // Skewed Cache
@@ -425,6 +426,12 @@ public:
   virtual void query_fill_loc(LocInfo *loc, uint64_t addr) override {
     for(int i=0; i<P; i++){
       loc->insert(LocIdx(i, indexer.index(addr, i)), LocRange(0, NW-1));
+    }
+  }
+
+  virtual void query_fill_loc(std::vector<uint64_t>& loc, uint64_t addr) override {
+    for(int i=0; i < P; i++){
+      loc.emplace_back(indexer.index(addr, i));
     }
   }
 

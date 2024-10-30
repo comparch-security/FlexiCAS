@@ -413,15 +413,15 @@ public:
 
   // only forward the finish message recorded by previous acquire
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd) override {
-    LocInfo info;
-    cache->query_fill_loc(&info, addr);
-    for(auto pair : info.locs){
-      auto [valid, forward, meta, ai] = cache->xact_read(addr, pair.first.idx, outer_cmd.id);
+    std::vector<uint64_t> loc;
+    cache->query_fill_loc(loc, addr);
+    for(auto idx : loc) {
+      auto [valid, forward, meta, ai] = cache->xact_read(addr, idx, outer_cmd.id);
       if(valid) {
         // avoid probe to the same cache line happens between a grant and a finish,
         // do not unlock the cache line until a finish is received (only needed for coherent inner cache)
-        if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, pair.first.idx, XactPrio::acquire); }
-        cache->xact_remove(addr, pair.first.idx, outer_cmd.id);
+        if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, idx, XactPrio::acquire); }
+        cache->xact_remove(addr, idx, outer_cmd.id);
         if(forward) outer->finish_req(addr);
         break;
       }
