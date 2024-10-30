@@ -13,16 +13,16 @@
 
 static const uint64_t addr_mask = 0x0ffffffffffc0ull;
 
-// NC:        number of core
 // EnIC:      whether to have an instruction cache
 // TestFlush: whether to generate data flush operations
 // PAddrN:    number of private addresses per core
 // SAddrN:    number of shared address between cores
 // DT:        data type
-template<int NC, bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
+template<bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
 class RegressionGen
 {
 protected:
+  int NC;
   int64_t gi;
   CMHasher hasher;
   const unsigned int total;
@@ -33,8 +33,8 @@ protected:
   std::vector<bool>     iflag;       // belong to instruction
 
 public:
-  RegressionGen()
-    : gi(703), hasher(1201), total(NC*PAddrN+SAddrN)
+  RegressionGen(int N)
+    : NC(N), gi(703), hasher(1201), total(NC*PAddrN+SAddrN)
   {
     addr_pool.resize(total);
     if constexpr (!C_VOID<DT>) {

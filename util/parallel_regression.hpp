@@ -75,10 +75,10 @@ public:
 };
 
 
-template<int NC, bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
-class ParallelRegressionGen : public RegressionGen<NC, EnIC, TestFlush, PAddrN, SAddrN, DT>
+template<bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
+class ParallelRegressionGen : public RegressionGen<EnIC, TestFlush, PAddrN, SAddrN, DT>
 {
-  typedef RegressionGen<NC, EnIC, TestFlush, PAddrN, SAddrN, DT> ReT;
+  typedef RegressionGen<EnIC, TestFlush, PAddrN, SAddrN, DT> ReT;
 protected:
   using ReT::addr_pool;
   using ReT::addr_map;
@@ -88,6 +88,7 @@ protected:
   using ReT::hasher;
   using ReT::gi;
   using ReT::gen;
+  using ReT::NC;
 
   std::vector<DataQueue* > dq_pool;
 #ifndef LOCK_FREE
@@ -98,7 +99,7 @@ protected:
   std::vector<boost::lockfree::spsc_queue<cache_xact, boost::lockfree::capacity<QUEUE_SIZE>>* > queue;
 #endif
 public:
-  ParallelRegressionGen() {
+  ParallelRegressionGen(int NC) : ReT (NC) {
     dq_pool.resize(addr_pool.size());
     for(unsigned int i = 0; i < addr_pool.size(); i++){
       dq_pool[i] = new DataQueue(NC, addr_pool[i]);
