@@ -11,6 +11,11 @@
 #include <boost/accumulators/statistics/error_of_mean.hpp>
 #include <boost/accumulators/statistics/variance.hpp>
 #include <boost/accumulators/statistics/rolling_variance.hpp>
+#include <cassert>
+#include <algorithm>
+#include <numeric>
+#include <cmath>
+
 using namespace boost::accumulators;
 
 static uint32_t handles = 0;
@@ -179,4 +184,45 @@ void close_tail_stat(uint32_t handle, bool dir) {
     delete stat;
   }
   db.erase(handle);
+}
+
+void shape_distribution(const std::vector<double>& cdfs, std::vector<uint64_t> &dist, std::vector<uint64_t> &sample) {
+  assert(dist.size() == cdfs.size());
+  assert(sample.size() > 0);
+
+  auto dsize = cdfs.size();
+  auto ssize = sample.size();
+
+  std::vector<int> index(dsize, 0);
+  for(unsigned int i=0; i<dsize; i++) {
+    index[i] = ssize * cdfs[i] - 1;
+    if(index[i] < 0) index[i] = 0;
+  }
+
+  std::sort(sample.begin(), sample.end());
+
+  for(unsigned int i=0; i<dsize; i++) dist[i] = sample[index[i]];
+}
+
+double kl_divergence_with_uniform(const std::vector<uint64_t>& sample) {
+  assert(sample.size() > 0);
+  auto ssize = sample.size();
+
+  auto sum = (double)(std::reduce(sample.begin(), sample.end()));
+  auto log_ssize = std::log((double)(ssize));
+  auto minV = (0.0001/sum);
+  auto minD = minV * (std::log(minV) + log_ssize);
+
+  double d = 0.0;
+
+  std::for_each(sample.begin(), sample.end(),
+                [&](const uint64_t &s){
+                  if(s > 0) {
+                    double p = (double)(s)/sum;
+                    d += p * (std::log(p) + log_ssize);
+                  } else
+                    d += minD;
+                });
+
+  return d;
 }

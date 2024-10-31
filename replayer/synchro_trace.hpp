@@ -1,7 +1,6 @@
 #ifndef CM_REPLAYER_SYNCHROTRACE_HPP
 #define CM_REPLAYER_SYNCHROTRACE_HPP
 
-#include "cache/coherence_multi.hpp"
 #include "replayer/st_event.hpp"
 #include "replayer/st_parser.hpp"
 #include "replayer/thread.hpp"

@@ -13,34 +13,37 @@
 
 static const uint64_t addr_mask = 0x0ffffffffffc0ull;
 
-// NC:        number of core
 // EnIC:      whether to have an instruction cache
 // TestFlush: whether to generate data flush operations
 // PAddrN:    number of private addresses per core
 // SAddrN:    number of shared address between cores
 // DT:        data type
-template<int NC, bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
+template<bool EnIC, bool TestFlush, unsigned int PAddrN, unsigned int SAddrN, typename DT>
 class RegressionGen
 {
 protected:
+  int NC;
   int64_t gi;
   CMHasher hasher;
   const unsigned int total;
   std::vector<uint64_t> addr_pool;   // random addresses
   std::unordered_map<uint64_t, int> addr_map;
-  std::vector<DT>       data_pool;   // data copy
+  std::vector<DT* >       data_pool;   // data copy
   std::vector<bool>     wflag;       // whether written
   std::vector<bool>     iflag;       // belong to instruction
 
 public:
-  RegressionGen()
-    : gi(703), hasher(1201), total(NC*PAddrN+SAddrN)
+  RegressionGen(int N)
+    : NC(N), gi(703), hasher(1201), total(NC*PAddrN+SAddrN)
   {
     addr_pool.resize(total);
-    data_pool.resize(total);
+    if constexpr (!C_VOID<DT>) {
+      data_pool.resize(total);
+      for(auto &d:data_pool) d = new DT();
+    }
     wflag.resize(total);
     iflag.resize(total);
-    for(int i=0; i<total; i++) {
+    for(unsigned int i=0; i<total; i++) {
       auto addr = hasher(gi++) & addr_mask;
       while(addr_map.count(addr)) addr = hasher(gi++) & addr_mask;
       addr_pool[i] = addr;
@@ -51,6 +54,10 @@ public:
       else
         iflag[i] = false;
     }
+  }
+
+  ~RegressionGen(){
+    if constexpr (!C_VOID<DT>) for(auto d:data_pool) delete d; 
   }
 
   unsigned int locality_scale(unsigned int num, unsigned int mod, double rate) {
@@ -70,7 +77,8 @@ public:
       PAddrN*NC   + locality_scale(hasher(gi++), SAddrN, 0.2) :
       PAddrN*core + locality_scale(hasher(gi++), PAddrN, 0.2) ;
     uint64_t addr = addr_pool[index];
-    DT *data = &(data_pool[index]);
+    DT *data;
+    if constexpr (!C_VOID<DT>) data = data_pool[index];
     auto ran_num = hasher(gi++);
     bool rw = 0 == (ran_num & 0x11); // 25% write
     int flush = TestFlush && (0 == (ran_num & 0x17)) ? 3 : 0; // 25% of write is flush
@@ -88,7 +96,7 @@ public:
     }
 
     if(rw) {
-      data->write(0, hasher(gi++), 0xffffffffffffffffull);
+      if constexpr (!C_VOID<DT>) data->write(0, hasher(gi++), 0xffffffffffffffffull);
       wflag[index] = true;
     }
 
@@ -97,13 +105,16 @@ public:
 
   bool check(uint64_t addr, const CMDataBase *data) {
     assert(addr_map.count(addr));
-    int index = addr_map[addr];
-    assert(data_pool[index].read(0) == data->read(0));
-    return data_pool[index].read(0) == data->read(0);
+    if constexpr (!C_VOID<DT>) {
+      int index = addr_map[addr];
+      assert(data_pool[index]->read(0) == data->read(0));
+      return data_pool[index]->read(0) == data->read(0);
+    } else
+      return true;
   }
 
   bool run(uint64_t TestN, std::vector<CoreInterfaceBase *>& core_inst, std::vector<CoreInterfaceBase *>& core_data) {
-    for(int i=0; i<TestN; i++) {
+    for(unsigned int i=0; i<TestN; i++) {
       auto [addr, wdata, rw, nc, ic, flush] = gen();
       if(flush) {
         if(flush == 3)       core_data[nc]->flush(addr, nullptr);

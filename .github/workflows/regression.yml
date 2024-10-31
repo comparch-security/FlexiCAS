@@ -21,4 +21,4 @@ jobs:
       - name: install cryptopp
         run: mkdir -p cryptopp && cd cryptopp && wget https://github.com/comparch-security/FlexiCAS/releases/download/ci-prepare/libcryptopp.a
       - name: build application
-        run: make regression
+        run: MODE=debug make regression

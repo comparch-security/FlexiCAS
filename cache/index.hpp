@@ -13,7 +13,6 @@ protected:
   const uint32_t mask;
 public:
   IndexFuncBase(uint32_t mask) : mask(mask) {}
-  virtual ~IndexFuncBase() {}
   virtual uint32_t index(uint64_t addr, int partition) = 0;
 };
 
@@ -26,9 +25,8 @@ class IndexNorm : public IndexFuncBase
 {
 public:
   IndexNorm() : IndexFuncBase((1ul << IW) - 1) {}
-  virtual ~IndexNorm() {}
 
-  virtual uint32_t index(uint64_t addr, int partition) {
+  virtual uint32_t index(uint64_t addr, int partition) override {
     return (addr >> IOfst) & mask;
   }
 };
@@ -42,9 +40,8 @@ class IndexSkewed : public IndexFuncBase
   CMHasher hashers[P];
 public:
   IndexSkewed() : IndexFuncBase((1ul << IW) - 1) {}
-  virtual ~IndexSkewed() {}
 
-  virtual uint32_t index(uint64_t addr, int partition) {
+  virtual uint32_t index(uint64_t addr, int partition) override {
     return (hashers[partition](addr >> IOfst)) & mask;
   }
 

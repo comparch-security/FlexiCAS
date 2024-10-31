@@ -14,16 +14,18 @@
 #define L2WN 8
 
 int main() {
-  using policy_l2 = MESIPolicy<false, true, policy_memory>;
+  using remap_gen = ct::remap::types<L2IW, L2WN, Data64B, ReplaceSRRIP, policy_memory, void, true>;
+  using policy_l2 = MSIPolicy<false, true, policy_memory>;
   using policy_l1d = MSIPolicy<true, false, policy_l2>;
   using policy_l1i = MSIPolicy<true, true, policy_l2>;
   auto l1d = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1d, false, void, true>(NCore, "l1d");
   auto core_data = get_l1_core_interface(l1d);
   auto l1i = cache_gen_l1<L1IW, L1WN, Data64B, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l1i, true, void, true>(NCore, "l1i");
   auto core_inst = get_l1_core_interface(l1i);
-  auto l2 = cache_gen_inc<L2IW, L2WN, Data64B, MetadataBroadcastBase, ReplaceSRRIP, MESIPolicy, policy_l2, true, void, true>(1, "l2")[0];
+  auto l2 = remap_gen::cache_gen_remap(1, "l2")[0];
   auto mem = new SimpleMemoryModel<Data64B,void,true>("mem");
   SimpleTracer tracer(true);
+  SimpleEVRemapper Remapper(10);
 
   for(int i=0; i<NCore; i++) {
     l1i[i]->outer->connect(l2->inner);
@@ -34,6 +36,7 @@ int main() {
   l2->outer->connect(mem);
 
   l2->attach_monitor(&tracer);
+  l2->attach_monitor(&Remapper);
   mem->attach_monitor(&tracer);
   tracer.start();
 

@@ -25,7 +25,7 @@ class SliceHashNorm : public SliceHashBase
 {
 public:
   SliceHashNorm(int s): SliceHashBase(s) {}
-  virtual uint32_t operator () (uint64_t addr) { return (addr >> BlkOfst) % slice; }
+  virtual uint32_t operator () (uint64_t addr) override { return (addr >> BlkOfst) % slice; }
 };
 
 /////////////////////////////////
@@ -41,7 +41,7 @@ public:
     else             assert(0 == "The number of slices must be equal to 2, 4 or 8!");
   }
 
-  uint32_t virtual operator () (uint64_t addr) { return hash(addr); }
+  uint32_t virtual operator () (uint64_t addr) override { return hash(addr); }
 
 };
 
