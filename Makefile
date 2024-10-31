@@ -23,7 +23,7 @@ else ifeq ($(MODE), debug-multi)
 	REGRESS_LD_FLAGS = -lboost_stacktrace_backtrace -ldl -lbacktrace
 else
 	CXXFLAGS = $(CXXSTD) -O2 -I. -fPIC
-	CXXFLAGS_MULTI = $(CXXFLAGS) -DTRY_LOCK -DNDEBUG
+	CXXFLAGS_MULTI = $(CXXFLAGS)  -DNDEBUG
 	REGRESS_LD_FLAGS =
 endif
 

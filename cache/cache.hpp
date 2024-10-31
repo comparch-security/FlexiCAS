@@ -96,7 +96,7 @@ public:
       while(true) {
         auto state = cache_set_state[s].read();
         if(prio <= state) { 
-#ifndef TRY_LOCK
+#ifndef SET_TRY_LOCK
           cache_set_state[s].wait();
 #endif 
           continue; 
@@ -123,7 +123,7 @@ public:
         auto state = cache_set_state[s].read();
         assert(state >= prio);
         if(prio_upper >= state) break;
-#ifndef TRY_LOCK
+#ifndef SET_TRY_LOCK
         cache_set_state[s].wait();
 #endif
       }

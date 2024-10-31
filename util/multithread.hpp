@@ -38,14 +38,14 @@ public:
 
   __always_inline void write(T v, bool notify = false) {
     var->store(v);
-#ifndef TRY_LOCK
+#ifndef SET_TRY_LOCK
     if(notify) cv.notify_one();
 #endif
   }
 
   __always_inline bool swap(T& expect, T v, bool notify = false) {
     bool rv = var->compare_exchange_strong(expect, v);
-#ifndef TRY_LOCK
+#ifndef SET_TRY_LOCK
     if(rv && notify) {
       std::unique_lock lk(mtx);
       cv.notify_one();
@@ -55,7 +55,7 @@ public:
   }
 
   __always_inline void wait(bool report = false) {
-#ifndef TRY_LOCK
+#ifndef SET_TRY_LOCK
     using namespace std::chrono_literals;
     std::unique_lock lk(mtx);
     auto result = cv.wait_for(lk, 100us);

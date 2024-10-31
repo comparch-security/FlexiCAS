@@ -8,18 +8,17 @@
 #include <iostream>
 #include <cstdlib>  
 
-#define L1IW 4
-#define L1WN 4
+#define L1IW 6
+#define L1WN 8
 
 #define L2IW 5
-#define L2WN 8
+#define L2WN 10
 
-#define L3IW 10
+#define L3IW 14
 #define L3WN 16
 
 #define PAddrN 1024
 #define SAddrN 256
-#define MCore 4
 #define TestN ((PAddrN + SAddrN) * 200 * 2)
 
 #define Repe 10
@@ -31,12 +30,13 @@ typedef void data_type;
 #endif
 
 int main(int argc, char* argv[]) {
-  if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <NCore>" << std::endl;
+  if (argc < 3) {
+    std::cerr << "Usage: " << argv[0] << " <MCore> <NCore>" << std::endl;
     return 1;
   }
 
-  int NCore = std::atoi(argv[1]);
+  int MCore = std::atoi(argv[1]);
+  int NCore = std::atoi(argv[2]);
 
   assert(NCore <= MCore);
 
