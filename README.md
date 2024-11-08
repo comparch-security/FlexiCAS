@@ -3,12 +3,13 @@ FlexiCAS: A ***Flexi***ble ***C***ache ***A***rchitectural ***S***imulator
 
 GPL licensed.
 
-Copyright (c) 2023-2023 Wei Song <[wsong83@gmail.com](mailto:wsong83@gmail.com)> at the Institute of
+Copyright (c) 2023-2024 Wei Song <[wsong83@gmail.com](mailto:wsong83@gmail.com)> at the Institute of
 Information Engineering, Chinese Academy of Sciences.
 
 #### Authors:
 * [Wei Song](mailto:wsong83@gmail.com) (SKLOIS, Institute of Information Engineering, Chinese Academy of Sciences)
 * [Jinchi Han](mailto:hanjinchi@iie.ac.cn) (SKLOIS, Institute of Information Engineering, Chinese Academy of Sciences)
+* [Zhidong Wang](mailto:wangzhidong@iie.ac.cn) (SKLOIS, Institute of Information Engineering, Chinese Academy of Sciences)
 
 ## Features
 
