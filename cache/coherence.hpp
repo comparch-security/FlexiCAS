@@ -182,7 +182,7 @@ public:
         break;
       }
     } else {
-      hit = cache->hit(addr, &ai, &s, &w);
+      hit = cache->hit(addr, &ai, &s, &w, 0, false);
       if(hit) std::tie(meta, data) = cache->access_line(ai, s, w);
     }
 
@@ -198,12 +198,12 @@ public:
       if constexpr (EnMT) {assert(meta->match(addr)); meta_outer->lock(); }
       if((writeback = Policy::probe_need_writeback(outer_cmd, meta))) { if(data_outer) data_outer->copy(data); } // writeback if dirty
       Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-      cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(outer_cmd), writeback, meta, data, delay);
+      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
       if constexpr (EnMT) { meta_outer->unlock(); meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
     } else {
       if constexpr (EnMT) meta_outer->lock();
       Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-      cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(outer_cmd), writeback, meta, data, delay);
+      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
       if constexpr (EnMT) meta_outer->unlock();
     }
     return std::make_pair(hit, writeback);
@@ -264,7 +264,7 @@ protected:
     auto writeback = Policy::writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     Policy::meta_after_evict(meta);
-    cache->hook_manage(addr, ai, s, w, true, true, writeback.first, meta, data, delay);
+    cache->hook_manage(addr, ai, s, w, true, 1, writeback.first, meta, data, delay);
   }
 
   virtual std::tuple<bool, CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
@@ -301,7 +301,7 @@ protected:
         break;
       }
     } else {
-      hit = cache->hit(addr, &ai, &s, &w);
+      hit = cache->hit(addr, &ai, &s, &w, 0, false);
       if(!hit && do_replace) cache->replace(addr, &ai, &s, &w, prio);
       if(hit || do_replace)  std::tie(meta, data) = cache->access_line(ai, s, w);
     }
@@ -359,7 +359,7 @@ protected:
       if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
       Policy::meta_after_flush(cmd, meta, cache);
-      cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(cmd), writeback.first, meta, data, delay);
+      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0), writeback.first, meta, data, delay); // identify flush to hook_manager
 
       if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::flush); }
     }

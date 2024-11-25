@@ -156,17 +156,17 @@ namespace ct {
     struct types {
       using meta_index_type = IndexSkewed<IW, 6, P>;
       using data_index_type = IndexRandom<IW, 6>;
-      using meta_replace_type = MRPT<IW, WN, true, true, false>;
+      using meta_replace_type = MRPT<IW, WN+EW, true, true, false>;
       using data_replace_type = DRPT<IW, WN*P, true, true, false>;
       using meta_metadata_type = MirageMetadataMSIBroadcast<48,0,6>;
       using data_metadata_type = MirageDataMeta;
-      using cache_base_type = MirageCache<IW, WN, EW, P, MaxRelocN,
+      using cache_base_type = MirageCache<IW, WN, EW, P,
                                           meta_metadata_type, DT, data_metadata_type,
                                           meta_index_type, data_index_type,
                                           meta_replace_type, data_replace_type,
-                                          DLY, EnMon, EnableRelocation>;
+                                          DLY, EnMon>;
       using policy_type = MirageMSIPolicy<meta_metadata_type, cache_base_type, Outer>;
-      using input_type = MirageInnerCohPort<policy_type, false, meta_metadata_type, cache_base_type>;
+      using input_type = InnerCohPortT<MirageInnerCohPortUncachedT<EnableRelocation, MaxRelocN>::template type, policy_type, false, meta_metadata_type, cache_base_type>;
       using output_type = OuterCohPortUncached<policy_type, false>;
       using cache_type = CoherentCacheNorm<cache_base_type, output_type, input_type>;
       static inline auto cache_gen_mirage(int size, const std::string& name_prefix) {

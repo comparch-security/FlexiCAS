@@ -16,7 +16,7 @@
 ///////////////////////////////////
 // Base class
 // EF: empty first, EnMT: multithread
-template<bool EF, int NW, bool EnMT> requires NW <= 64
+template<bool EF, int NW, bool EnMT> requires (NW <= 64)
 class ReplaceFuncBase
 {
 protected:
@@ -152,9 +152,9 @@ public:
 #endif
   }
 
-  virtual void replace(uint32_t s, uint32_t *w) {
+  virtual void replace(uint32_t s, uint32_t *w, bool empty_fill_rt = true) {
     int32_t i = 0;
-    if constexpr (EF) {
+    if (EF && empty_fill_rt) {
       i = alloc_from_free(s);
       if (i<0) i = select(s);
     } else {
@@ -168,8 +168,12 @@ public:
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) = 0;
 
-  virtual void invalid(uint32_t s, uint32_t w) {
+  virtual void invalid(uint32_t s, uint32_t w, bool flush = false) {
     if((int32_t)w != alloc_map[s]) list_to_free(s, w);
+  }
+
+  virtual uint32_t eviction_rank(uint32_t s, uint32_t w) const {
+    return used_map[s][w];
   }
 };
 
@@ -282,9 +286,16 @@ public:
     if constexpr (EnMT) RPT::delist_from_free(s, w, demand_acc);
   }
 
-  virtual void invalid(uint32_t s, uint32_t w) override {
+  virtual void invalid(uint32_t s, uint32_t w, bool flush) override {
     used_map[s][w] = 3;
-    RPT::invalid(s, w);
+    RPT::invalid(s, w, false);
+  }
+
+  virtual uint32_t eviction_rank(uint32_t s, uint32_t w) const {
+    uint32_t prio = used_map[s][w];
+    uint32_t rank = 0;
+    for(uint32_t i=1; i<NW; i++) if(used_map[s][i] > prio || (used_map[s][i] == prio && i < w)) rank++;
+    return rank;
   }
 };
 
@@ -312,6 +323,10 @@ public:
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] && demand_acc) this->set_alloc_map(s, -1);
     if constexpr (EnMT) RPT::delist_from_free(s, w, demand_acc);
+  }
+
+  virtual uint32_t eviction_rank(uint32_t s, uint32_t w) const {
+    return (*loc_random)() % NW;
   }
 };
 

@@ -139,7 +139,7 @@ public:
   }
 
 private:
-  virtual void hook_manage(uint64_t, uint32_t, uint32_t, uint32_t, bool, bool, bool, const CMMetadataBase *, const CMDataBase *, uint64_t *) override {}
+  virtual void hook_manage(uint64_t, uint32_t, uint32_t, uint32_t, bool, uint32_t, bool, const CMMetadataBase *, const CMDataBase *, uint64_t *) override {}
   virtual void query_loc_resp(uint64_t, std::list<LocInfo> *) override {}
   virtual std::pair<bool,bool> probe_req(uint64_t, CMMetadataBase *, CMDataBase *, coh_cmd_t, uint64_t *) override { return std::make_pair(false,false); }
 };

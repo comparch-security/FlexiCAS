@@ -160,8 +160,8 @@ public:
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w,
-                   uint16_t prio = 0, // transaction priority
-                   bool check_and_set = false // whether to check and set the priority if hit
+                   uint16_t prio, // transaction priority
+                   bool check_and_set // whether to check and set the priority if hit
                    ) = 0;
 
   __always_inline bool hit(uint64_t addr) {
@@ -340,8 +340,8 @@ public:
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P && hit && evict) replacer[ai].invalid(s, w);
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if(ai < P && hit && evict) replacer[ai].invalid(s, w, evict == 2);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
   }
 
