@@ -180,10 +180,11 @@ protected:
 public:
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
+    bool act_as_prefetch = coh::is_prefetch(cmd) && Policy::is_uncached(); // only tweak replace priority at the LLC accoridng to [Guo2022-MICRO]
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, coh::is_prefetch(cmd), meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
 
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
@@ -296,7 +297,7 @@ protected:
     if constexpr (!Policy::is_uncached()) {
       outer->writeback_req(addr, nullptr, nullptr, coh::cmd_for_flush(), delay);
     } else {
-      auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::flush, false, false, delay);
+      auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::flush, false, delay);
       auto [probe, probe_cmd] = Policy::flush_need_sync(cmd, meta);
 
       if(!hit) {
@@ -347,10 +348,11 @@ protected:
 public:
   virtual void acquire_resp(uint64_t addr, CMDataBase *data_inner, CMMetadataBase *meta_inner, coh_cmd_t cmd, uint64_t *delay) override {
     auto [meta, data, ai, s, w, hit] = access_line(addr, cmd, XactPrio::acquire, delay);
+    bool act_as_prefetch = coh::is_prefetch(cmd) && Policy::is_uncached(); // only tweak replace priority at the LLC accoridng to [Guo2022-MICRO]
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, coh::is_prefetch(cmd), meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
 
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
@@ -480,7 +482,7 @@ protected:
     if constexpr (!Policy::is_uncached()) {
       outer->writeback_req(addr, nullptr, nullptr, coh::cmd_for_flush(), delay);
     } else {
-      auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::flush, false, false, delay);
+      auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::flush, false, delay);
       auto [probe, probe_cmd] = Policy::flush_need_sync(cmd, meta);
       if(!hit) return;
 

@@ -268,7 +268,7 @@ protected:
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) override { // common function for access a line in the cache
     auto cache = static_cast<CT *>(InnerCohPortBase::cache);
-    auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, prio, true, false, delay);
+    auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, prio, true, delay);
     if(hit) {
       auto sync = Policy::access_need_sync(cmd, meta);
       if(sync.first) {
@@ -281,29 +281,16 @@ protected:
     } else { // miss
       if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
       bind_data(addr, meta, data, ai, s, w, delay);
-      outer->acquire_req(addr, meta, data, Policy::cmd_for_outer_acquire(cmd), delay); // fetch the missing block
+      outer->acquire_req(addr, meta, data, coh::is_prefetch(cmd) ? cmd : Policy::cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
   }
 
   virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
-    auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::flush, false, false, delay);
+    auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::flush, false, delay);
     if(!hit) return;
     Inner::flush_line(addr, cmd, delay);
     static_cast<CT *>(InnerCohPortBase::cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
-  }
-
-  virtual void prefetch_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
-    auto cache = static_cast<CT *>(InnerCohPortBase::cache);
-    auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::acquire, true, true, delay);
-    if(!hit) {
-      if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
-      bind_data(addr, meta, data, ai, s, w, delay);
-      outer->acquire_req(addr, meta, data, coh::cmd_for_prefetch(), delay); // fetch the missing block
-      cache->hook_read(addr, ai, s, w, hit, true, meta, data, delay);
-      this->finish_record(addr, coh::cmd_for_finish(-1), !hit, meta, ai, s);
-      this->finish_resp(addr, coh::cmd_for_finish(-1));
-    }
   }
 };
 
