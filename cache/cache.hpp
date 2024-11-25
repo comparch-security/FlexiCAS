@@ -160,8 +160,8 @@ public:
   virtual bool hit(uint64_t addr,
                    uint32_t *ai,  // index of the hitting cache array in "arrays"
                    uint32_t *s, uint32_t *w,
-                   uint16_t prio = 0, // transaction priority
-                   bool check_and_set = false // whether to check and set the priority if hit
+                   uint16_t prio, // transaction priority
+                   bool check_and_set // whether to check and set the priority if hit
                    ) = 0;
 
   __always_inline bool hit(uint64_t addr) {
@@ -226,6 +226,12 @@ protected:
   std::mutex                           meta_buffer_mutex;
   std::condition_variable              meta_buffer_cv;
 
+  virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int) {
+    if constexpr (P==1) *ai = 0;
+    else                *ai = ((*loc_random)() % P);
+    *s = indexer.index(addr, *ai);
+  }
+
 public:
   CacheSkewed(std::string name, unsigned int extra_par = 0, unsigned int extra_way = 0)
     : CacheBase(name), meta_buffer_pool(MSHR)
@@ -273,9 +279,7 @@ public:
   }
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
-    if constexpr (P==1) *ai = 0;
-    else                *ai = ((*loc_random)() % P);
-    *s = indexer.index(addr, *ai);
+    replace_choose_set(addr, ai, s, genre);
     if(EnMT) {
       this->set_mt_state(*ai, *s, prio);
       // double check the miss status
@@ -316,6 +320,16 @@ public:
     }
   }
 
+  __always_inline void swap(uint64_t a_addr, uint64_t b_addr, CMMetadataBase *a_meta, CMMetadataBase *b_meta, CMDataBase *a_data, CMDataBase *b_data) {
+    auto buffer_meta = meta_copy_buffer();
+    auto buffer_data = a_data ? data_copy_buffer() : nullptr;
+    relocate(a_addr, a_meta, buffer_meta, a_data, buffer_data);
+    relocate(b_addr, b_meta, a_meta, b_data, a_data);
+    relocate(a_addr, buffer_meta, b_meta, buffer_data, b_data);
+    meta_return_buffer(buffer_meta);
+    data_return_buffer(buffer_data);
+  }
+
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) replacer[ai].access(s, w, true, prefetch);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
@@ -326,8 +340,8 @@ public:
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P && hit && evict) replacer[ai].invalid(s, w);
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if(ai < P && hit && evict) replacer[ai].invalid(s, w, evict == 2);
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
   }
 

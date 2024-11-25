@@ -126,6 +126,7 @@ public:
           xact_cond[i]->wait(lk, [&, i]{return xact_queue[i].empty();});
           xact_queue[i].push_back(act);
         }
+        std::unique_lock lk(*xact_mutux[core]);
         xact_queue[core].push_back(act);
       }else{
         std::unique_lock lk(*xact_mutux[core]);

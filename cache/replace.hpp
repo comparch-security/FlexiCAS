@@ -7,18 +7,23 @@
 #include "util/random.hpp"
 #include "util/multithread.hpp"
 
+#include <version>
+#ifdef __cpp_lib_bitops
+// for the popcount() supported in C++20
+#include <bit>
+#endif
+
 ///////////////////////////////////
 // Base class
-// EF: empty first
-template<bool EF>
+// EF: empty first, EnMT: multithread
+template<bool EF, int NW, bool EnMT> requires (NW <= 64)
 class ReplaceFuncBase
 {
-  const uint32_t NW;
 protected:
   std::vector<std::vector<uint32_t> > used_map; // at the size of 16, vector is actually faster than list and do not require alloc
-  std::vector<std::vector<bool> > free_map;
+  std::vector<uint64_t> free_map_st;            // free map when single thread
+  std::vector<std::atomic<uint64_t> *> free_map_mt; // multi-thread version
   std::vector<int32_t> alloc_map; // record the way allocated for the next access (only one allocated ay at any time)
-  std::vector<uint32_t> free_num;
 
 #ifdef CHECK_MULTI
   #ifdef BOOST_STACKTRACE_LINK
@@ -28,26 +33,47 @@ protected:
   #endif
 #endif
 
-  __always_inline uint32_t alloc_from_free(uint32_t s) {
-    free_num[s]--;
-    for(uint32_t i=0; i<NW; i++)
-      if(free_map[s][i]) {
-        free_map[s][i] = false;
-        return i;
-      }
-
-    assert(0 == "replacer free_map corrupted!");
-    return -1;
+  __always_inline int32_t alloc_from_free(uint32_t s) {
+    while(true) {
+      auto fmap = EnMT ? free_map_mt[s]->load() : free_map_st[s];
+      if(fmap) {
+        auto way_oh = fmap & (~fmap + 1ull);
+        if constexpr (EnMT) {
+          if(!free_map_mt[s]->compare_exchange_strong(fmap, fmap & ~way_oh)) continue;
+        } else {
+          free_map_st[s] &= ~way_oh;
+        }
+        for(int i=0; i<64; i++) if(way_oh == (1ull << i)) return i;
+        assert(0 == "replacer free_map corrupted!");
+        return -1;
+      } else
+        return -1;
+    }
   }
 
   virtual uint32_t select(uint32_t s) = 0;
 
-  __always_inline void delist_from_free(uint32_t s, uint32_t w, bool demand_acc) {
-    // in multithread simulation, a simultaneous probe may invalidate a cache block waiting for permission promotion
-    if(!free_map[s][w]) return;
-    assert(demand_acc); // assume such situation can occur only in permission promotion
-    free_map[s][w] = false;
-    free_num[s]--;
+  __always_inline void delist_from_free(uint32_t s, uint32_t w) {
+    uint64_t way_oh = 1ull << w;
+    if constexpr (EnMT) {
+      while(true) {
+        auto fmap = free_map_mt[s]->load();
+        if(0 == (fmap & way_oh)) return;
+        if(free_map_mt[s]->compare_exchange_strong(fmap, fmap & ~way_oh)) return;
+      }
+    } else
+      free_map_st[s] &= ~way_oh;
+  }
+
+  __always_inline void list_to_free(uint32_t s, uint32_t w) {
+    uint64_t way_oh = 1ull << w;
+    if constexpr (EnMT) {
+      while(true) {
+        auto fmap = free_map_mt[s]->load();
+        if(free_map_mt[s]->compare_exchange_strong(fmap, fmap | way_oh)) return;
+      }
+    } else
+      free_map_st[s] |= way_oh;
   }
 
   __always_inline void set_alloc_map(uint32_t s, int32_t v) {
@@ -90,8 +116,8 @@ protected:
   }
 
 public:
-  ReplaceFuncBase(uint32_t nset, uint32_t nway)
-    :NW(nway), used_map(nset), free_map(nset), alloc_map(nset, -1), free_num(nset, nway) {
+  ReplaceFuncBase(uint32_t nset)
+    :used_map(nset), free_map_st(nset), free_map_mt(nset, nullptr), alloc_map(nset, -1) {
 #ifdef CHECK_MULTI
   #ifdef BOOST_STACKTRACE_LINK
     alloc_record.resize(nset, {0, ""});
@@ -99,34 +125,55 @@ public:
     alloc_record.resize(nset, 0);
   #endif
 #endif
-    for (auto &s: free_map) s.resize(NW, true);
+    constexpr uint64_t fmap = NW < 64 ? (1ull << NW) - 1 : ~(0ull);
+    if constexpr (EnMT) {
+      for (auto &s: free_map_mt) s = new std::atomic<uint64_t>(fmap);
+    } else
+      for (auto &s: free_map_st) s = fmap;
   }
 
-  virtual ~ReplaceFuncBase() = default;
+  virtual ~ReplaceFuncBase() {
+    if constexpr (EnMT) for (auto s: free_map_mt) delete s;
+  }
 
-  __always_inline uint32_t get_free_num(uint32_t s) const { return free_num[s]; }
+  __always_inline uint32_t get_free_num(uint32_t s) { // return the number of free places by popcount the free map
+    auto fmap = EnMT ? free_map_mt[s]->load() : free_map_st[s];
+#ifdef __cpp_lib_bitops
+    return std::popcount(fmap);
+#elif defined __GNUG__
+    return __builtin_popcountll(fmap);
+#else
+    uint32_t rv = 0;
+    while(fmap) {
+      rv += (fmap & 0x1ull);
+      fmap >> 1;
+    }
+    return rv;
+#endif
+  }
 
-  virtual void replace(uint32_t s, uint32_t *w) {
-    uint32_t i = 0;
-    if constexpr (EF) {
-      if(free_num[s] > 0) i = alloc_from_free(s);
-      else                i = select(s);
+  virtual void replace(uint32_t s, uint32_t *w, bool empty_fill_rt = true) {
+    int32_t i = 0;
+    if (EF && empty_fill_rt) {
+      i = alloc_from_free(s);
+      if (i<0) i = select(s);
     } else {
       i = select(s);
-      if(free_map[s][i]) { free_num[s]--; free_map[s][i] = false; }
+      delist_from_free(s, i);
     }
-    assert(i < NW || 0 == "replacer used_map corrupted!");
+    assert((uint32_t)i < NW || 0 == "replacer used_map corrupted!");
 	this->set_alloc_map(s, i);
     *w = i;
   }
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) = 0;
 
-  virtual void invalid(uint32_t s, uint32_t w) {
-    if((int32_t)w != alloc_map[s]) {
-      free_map[s][w] = true;
-      free_num[s]++;
-    }
+  virtual void invalid(uint32_t s, uint32_t w, bool flush = false) {
+    if((int32_t)w != alloc_map[s]) list_to_free(s, w);
+  }
+
+  virtual uint32_t eviction_rank(uint32_t s, uint32_t w) const {
+    return used_map[s][w];
   }
 };
 
@@ -134,10 +181,10 @@ public:
 // FIFO replacement
 // IW: index width, NW: number of ways
 // EF: empty first, DUO: demand update only (do not update state for release)
-template<int IW, int NW, bool EF = true, bool DUO = true>
-class ReplaceFIFO : public ReplaceFuncBase<EF>
+template<int IW, int NW, bool EF, bool DUO, bool EnMT>
+class ReplaceFIFO : public ReplaceFuncBase<EF, NW, EnMT>
 {
-  typedef ReplaceFuncBase<EF> RPT;
+  typedef ReplaceFuncBase<EF, NW, EnMT> RPT;
 protected:
   using RPT::alloc_map;
   using RPT::used_map;
@@ -150,7 +197,7 @@ protected:
   }
 
 public:
-  ReplaceFIFO() : RPT(1ul << IW, NW) {
+  ReplaceFIFO() : RPT(1ul << IW) {
     for (auto &s: used_map) {
       s.resize(NW);
       for(uint32_t i=0; i<NW; i++) s[i] = i;
@@ -169,7 +216,7 @@ public:
         used_map[s][w] = 0; // insert at LRU position
       }
     }
-    RPT::delist_from_free(s, w, demand_acc);
+    if constexpr (EnMT) RPT::delist_from_free(s, w);
   }
 };
 
@@ -177,10 +224,10 @@ public:
 // LRU replacement
 // IW: index width, NW: number of ways
 // EF: empty first, DUO: demand update only (do not update state for release)
-template<int IW, int NW, bool EF = true, bool DUO = true>
-class ReplaceLRU : public ReplaceFIFO<IW, NW, EF, DUO>
+template<int IW, int NW, bool EF, bool DUO, bool EnMT>
+class ReplaceLRU : public ReplaceFIFO<IW, NW, EF, DUO, EnMT>
 {
-  typedef ReplaceFuncBase<EF> RPT;
+  typedef ReplaceFuncBase<EF, NW, EnMT> RPT;
 protected:
   using RPT::alloc_map;
   using RPT::used_map;
@@ -198,7 +245,7 @@ public:
       }
     }
     if((int32_t)w == alloc_map[s] && demand_acc) this->set_alloc_map(s, -1);
-    RPT::delist_from_free(s, w, demand_acc);
+    if constexpr (EnMT) RPT::delist_from_free(s, w);
   }
 };
 
@@ -206,10 +253,10 @@ public:
 // Static RRIP replacement
 // IW: index width, NW: number of ways
 // EF: empty first, DUO: demand update only (do not update state for release)
-template<int IW, int NW, bool EF = true, bool DUO = true>
-class ReplaceSRRIP : public ReplaceFuncBase<EF>
+template<int IW, int NW, bool EF, bool DUO, bool EnMT>
+class ReplaceSRRIP : public ReplaceFuncBase<EF, NW, EnMT>
 {
-  typedef ReplaceFuncBase<EF> RPT;
+  typedef ReplaceFuncBase<EF, NW, EnMT> RPT;
 protected:
   using RPT::used_map;
   using RPT::alloc_map;
@@ -224,7 +271,7 @@ protected:
   }
 
 public:
-  ReplaceSRRIP() : RPT(1ul << IW, NW) {
+  ReplaceSRRIP() : RPT(1ul << IW) {
     for (auto &s: used_map) s.resize(NW, 3);
   }
 
@@ -236,12 +283,19 @@ public:
         used_map[s][w] = 3;
     }
     if((int32_t)w == alloc_map[s] && demand_acc) this->set_alloc_map(s, -1);
-    RPT::delist_from_free(s, w, demand_acc);
+    if constexpr (EnMT) RPT::delist_from_free(s, w, demand_acc);
   }
 
-  virtual void invalid(uint32_t s, uint32_t w) override {
+  virtual void invalid(uint32_t s, uint32_t w, bool flush) override {
     used_map[s][w] = 3;
-    RPT::invalid(s, w);
+    RPT::invalid(s, w, false);
+  }
+
+  virtual uint32_t eviction_rank(uint32_t s, uint32_t w) const {
+    uint32_t prio = used_map[s][w];
+    uint32_t rank = 0;
+    for(uint32_t i=1; i<NW; i++) if(used_map[s][i] > prio || (used_map[s][i] == prio && i < w)) rank++;
+    return rank;
   }
 };
 
@@ -249,10 +303,10 @@ public:
 // Random replacement
 // IW: index width, NW: number of ways
 // EF: empty first, DUO: demand update only (do not update state for release)
-template<int IW, int NW, bool EF = true, bool DUO = true>
-class ReplaceRandom : public ReplaceFuncBase<EF>
+template<int IW, int NW, bool EF, bool DUO, bool EnMT>
+class ReplaceRandom : public ReplaceFuncBase<EF, NW, EnMT>
 {
-  typedef ReplaceFuncBase<EF> RPT;
+  typedef ReplaceFuncBase<EF, NW, EnMT> RPT;
 protected:
   using RPT::alloc_map;
 
@@ -263,12 +317,16 @@ protected:
   }
 
 public:
-  ReplaceRandom() : RPT(1ul << IW, NW), loc_random(cm_alloc_rand32()) {}
+  ReplaceRandom() : RPT(1ul << IW), loc_random(cm_alloc_rand32()) {}
   virtual ~ReplaceRandom() override { delete loc_random; }
 
   virtual void access(uint32_t s, uint32_t w, bool demand_acc, bool prefetch) override {
     if((int32_t)w == alloc_map[s] && demand_acc) this->set_alloc_map(s, -1);
-    RPT::delist_from_free(s, w, demand_acc);
+    if constexpr (EnMT) RPT::delist_from_free(s, w, demand_acc);
+  }
+
+  virtual uint32_t eviction_rank(uint32_t s, uint32_t w) const {
+    return (*loc_random)() % NW;
   }
 };
 

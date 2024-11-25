@@ -60,6 +60,8 @@ public:
   virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void magic_func(uint64_t addr, uint64_t magic_id, void *magic_data) = 0; // an interface for special communication with a specific monitor if attached
+  virtual void pause() = 0;
+  virtual void resume() = 0;
 };
 
 // class monitor helper
@@ -72,7 +74,7 @@ public:
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
   // probe, invalidate and writeback
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) = 0;
   // an interface for special communication with a specific monitor if attached
   __always_inline void monitor_magic_func(uint64_t addr, uint64_t magic_id, void *magic_data) {
     monitors->magic_func(addr, magic_id, magic_data);
@@ -125,17 +127,29 @@ public:
           return;
     }
   }
+
+  virtual void pause() override {
+    if constexpr (EnMon) {
+      for(auto monitor : monitors) monitor->pause();
+    }
+  }
+
+  virtual void resume() override {
+    if constexpr (EnMon) {
+      for(auto monitor : monitors) monitor->resume();
+    }
+  }
 };
 
 // Simple Access Monitor
 class SimpleAccMonitor : public MonitorBase
 {
 protected:
-  uint64_t cnt_access, cnt_miss, cnt_write, cnt_write_miss, cnt_invalid;
+  uint64_t cnt_access = 0, cnt_miss = 0, cnt_write = 0, cnt_write_miss = 0, cnt_invalid = 0;
   bool active;
 
 public:
-  SimpleAccMonitor() : cnt_access(0), cnt_miss(0), cnt_write(0), cnt_write_miss(0), cnt_invalid(0), active(false) {}
+  SimpleAccMonitor(bool active = false) : active(active) {}
 
   virtual bool attach(uint64_t cache_id) override { return true; }
 
@@ -266,6 +280,79 @@ public:
   }
 
   virtual void stop() { globalPrinter->stop(); print_thread.join(); }
+};
+
+// Simple Access Monitor
+class AddrTracer : public MonitorBase
+{
+protected:
+  uint64_t target;
+  bool active;
+  bool compact_data = true;
+
+  __always_inline void print(std::string& msg) { std::cout << msg << std::endl; }
+
+public:
+  AddrTracer(bool active = false) : active(active) {}
+
+  virtual bool attach(uint64_t cache_id) override { return true; }
+
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  override {
+    if(!active || addr != target) return;
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s read  %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
+
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active || target != addr) return;
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s write %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
+
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+    if(!active || target != addr) return;
+    std::string msg;  msg.reserve(100);
+    msg += (boost::format("%-10s evict %016x %02d %04d %02d  ") % UniqueID::name(cache_id) % addr % ai % s % w).str() ;
+
+    if(meta)
+      msg.append(" [").append(meta->to_string()).append("]");
+    else if(data)
+      msg.append("      ");
+
+    if(data)
+      msg.append(" ").append(compact_data ? (boost::format("%016x") % (data->read(0))).str() : data->to_string());
+
+    print(msg);
+  }
+
+  virtual void start() { active = true;  }
+  virtual void stop()  { active = false; }
+  virtual void pause() { active = false; }
+  virtual void resume() { active = true; }
+  virtual void reset() {  active = false; }
+
+  // special function supported by PFC only
+  void set_target(uint64_t addr) { target = addr; }
 };
 
 #endif

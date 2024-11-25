@@ -8,8 +8,10 @@ template<bool isL1, bool uncached, typename Outer, bool EnDir = false> requires 
 struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // always not L1
 {
   static __always_inline std::pair<bool, coh_cmd_t> access_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
-    if(coh::is_fetch_write(cmd))    return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
-    else                            return std::make_pair(true, coh::cmd_for_probe_downgrade(cmd.id));
+    if constexpr (!isL1){
+      if(coh::is_fetch_write(cmd))    return std::make_pair(true, coh::cmd_for_probe_release(cmd.id));
+      else                            return std::make_pair(true, coh::cmd_for_probe_downgrade(cmd.id));
+    } else return std::make_pair(false, coh::cmd_for_null());
   }
 
   static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) { // after grant to inner
@@ -34,7 +36,8 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // alway
 
   static __always_inline std::pair<bool, coh_cmd_t> writeback_need_sync(const CMMetadataBase *meta) {
     // for exclusive cache, no sync is needed for normal way, always sync for extended way
-    return meta->is_extend() ? std::make_pair(true, coh::cmd_for_probe_release()) : std::make_pair(false, coh::cmd_for_null());
+    if constexpr (isL1) return std::make_pair(false, coh::cmd_for_null());
+    else                return meta->is_extend() ? std::make_pair(true, coh::cmd_for_probe_release()) : std::make_pair(false, coh::cmd_for_null());
   }
 
   static __always_inline void meta_after_release(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase* meta_inner) {
@@ -49,7 +52,8 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // alway
 
   static __always_inline std::pair<bool, coh_cmd_t> release_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta, const CMMetadataBase* meta_inner) {
     // if the inner cache is not exclusive (M/O/E), probe to see whether there are other copies
-    return std::make_pair(!meta_inner->allow_write(), coh::cmd_for_probe_writeback(cmd.id));
+    if constexpr (isL1) return std::make_pair(false, coh::cmd_for_null());
+    else                return std::make_pair(!meta_inner->allow_write(), coh::cmd_for_probe_writeback(cmd.id));
   }
 
   static __always_inline std::pair<bool, coh_cmd_t> inner_need_release() {
@@ -58,9 +62,11 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // alway
 
   static __always_inline std::pair<bool, coh_cmd_t> flush_need_sync(coh_cmd_t cmd, const CMMetadataBase *meta) {
     assert(uncached);
-    if(coh::is_evict(cmd))             return std::make_pair(true,  coh::cmd_for_probe_release());
-    else if(meta && meta->is_shared()) return std::make_pair(false, coh::cmd_for_null());
-    else                               return std::make_pair(true,  coh::cmd_for_probe_writeback());
+    if constexpr (!isL1){
+      if(coh::is_evict(cmd))             return std::make_pair(true,  coh::cmd_for_probe_release());
+      else if(meta && meta->is_shared()) return std::make_pair(false, coh::cmd_for_null());
+      else                               return std::make_pair(true,  coh::cmd_for_probe_writeback());
+    } else return std::make_pair(false, coh::cmd_for_null());
   }
 };
 
@@ -109,21 +115,15 @@ class CacheSkewedExclusive : public CacheSkewed<IW, NW, P, MT, DT, IDX, RPC, DLY
   using CacheMonitorSupport::monitors;
 protected:
   DRPC ext_replacer[P];
+
 public:
   CacheSkewedExclusive(std::string name) : CacheT(name, 0, (EnDir ? DW : 0)) {}
 
   virtual bool replace(uint64_t addr, uint32_t *ai, uint32_t *s, uint32_t *w, uint16_t prio, unsigned int genre = 0) override {
-    if constexpr (!EnDir) CacheT::replace(addr, ai, s, w, prio, 0);
-    else {
-      if(0 == genre) CacheT::replace(addr, ai, s, w, prio, 0);
-      else {
-        if constexpr (P==1) *ai = 0;
-        else                *ai = ((*loc_random)() % P);
-        *s = indexer.index(addr, *ai);
-        ext_replacer[*ai].replace(*s, w);
-        *w += NW;
-      }
-    }
+    this->replace_choose_set(addr, ai, s, genre);
+    if constexpr (!EnDir) replacer[*ai].replace(*s, w);
+    else if(0 == genre)   replacer[*ai].replace(*s, w);
+    else                { ext_replacer[*ai].replace(*s, w); *w += NW; }
     return true; // ToDo: support multithread
   }
 
@@ -147,11 +147,11 @@ public:
     }
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P){
       if(hit && evict) {
         if(w >= NW) ext_replacer[ai].invalid(s, w-NW);
-        else        replacer[ai].invalid(s, w);
+        else        replacer[ai].invalid(s, w, evict == 2);
       }
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
     } else {
@@ -167,7 +167,7 @@ public:
 // EnMon: whether to enable monitoring
 // EnDir: whether to enable use directory
 template<int IW, int NW, typename MT, typename DT, typename IDX, typename RPC, typename DLY, bool EnMon>
-using CacheNormExclusiveBroadcast = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, ReplaceRandom<1,1>, DLY, EnMon, false>;
+using CacheNormExclusiveBroadcast = CacheSkewedExclusive<IW, NW, 0, 1, MT, DT, IDX, RPC, ReplaceRandom<1,1,true,true,false>, DLY, EnMon, false>;
 
 template<typename Policy, bool EnMT>
 class ExclusiveInnerCohPortUncachedBroadcast : public InnerCohPortUncached<Policy, EnMT>
@@ -313,7 +313,7 @@ protected:
       if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
       Policy::meta_after_flush(cmd, meta, cache);
-      cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(cmd), writeback.first, meta, data, delay);
+      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0), writeback.first, meta, data, delay);
 
       if(!hit) {
         cache->meta_return_buffer(meta);
@@ -495,7 +495,7 @@ protected:
       if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
       Policy::meta_after_flush(cmd, meta, cache);
-      cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(cmd), writeback.first, meta, data, delay);
+      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0), writeback.first, meta, data, delay);
 
       if(meta->is_extend()) cache->data_return_buffer(data);
     }
@@ -540,7 +540,7 @@ public:
     }
 
     Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
-    cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(outer_cmd), writeback, meta, data, delay);
+    cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
 
     if(!hit) {
       cache->meta_return_buffer(meta);
@@ -590,7 +590,7 @@ public:
     }
 
     Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
-    cache->hook_manage(addr, ai, s, w, hit, coh::is_evict(outer_cmd), writeback, meta, data, delay);
+    cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
 
     if(hit && meta->is_extend()) {
       cache->data_return_buffer(data);
