@@ -65,20 +65,23 @@ struct MirageMSIPolicy : public MSIPolicy<false, true, Outer> // always LLC, alw
   }
 };
 
+struct MirageHelper {
+  static const unsigned int replace_for_relocate = 202410140ul;
+};
+
 // Mirage 
 // IW: index width, NW: number of ways, EW: extra tag ways, P: number of partitions, MaxRelocN: max number of relocations
 // MT: metadata type, DT: data type (void if not in use), DTMT: data meta type 
 // MIDX: indexer type, MRPC: replacer type
 // DIDX: data indexer type, DRPC: data replacer type
 // EnMon: whether to enable monitoring
-// EnableRelocation : whether to enable relocation
-template<int IW, int NW, int EW, int P, int MaxRelocN, typename MT, typename DT,
-         typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon, bool EnableRelocation,
+template<int IW, int NW, int EW, int P, typename MT, typename DT,
+         typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon,
          bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<DTMT, MirageDataMeta>  && C_DERIVE<MIDX, IndexFuncBase>   && C_DERIVE<DIDX, IndexFuncBase> &&
            C_DERIVE_OR_VOID<DLY, DelayBase>
-class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EnMT, MSHR>
+class MirageCache : public CacheSkewed<IW, NW+EW, P, MT, void, MIDX, MRPC, DLY, EnMon, EnMT, MSHR>, protected MirageHelper
 {
 // see: https://www.usenix.org/system/files/sec21fall-saileshwar.pdf
 
@@ -91,7 +94,14 @@ protected:
   DIDX d_indexer;   // data index resolver
   DRPC d_replacer;  // data replacer
 
+  uint32_t next_ai(uint32_t ai) {return (ai+1)%P;} // Do we need total random selection of partition here, does not matter for Mirage as P=2
+
   virtual void replace_choose_set(uint64_t addr, uint32_t *ai, uint32_t *s, unsigned int genre) override {
+    if(replace_for_relocate == genre){
+      *ai = next_ai(*ai);
+      *s = indexer.index(addr, *ai);
+      return;
+    }
     int max_free = -1, p = 0;
     std::vector<std::pair<uint32_t, uint32_t> > candidates(P);
     uint32_t m_s;
@@ -149,8 +159,8 @@ public:
 
   __always_inline std::pair<uint32_t, uint32_t> replace_data(uint64_t addr) {
     uint32_t d_s, d_w;
-    d_s =  d_indexer.index(addr, 0);
-    d_replacer.replace(d_s, &d_w);
+    d_s =  (*loc_random)() % (1ul << IW);
+    d_replacer.replace(d_s, &d_w, false);
     return std::make_pair(d_s, d_w);
   }
 
@@ -170,7 +180,7 @@ public:
     CacheT::hook_write(addr, ai, s, w, hit, demand_acc, meta, data, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P && hit && evict) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
       d_replacer.invalid(ds, dw);
@@ -178,35 +188,12 @@ public:
     CacheT::hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
   }
 
-  void cuckoo_search(uint32_t *ai, uint32_t *s, uint32_t *w, CMMetadataBase* &meta, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack) {
-    if constexpr (EnableRelocation) {
-      uint32_t relocation = 0;
-      uint32_t m_ai, m_s, m_w;
-      std::unordered_set<uint64_t> remapped;
-      auto addr = meta->addr(*s);
-      while(meta->is_valid() && relocation++ < MaxRelocN){
-        m_ai = (*ai+1)%P; // Do we need total random selection of partition here, does not matter for Mirage as P=2
-        m_s  = indexer.index(addr, m_ai);
-        replacer[m_ai].replace(m_s, &m_w);
-        auto m_meta = static_cast<MT *>(this->access(m_ai, m_s, m_w));
-        auto m_addr = m_meta->addr(m_s);
-        if(remapped.count(m_addr)) break; // ToDo: here will break the replace state! allocate() without access()
-        remapped.insert(addr);
-        stack.push(std::make_tuple(*ai, *s, *w));
-        std::tie(meta, addr, *ai, *s, *w) = std::make_tuple(m_meta, m_addr, m_ai, m_s, m_w);
-      }
-    }
+  void relocate_invalidate(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
+    CacheT::hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
   }
 
-  void cuckoo_relocate(uint32_t *ai, uint32_t *s, uint32_t *w, std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > &stack, uint64_t *delay) {
-    while(!stack.empty()) {
-      auto [m_ai, m_s, m_w] = stack.top(); stack.pop();
-      auto [meta, addr] = this->relocate(m_ai, m_s, m_w, *ai, *s, *w);
-      get_data_meta(static_cast<MT *>(meta))->bind(*ai, *s, *w);
-      CacheT::hook_manage(addr, m_ai, m_s, m_w, true, true, false, nullptr, nullptr, delay);
-      CacheT::hook_read(addr, *ai, *s, *w, false, false, nullptr, nullptr, delay); // read or write? // hit is true or false? may have impact on delay
-      std::tie(*ai, *s, *w) = std::make_tuple(m_ai, m_s, m_w);
-    }
+  bool pre_finish_reloc(uint64_t addr, uint32_t s_ai, uint32_t s_s, uint32_t ai){
+    return (s_ai == next_ai(ai)) && (s_s == indexer.index(addr, next_ai(ai)));
   }
 
 };
@@ -214,22 +201,75 @@ public:
 // uncached MSI inner port:
 //   no support for reverse probe as if there is no internal cache
 //   or the interl cache does not participate in the coherence communication
-template<typename Policy, bool EnMT, typename MT, typename CT>
+template<typename Policy, bool EnMT, typename MT, typename CT, bool EnableRelocation, int MaxRelocN>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE<CT, CacheBase> && C_DERIVE<Policy, CohPolicyBase>
-class MirageInnerPortUncached : public InnerCohPortUncached<Policy, EnMT>
+class MirageInnerPortUncached : public InnerCohPortUncached<Policy, EnMT>, protected MirageHelper
 {
+  typedef InnerCohPortUncached<Policy, EnMT> Inner;
+
 protected:
   using InnerCohPortBase::outer;
 
+  void bind_data(uint64_t addr, CMMetadataBase *meta, CMDataBase *&data, int32_t ai, uint32_t s, uint32_t w, uint64_t *delay){
+    auto cache = static_cast<CT *>(InnerCohPortBase::cache);
+    auto data_pointer = cache->replace_data(addr);
+    auto data_meta = cache->get_data_meta(data_pointer);
+    data = cache->get_data_data(data_pointer);
+    if(data_meta->is_valid()) {
+      auto meta_pointer = data_meta->pointer();
+      auto replace_meta = cache->get_meta_meta(meta_pointer);
+      global_evict(replace_meta, data, std::get<0>(meta_pointer), std::get<1>(meta_pointer), std::get<2>(meta_pointer), delay);
+      replace_meta->to_invalid();
+    }
+    static_cast<MT *>(meta)->bind(data_pointer.first, data_pointer.second);
+    data_meta->bind(ai, s, w);
+  }
+
+  virtual void evict(CMMetadataBase *meta, CMDataBase *data, int32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
+    // evict a block due to conflict
+    // do the cuckoo relocation
+    if constexpr (EnableRelocation) {
+      auto cache = static_cast<CT *>(InnerCohPortBase::cache);
+      uint32_t relocation = 0;
+      uint32_t m_ai = ai; uint32_t m_s, m_w;
+      auto buf_meta = cache->meta_copy_buffer();
+      auto addr = meta->addr(s);
+      cache->relocate(addr, meta, buf_meta);
+      cache->relocate_invalidate(addr, ai, s, w, true, 1, false, nullptr, nullptr, delay);
+      while(buf_meta->is_valid()){
+        relocation++;
+        cache->replace(addr, &m_ai, &m_s, &m_w, XactPrio::acquire, replace_for_relocate);
+        auto m_meta = static_cast<MT *>(cache->access(m_ai, m_s, m_w));
+        auto m_addr = m_meta->addr(m_s);
+        if (m_meta->is_valid()) {
+          if (relocation >= MaxRelocN || cache->pre_finish_reloc(m_addr, ai, s, m_ai)){
+            global_evict(m_meta, cache->get_data_data(static_cast<MT *>(m_meta)), m_ai, m_s, w, delay); // associative eviction!
+          }
+          else cache->relocate_invalidate(m_addr, m_ai, m_s, m_w, true, 1, false, nullptr, nullptr, delay);
+        }
+        cache->swap(m_addr, addr, m_meta, buf_meta, nullptr, nullptr);
+        cache->get_data_meta(static_cast<MT *>(m_meta))->bind(m_ai, m_s, m_w);
+        cache->hook_read(addr, m_ai, m_s, m_w, false, false, nullptr, nullptr, delay);
+        addr = m_addr;
+      }
+      cache->meta_return_buffer(buf_meta);
+    }
+    else{
+      global_evict(meta, data, ai, s, w, delay);
+    }
+  }
+
+  void global_evict(CMMetadataBase *meta, CMDataBase *data, int32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
+    // global evict a block due to conflict
+    Inner::evict(meta, data, ai, s, w, delay);
+    static_cast<CT *>(InnerCohPortBase::cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
+  }
+
   virtual std::tuple<CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t, bool>
   access_line(uint64_t addr, coh_cmd_t cmd, uint16_t prio, uint64_t *delay) override { // common function for access a line in the cache
-    uint32_t ai, s, w;
-    CMMetadataBase *meta;
-    CMDataBase *data;
     auto cache = static_cast<CT *>(InnerCohPortBase::cache);
-    bool hit = cache->hit(addr, &ai, &s, &w, prio, EnMT);
+    auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, prio, true, false, delay);
     if(hit) {
-      std::tie(meta, data) = cache->access_line(ai, s, w);
       auto sync = Policy::access_need_sync(cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
@@ -239,36 +279,39 @@ protected:
       if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
       else if(promote_local) meta->to_modified(-1);
     } else { // miss
-      // do the cuckoo replacement
-      cache->replace(addr, &ai, &s, &w, prio);
-      meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
-      std::stack<std::tuple<uint32_t, uint32_t, uint32_t> > stack;
-      if(meta->is_valid()) cache->cuckoo_search(&ai, &s, &w, meta, stack);
-      if(meta->is_valid()) { // associative eviction!
-        this->evict(meta, cache->get_data_data(static_cast<MT *>(meta)), ai, s, w, delay);
-        cache->get_data_meta(static_cast<MT *>(meta))->to_invalid();
-      }
-      cache->cuckoo_relocate(&ai, &s, &w, stack, delay);
-      meta = static_cast<CMMetadataBase *>(cache->access(ai, s, w));
-      auto data_pointer = cache->replace_data(addr);
-      auto data_meta = cache->get_data_meta(data_pointer);
-      data = cache->get_data_data(data_pointer);
-      if(data_meta->is_valid()) {
-        auto meta_pointer = data_meta->pointer();
-        auto replace_meta = cache->get_meta_meta(meta_pointer);
-        this->evict(replace_meta, data, std::get<0>(meta_pointer), std::get<1>(meta_pointer), std::get<2>(meta_pointer), delay);
-        replace_meta->to_invalid();
-      }
-      static_cast<MT *>(meta)->bind(data_pointer.first, data_pointer.second);
-      data_meta->bind(ai, s, w);
-
+      if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
+      bind_data(addr, meta, data, ai, s, w, delay);
       outer->acquire_req(addr, meta, data, Policy::cmd_for_outer_acquire(cmd), delay); // fetch the missing block
     }
     return std::make_tuple(meta, data, ai, s, w, hit);
   }
+
+  virtual void flush_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
+    auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::flush, false, false, delay);
+    if(!hit) return;
+    Inner::flush_line(addr, cmd, delay);
+    static_cast<CT *>(InnerCohPortBase::cache)->get_data_meta(static_cast<MT *>(meta))->to_invalid();
+  }
+
+  virtual void prefetch_line(uint64_t addr, coh_cmd_t cmd, uint64_t *delay) {
+    auto cache = static_cast<CT *>(InnerCohPortBase::cache);
+    auto [hit, meta, data, ai, s, w] = this->check_hit_or_replace(addr, XactPrio::acquire, true, true, delay);
+    if(!hit) {
+      if(meta->is_valid()) evict(meta, data, ai, s, w, delay);
+      bind_data(addr, meta, data, ai, s, w, delay);
+      outer->acquire_req(addr, meta, data, coh::cmd_for_prefetch(), delay); // fetch the missing block
+      cache->hook_read(addr, ai, s, w, hit, true, meta, data, delay);
+      this->finish_record(addr, coh::cmd_for_finish(-1), !hit, meta, ai, s);
+      this->finish_resp(addr, coh::cmd_for_finish(-1));
+    }
+  }
 };
 
-template<typename Policy, bool EnMT, typename MT, typename CT>
-using MirageInnerCohPort = InnerCohPortT<MirageInnerPortUncached, Policy, EnMT, MT, CT>;
+// template helper for pass the compiler
+template<bool EnReloc = true, int MaxRelocN = 3>
+struct MirageInnerCohPortUncachedT {
+  template<typename Policy, bool EnMT, typename MT, typename CT>
+  using type = MirageInnerPortUncached<Policy, EnMT, MT, CT, EnReloc, MaxRelocN>;
+};
 
 #endif

@@ -2,8 +2,8 @@
 #include "util/cache_type.hpp"
 #include "util/regression.hpp"
 
-#define PAddrN 128
-#define SAddrN 64
+#define PAddrN 256
+#define SAddrN 128
 #define NCore 2
 #define TestN ((PAddrN + SAddrN) * NCore * 2)
 
@@ -12,7 +12,7 @@
 
 #define L2IW 5
 #define L2WN 4
-#define L2EW 3
+#define L2EW 1
 #define L2P  2
 #define L2RN 2
 
