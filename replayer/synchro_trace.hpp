@@ -26,32 +26,31 @@ protected:
 
   /** Holds which threads currently wait for a lock */
   std::map<uint64_t, std::queue<ThreadID>> perMutexThread;
-  std::mutex mutexMtx;
+  SpinLock mutexMtx;
 
   /** Holds spin locks in use */
   std::set<uint64_t> spinLocks;
-  std::mutex spinLocksMtx;
+  SpinLock spinLocksMtx;
 
   /** Holds which threads are waiting for a barrier */
   std::map<uint64_t, std::set<ThreadID>> threadBarrierMap;
-  std::mutex barrierMtx;
+  SpinLock barrierMtx;
 
   /** Holds which threads currently possess a mutex lock */
   std::vector<std::vector<uint64_t>> perThreadLocksHeld;
 
   /** Holds which threads waiting for the thread to complete */
   std::vector<std::vector<ThreadID>> joinList;
-  std::mutex joinMtx;
+  SpinLock joinMtx;
 
   /** Directory of Sigil Traces and Pthread metadata file */
   std::string eventDir;
 
   /** data cache */
   std::vector<CoreInterfaceBase *>& core_data;
-  std::mutex cacheMtx;
 
   /** mutex for cout */
-  std::mutex outputMtx;
+  SpinLock outputMtx;
 
   /** threads for each core */
   std::vector<std::thread> replayCore;
@@ -196,16 +195,17 @@ protected:
     mutexMtx.lock();
 
     auto it = perMutexThread.find(pthaddr);
-    if (it != perMutexThread.end()) {
+    if (it != perMutexThread.end()) { // if no other thread holds the lock
       if (tcxt.status != ThreadStatus::ACTIVE_TRYLOCK) {
         it->second.push(tcxt.threadId);
       }
       bool getMutex = (tcxt.threadId == it->second.front());
-
+      if (getMutex) perThreadLocksHeld[tcxt.threadId].push_back(pthaddr); 
       mutexMtx.unlock();
       return getMutex;
     } else {
       perMutexThread[pthaddr].push(tcxt.threadId);
+      perThreadLocksHeld[tcxt.threadId].push_back(pthaddr);
 
       mutexMtx.unlock();
       return true;
@@ -216,6 +216,11 @@ protected:
   {
     mutexMtx.lock();
 
+    std::vector<uint64_t>& locksHeld = perThreadLocksHeld[tcxt.threadId];
+    auto v_it = std::find(locksHeld.begin(), locksHeld.end(), pthaddr);
+    assert(v_it != locksHeld.end());
+    locksHeld.erase(v_it);
+
     auto it = perMutexThread.find(pthaddr);
     assert(it != perMutexThread.end());
     assert(!(it->second.empty()));
@@ -223,6 +228,7 @@ protected:
     it->second.pop();
     assert(((!it->second.empty()) && (it->second.front() != tcxt.threadId))
           || (it->second.empty()));
+    // If a thread is blocked on this lock, a notification is sent to unlock the thread.
     if (!(it->second.empty())) {
       scheduler.sendReady(it->second.front());
     }
@@ -239,7 +245,6 @@ protected:
       case EventType::MUTEX_LOCK:
       {
         if (mutexTryLock(tcxt, coreId, pthAddr)) {
-          perThreadLocksHeld[tcxt.threadId].push_back(pthAddr);
           tcxt.evStream.pop();
           tcxt.status = ThreadStatus::WAIT_THREAD;
           scheduler.schedule(tcxt, scheduler.pthCycles);
@@ -250,10 +255,6 @@ protected:
       }
       case EventType::MUTEX_UNLOCK:
       {
-        std::vector<uint64_t>& locksHeld = perThreadLocksHeld[tcxt.threadId];
-        auto v_it = std::find(locksHeld.begin(), locksHeld.end(), pthAddr);
-        assert(v_it != locksHeld.end());
-        locksHeld.erase(v_it);
         mutexUnlock(tcxt, coreId, pthAddr);
         tcxt.evStream.pop();
         tcxt.status = ThreadStatus::WAIT_THREAD;
@@ -291,7 +292,7 @@ protected:
 
         joinMtx.lock();
 
-        if(workertcxt.completed()) {
+        if (workertcxt.completed()) {
 
           joinMtx.unlock();
 
@@ -325,7 +326,7 @@ protected:
         auto p = threadBarrierMap[pthAddr].insert(tcxt.threadId);
         // Check if this is the last thread to enter the barrier,
         // in which case, unblock all the threads.
-        if(threadBarrierMap[pthAddr] == pthMetadata.barrierMap().at(pthAddr)) {
+        if (threadBarrierMap[pthAddr] == pthMetadata.barrierMap().at(pthAddr)) {
           for(auto tid : pthMetadata.barrierMap().at(pthAddr)) {
             threadContexts[tid].evStream.pop();
             scheduler.sendReady(tid);
@@ -349,7 +350,7 @@ protected:
         auto p = spinLocks.insert(pthAddr);
         spinLocksMtx.unlock();
 
-        if (p.second){
+        if (p.second) {
           tcxt.evStream.pop();
           perThreadLocksHeld[tcxt.threadId].push_back(pthAddr);
         }
@@ -398,7 +399,7 @@ protected:
     }
   }
 
-  virtual void wakeupCore(ThreadID threadId, CoreID coreId){
+  virtual void wakeupCore(ThreadID threadId, CoreID coreId) {
     ThreadContext& tcxt = threadContexts[threadId];
     assert(tcxt.running());
 
@@ -451,22 +452,22 @@ protected:
     outputMtx.unlock();
   }
 
-  static void replay(CoreID coreId, SynchroTraceReplayer* replayer) {
-    while(true){
-      if (std::all_of(replayer->threadContexts.cbegin(), replayer->threadContexts.cend(),
-                      [replayer, coreId](const ThreadContext& tcxt)
-                      { return (replayer->scheduler.threadIdToCoreId(tcxt.threadId) != coreId) ||
+  void replay(CoreID coreId) {
+    while(true) {
+      if (std::all_of(threadContexts.cbegin(), threadContexts.cend(),
+                      [this, coreId](const ThreadContext& tcxt)
+                      { return (this->scheduler.threadIdToCoreId(tcxt.threadId) != coreId) ||
                                 tcxt.completed(); })) 
         break;
       
-      for(auto &tcxt : replayer->threadContexts) {
-        if (replayer->scheduler.threadIdToCoreId(tcxt.threadId) != coreId)
+      for(auto &tcxt : threadContexts) {
+        if (scheduler.threadIdToCoreId(tcxt.threadId) != coreId)
           continue;
         
         switch (tcxt.status) 
         {
           case ThreadStatus::WAIT_LOCK:
-            if(replayer->scheduler.curClock(coreId) == tcxt.wakeupClock) {
+            if (scheduler.curClock(coreId) == tcxt.wakeupClock) {
               tcxt.status = ThreadStatus::ACTIVE_TRYLOCK;
             }
             break;
@@ -475,7 +476,7 @@ protected:
           case ThreadStatus::WAIT_THREAD:
           case ThreadStatus::WAIT_SCHED:
           case ThreadStatus::WAIT_COMM:
-            if(replayer->scheduler.curClock(coreId) == tcxt.wakeupClock) {
+            if (scheduler.curClock(coreId) == tcxt.wakeupClock) {
               tcxt.status = ThreadStatus::ACTIVE;
             }
             break;
@@ -486,32 +487,32 @@ protected:
           case ThreadStatus::BLOCKED_BARRIER:
           case ThreadStatus::BLOCKED_JOIN:
           case ThreadStatus::INACTIVE:
-            if (replayer->scheduler.curClock(coreId) % 10 == 0 && replayer->scheduler.checkReady(tcxt.threadId))
-              replayer->scheduler.getReady(tcxt, coreId);
+            if (scheduler.curClock(coreId) % 10 == 0 && scheduler.checkReady(tcxt.threadId))
+              scheduler.getReady(tcxt, coreId);
             break;
           case ThreadStatus::COMPLETED:
           default:
             break;
         }
 
-        if (replayer->scheduler.curClock(coreId) % 10 == 0) {
-          replayer->scheduler.recordEvent(tcxt);
+        if (scheduler.curClock(coreId) % 10 == 0) {
+          scheduler.recordEvent(tcxt);
         }
       }
 
-      ThreadID tid = replayer->scheduler.findActive(coreId);
+      ThreadID tid = scheduler.findActive(coreId);
       if (tid >= 0) {
-        replayer->wakeupCore(tid, coreId);
+        wakeupCore(tid, coreId);
       }
 
-      if(replayer->scheduler.nextClock(coreId) % 1000000 == 0) {
-        replayer->wakeupDebugLog(coreId);
+      if (scheduler.nextClock(coreId) % 1000000 == 0) {
+        wakeupDebugLog(coreId);
       } 
     }
 
-    replayer->outputMtx.lock();
-    std::cout << "All threads on Core " << coreId << " completed at " << replayer->scheduler.curClock(coreId) << ".\n" << std::endl;
-    replayer->outputMtx.unlock();
+    outputMtx.lock();
+    std::cout << "All threads on Core " << coreId << " completed at " << scheduler.curClock(coreId) << ".\n" << std::endl;
+    outputMtx.unlock();
   }
 
 public:
@@ -544,7 +545,7 @@ public:
   virtual void start() {
     // the main thread
     for (CoreID i = 0; i < NC; i++) {
-      replayCore[i] = std::thread(std::bind(&(this->replay), i, this));
+      replayCore[i] = std::thread(std::bind(&SynchroTraceReplayer::replay, this, i));
     }
 
     for (auto &c : replayCore) {

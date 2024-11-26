@@ -57,7 +57,7 @@ public:
   }
 
 private:
-  void parseCompEventTo(std::vector<StEvent>& buffer, std::string& line, ThreadID threadId, StEventID eventId){
+  void parseCompEventTo(std::vector<StEvent>& buffer, std::string& line, ThreadID threadId, StEventID eventId) {
     // Compute events are iops/flops and intra-thread reads/writes that have
     // been combined into a single "event".
     // Example line:
@@ -68,12 +68,12 @@ private:
     std::smatch matches;
     std::string::const_iterator line_start(line.cbegin());
     uint64_t iops, flops, reads, writes, start, end;
-    if(std::regex_search(line_start, line.cend(), matches, pattern)){
+    if (std::regex_search(line_start, line.cend(), matches, pattern)) {
       iops  = std::stoi(matches[1]);
       flops = std::stoi(matches[2]);
       reads  = std::stoi(matches[3]);
       writes = std::stoi(matches[4]);
-    }else{
+    } else {
         // TODO: add fatal match handle
     }
 
@@ -99,7 +99,7 @@ private:
   }
 
 
-  void parseCommEventTo(std::vector<StEvent>& buffer, std::string& line, ThreadID threadId, StEventID eventId){
+  void parseCommEventTo(std::vector<StEvent>& buffer, std::string& line, ThreadID threadId, StEventID eventId) {
     // For communication events, create read-based sub events for each
     // dependency.
     // Example line:
@@ -108,20 +108,20 @@ private:
     std::regex pattern(R"(# (\d+) (\d+) 0x([A-Fa-f0-9]+) 0x([A-Fa-f0-9]+))");
 
     std::smatch matches;
-    if(std::regex_search(line, matches, pattern)){
+    if (std::regex_search(line, matches, pattern)) {
       ThreadID  prodThreadId = std::stoi(matches[1])-1;
       uint64_t prodEventId = std::stoi(matches[2]);
       uint64_t addr = std::stoul(matches[3], nullptr, 16);
       uint64_t bytes = std::stoul(matches[4], nullptr, 16) - addr + 1;
 
       buffer.emplace_back(StEvent::MemoryCommTag, addr, bytes, prodEventId, prodThreadId);
-    }else{
+    } else {
         // TODO: add fatal match handle
       std::cerr << "match error" << std::endl;
       assert(0);
     }
   }
-  void parseThreadEventTo(std::vector<StEvent>& buffer, std::string& line, ThreadID threadId, StEventID eventId){
+  void parseThreadEventTo(std::vector<StEvent>& buffer, std::string& line, ThreadID threadId, StEventID eventId) {
     // example line:
     //
     // ^ 4^0xad97700
@@ -312,10 +312,10 @@ class StTracePthreadMetadata
       uint64_t pthAddr, threadId;
       std::regex pattern(R"(##(\d+),(\d+))");
       std::smatch matches;
-      if(std::regex_search(line, matches, pattern)){
+      if (std::regex_search(line, matches, pattern)) {
         pthAddr  = std::stoi(matches[1]);
         threadId = std::stoi(matches[2]); 
-      }else{
+      } else {
         std::cerr << "match error" << std::endl;
         assert(0);
       }

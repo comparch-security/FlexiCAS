@@ -1,5 +1,5 @@
 
-MODE ?= debug
+MODE ?= release
 NCORE ?= `nproc`
 
 MAKE = make
@@ -14,7 +14,7 @@ ifeq ($(MODE), release)
 	CXXFLAGS_MULTI = $(CXXFLAGS)
 	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug)
-	CXXFLAGS = $(CXXSTD) -O0 -DTRY_LOCK -I. -Wall  -fPIC
+	CXXFLAGS = $(CXXSTD) -O0 -DTRY_LOCK -g -I. -Wall  -fPIC
 	CXXFLAGS_MULTI = $(CXXFLAGS) 
 	REGRESS_LD_FLAGS =
 else ifeq ($(MODE), debug-multi)
@@ -95,12 +95,12 @@ clean-regression:
 	-rm $(PARALLEL_REGRESSION_TESTS_EXE) $(PARALLEL_REGRESSION_TESTS_RST)
 	-rm $(REPLAYER_REGRESSION_TESTS_EXE) $(REPLAYER_REGRESSION_TESTS_RST)
 
-PERFORMANCE_TESTS = multi-l2-msi multi-l3-msi
+PERFORMANCE_TESTS = multi-l2-msi multi-l3-msi replay
  
 PERFORMANCE_TESTS_EXE = $(patsubst %, performance/%, $(PERFORMANCE_TESTS))
 PERFORMANCE_TESTS_RST = $(patsubst %, performance/%.out, $(PERFORMANCE_TESTS))
 
-$(PERFORMANCE_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS)
+$(PERFORMANCE_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS) $(REPLAYER_HEADERS) $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS_MULTI) $< $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@ -lz
 
 $(PERFORMANCE_TESTS_RST): %.out: %

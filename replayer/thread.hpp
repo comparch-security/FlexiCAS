@@ -2,6 +2,7 @@
 #define CM_REPLAYER_THREAD_HPP
 
 #include "replayer/st_event.hpp"
+#include "util/multithread.hpp"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -9,6 +10,7 @@
 #include <iostream>
 #include <queue>
 #include <mutex>
+#include <vector>
 
 enum class ThreadStatus {
   INACTIVE,
@@ -59,6 +61,7 @@ const char* toString(ThreadStatus status) {
     default:
       std::cerr << "Unexpected Thread Status" << std::endl;
       assert(0);
+      return "Unexpected";
   }
 }
 
@@ -108,11 +111,11 @@ protected:
 
   /** Holds each threads current eventId */
   std::vector<StEventID> curEvent;
-  std::mutex curMtx;
+  std::vector<SpinLock*> curMtx;
 
   /** Holds wakeup signal for each thread */
   std::vector<bool> wakeupSig;
-  std::mutex wakeupMtx;
+  SpinLock wakeupMtx;
 
 public:
 
@@ -176,6 +179,7 @@ public:
     workerThreadCount.resize(NC);
     wakeupSig.resize(NT);
     curEvent.resize(NT);
+    curMtx.resize(NT);
 
     for (CoreID i = 0; i < NC; i++) {
       workerThreadCount[i] = 0;
@@ -184,27 +188,32 @@ public:
     for (ThreadID i = 0; i < NT; i++) {
       wakeupSig[i] = false;
       curEvent[i] = 0;
+      curMtx[i] = new SpinLock();
     }
   }
 
   CoreID threadIdToCoreId(ThreadID threadId) const{
     return threadId % NC;
-  } 
+  }
+
+  ~ThreadScheduler(){
+    for (auto m : curMtx) delete m;
+  }
 
   virtual void init(ThreadContext& tcxt) {
     coreToThreadMap.at(threadIdToCoreId(tcxt.threadId)).emplace_back(tcxt);
   }
 
   virtual void recordEvent(ThreadContext& tcxt) {
-    curMtx.lock();
+    curMtx[tcxt.threadId]->lock();
     curEvent[tcxt.threadId] = tcxt.currEventId;
-    curMtx.unlock();
+    curMtx[tcxt.threadId]->unlock();
   }
 
   virtual StEventID checkEvent(ThreadID threadId) {
-    curMtx.lock();
+    curMtx[threadId]->lock();
     StEventID eventId = curEvent[threadId];
-    curMtx.unlock();
+    curMtx[threadId]->unlock();
     return eventId;
   }
 
