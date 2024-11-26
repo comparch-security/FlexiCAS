@@ -17,7 +17,7 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // alway
   static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) { // after grant to inner
     int32_t id = cmd.id;
     if constexpr (EnDir) {
-      if(coh::is_fetch_read(cmd)) {
+      if(coh::is_fetch_read(cmd) || coh::is_prefetch(cmd)) {
         meta->to_shared(id);
         meta_inner->to_shared(-1);
       } else {
@@ -25,8 +25,8 @@ struct ExclusiveMSIPolicy : public MSIPolicy<false, uncached, Outer>    // alway
         meta_inner->to_modified(-1);
       }
     } else {
-      if(coh::is_fetch_read(cmd)) meta_inner->to_shared(-1);
-      else                        meta_inner->to_modified(-1);
+      if(coh::is_fetch_read(cmd) || coh::is_prefetch(cmd)) meta_inner->to_shared(-1);
+      else                                                 meta_inner->to_modified(-1);
 
       if(id != -1) meta->to_invalid();
       else         meta->to_shared(-1); // as the inner does not exist, state is shared
@@ -76,7 +76,7 @@ struct ExclusiveMESIPolicy : public ExclusiveMSIPolicy<isL1, uncached, Outer, En
   static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) { // after grant to inner
     int32_t id = cmd.id;
     if(id != -1) { // inner cache is cached
-      if(coh::is_fetch_read(cmd)) {
+      if(coh::is_fetch_read(cmd) || coh::is_prefetch(cmd)) {
         meta->to_shared(id);
         if(static_cast<MetadataDirectoryBase *>(meta)->is_exclusive_sharer(id)) { // add the support for exclusive
           meta->to_exclusive(id);
@@ -89,8 +89,8 @@ struct ExclusiveMESIPolicy : public ExclusiveMSIPolicy<isL1, uncached, Outer, En
         meta_inner->to_modified(-1);
       }
     } else { // acquire from an uncached inner, still cache it in normal way as the inner does not exist
-      if(coh::is_fetch_read(cmd)) meta_inner->to_shared(-1);
-      else                        meta_inner->to_modified(-1);
+      if(coh::is_fetch_read(cmd) || coh::is_prefetch(cmd)) meta_inner->to_shared(-1);
+      else                                                 meta_inner->to_modified(-1);
       meta->to_shared(-1); // as the inner does not exist, state is shared
     }
     assert(!meta_inner->is_dirty());
@@ -208,7 +208,7 @@ protected:
     }
 
     if(!probe_writeback) // need to fetch it from outer
-      outer->acquire_req(addr, meta, data, Policy::cmd_for_outer_acquire(cmd), delay);
+      outer->acquire_req(addr, meta, data, coh::is_prefetch(cmd) ? cmd : Policy::cmd_for_outer_acquire(cmd), delay);
 
     if(probe_hit && !coh::is_write(cmd)) // manually maintain the coherence if there are other inner copies, must be share
       meta->get_outer_meta()->to_shared(-1);
@@ -411,7 +411,7 @@ protected:
           }
         }
         if(!pwb) { // still get it from outer
-          outer->acquire_req(addr, meta, data, Policy::cmd_for_outer_acquire(cmd), delay);
+          outer->acquire_req(addr, meta, data, coh::is_prefetch(cmd) ? cmd : Policy::cmd_for_outer_acquire(cmd), delay);
           hit = false;
         } else {
           auto [promote, promote_local, promote_cmd] = Policy::access_need_promote(cmd, meta);
@@ -432,7 +432,7 @@ protected:
         std::tie(meta, data, ai, s, w) = replace_line_ext(addr, prio, delay);
         data = cache->data_copy_buffer();
       }
-      outer->acquire_req(addr, meta, data, Policy::cmd_for_outer_acquire(cmd), delay); // fetch the missing block
+      outer->acquire_req(addr, meta, data, coh::is_prefetch(cmd) ? cmd : Policy::cmd_for_outer_acquire(cmd), delay); // fetch the missing block
       return std::make_tuple(meta, data, ai, s, w, hit);
     }
   }

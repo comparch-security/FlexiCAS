@@ -439,7 +439,8 @@ class CoreInterface : public InnerCohPortUncached<Policy, EnMT>, public CoreInte
       if(data) data->copy(m_data);
       cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
     } else {
-      cache->hook_read(addr, ai, s, w, hit, coh::is_prefetch(cmd), meta, data, delay);
+      bool act_as_prefetch = coh::is_prefetch(cmd) && Policy::is_uncached(); // only tweak replace priority at the LLC accoridng to [Guo2022-MICRO]
+      cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
     }
     if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);}
     if(!hit) outer->finish_req(addr);
