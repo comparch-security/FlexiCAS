@@ -200,7 +200,7 @@ public:
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
-    cache->replace_read(ai, s, w, act_as_prefetch);
+    if(!act_as_prefetch || !hit) cache->replace_read(ai, s, w, act_as_prefetch);
 
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
@@ -375,7 +375,7 @@ public:
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
-    cache->replace_read(ai, s, w, act_as_prefetch);
+    if(!act_as_prefetch || !hit) cache->replace_read(ai, s, w, act_as_prefetch);
 
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
