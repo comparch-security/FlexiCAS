@@ -185,7 +185,7 @@ public:
       if(sync.first) {
         auto [phit, pwb] = OuterCohPortBase::inner->probe_req(addr, meta, data, sync.second, delay);
         if(pwb) {
-          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay);
           cache->replace_write(ai, s, w, false);
         }
       }
@@ -227,7 +227,7 @@ public:
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     cache->replace_read(ai, s, w, act_as_prefetch);
     finish_record(addr, coh::cmd_for_finish(cmd.id), !hit, meta, ai, s);
     if(cmd.id == -1) finish_resp(addr, coh::cmd_for_finish(cmd.id));
@@ -255,7 +255,7 @@ protected:
       if constexpr (EnMT && Policy::sync_need_lock()) cache->set_mt_state(ai, s, XactPrio::sync);
       auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(pwb){
-        cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+        cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
         cache->replace_write(ai, s, w, false);
       }
       if constexpr (EnMT && Policy::sync_need_lock()) cache->reset_mt_state(ai, s, XactPrio::sync);
@@ -315,7 +315,7 @@ protected:
         if constexpr (EnMT && Policy::sync_need_lock()) { assert(prio < XactPrio::sync); cache->set_mt_state(ai, s, XactPrio::sync);}
         auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb){
-          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
           cache->replace_write(ai, s, w, false);
         }
         if constexpr (EnMT && Policy::sync_need_lock()) cache->reset_mt_state(ai, s, XactPrio::sync);
@@ -336,7 +336,7 @@ protected:
     if(data_inner) data->copy(data_inner);
     Policy::meta_after_release(cmd, meta, meta_inner);
     assert(meta_inner); // assume meta_inner is valid for all writebacks
-    cache->hook_write(addr, ai, s, w, hit, false, meta, data, delay);
+    cache->hook_write(addr, ai, s, w, hit, meta, data, delay);
     cache->replace_write(ai, s, w, false);
     if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::release); }
   }
@@ -353,7 +353,7 @@ protected:
         if constexpr (EnMT && Policy::sync_need_lock()) cache->set_mt_state(ai, s, XactPrio::sync);
         auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
         if(pwb){
-          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
           cache->replace_write(ai, s, w, false); // a write occurred during the probe
         }
         if constexpr (EnMT && Policy::sync_need_lock()) cache->reset_mt_state(ai, s, XactPrio::sync);
@@ -455,11 +455,11 @@ class CoreInterface : public InnerCohPortUncached<Policy, EnMT>, public CoreInte
     if(coh::is_write(cmd)) {
       meta->to_dirty();
       if(data) data->copy(m_data);
-      cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
+      cache->hook_write(addr, ai, s, w, hit, meta, data, delay);
       cache->replace_write(ai, s, w, true);
     } else {
       bool act_as_prefetch = coh::is_prefetch(cmd) && Policy::is_uncached(); // only tweak replace priority at the LLC accoridng to [Guo2022-MICRO]
-      cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
+      cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
       cache->replace_read(ai, s, w, act_as_prefetch);
     }
     if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);}

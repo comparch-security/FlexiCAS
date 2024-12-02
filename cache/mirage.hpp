@@ -188,10 +188,6 @@ public:
     CacheT::replace_manage(ai, s, w, hit, evict);
   }
 
-  void relocate_invalidate(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
-    CacheT::hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
-  }
-
   bool pre_finish_reloc(uint64_t addr, uint32_t s_ai, uint32_t s_s, uint32_t ai){
     return (s_ai == next_ai(ai)) && (s_s == indexer.index(addr, next_ai(ai)));
   }
@@ -251,7 +247,7 @@ protected:
         }
         cache->swap(m_addr, addr, m_meta, buf_meta, nullptr, nullptr);
         cache->get_data_meta(static_cast<MT *>(m_meta))->bind(m_ai, m_s, m_w);
-        // cache->hook_read(addr, m_ai, m_s, m_w, false, false, nullptr, nullptr, delay);
+        // cache->hook_read(addr, m_ai, m_s, m_w, false, nullptr, nullptr, delay);
         cache->replace_read(m_ai, m_s, m_w, false, true);
         addr = m_addr;
       }
@@ -277,7 +273,7 @@ protected:
       if(sync.first) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb){
-          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
           cache->replace_write(ai, s, w, false);
         }
       }

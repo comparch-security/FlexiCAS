@@ -127,7 +127,7 @@ public:
     return true; // ToDo: support multithread
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
     } else {
@@ -142,7 +142,7 @@ public:
     }
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
     } else {
@@ -199,7 +199,7 @@ public:
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     cache->replace_read(ai, s, w, act_as_prefetch);
 
     cache->meta_return_buffer(meta);
@@ -261,7 +261,7 @@ protected:
         if(mmeta->is_valid()) this->evict(mmeta, mdata, mai, ms, mw, delay);
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(mdata) mdata->copy(data);
-        cache->hook_write(addr, mai, ms, mw, false, true, mmeta, mdata, delay); // a write occurred during the probe
+        cache->hook_write(addr, mai, ms, mw, false, mmeta, mdata, delay); // a write occurred during the probe
         cache->replace_write(mai, ms, mw, true);
         cache->meta_return_buffer(meta);
         cache->data_return_buffer(data);
@@ -306,7 +306,7 @@ protected:
       if(meta->is_valid()) this->evict(meta, data, ai, s, w, delay);
       if(data_inner && data) data->copy(data_inner);
       meta->init(addr); Policy::meta_after_release(cmd, meta, meta_inner);
-      cache->hook_write(addr, ai, s, w, false, true, meta, data, delay);
+      cache->hook_write(addr, ai, s, w, false, meta, data, delay);
       cache->replace_write(ai, s, w, true);
     }
   }
@@ -326,7 +326,7 @@ protected:
       if(probe) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
         if(pwb){
-          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
           cache->replace_write(ai, s, w, false);
         }
       }
@@ -374,7 +374,7 @@ public:
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
+    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     cache->replace_read(ai, s, w, act_as_prefetch);
 
     // difficult to know when data is borrowed from buffer, just return it.
@@ -472,7 +472,7 @@ protected:
       Policy::meta_after_release(cmd, meta, meta_inner);
       if(meta->is_extend()) outer->writeback_req(addr, meta, data, coh::cmd_for_release_writeback(), delay); // writeback if dirty
       assert(meta_inner); // assume meta_inner is valid for all writebacks
-      cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
+      cache->hook_write(addr, ai, s, w, hit, meta, data, delay);
       cache->replace_write(ai, s, w, true);
       cache->data_return_buffer(data); // return it anyway
     } else {
@@ -496,7 +496,7 @@ protected:
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(data_inner && mdata) mdata->copy(data);
         Policy::meta_after_release(cmd, mmeta, meta_inner);
-        cache->hook_write(addr, mai, ms, mw, true, true, mmeta, mdata, delay);
+        cache->hook_write(addr, mai, ms, mw, true, mmeta, mdata, delay);
         cache->replace_write(mai, ms, mw, true);
       }
       cache->data_return_buffer(data);
@@ -516,7 +516,7 @@ protected:
       if(probe) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
         if(pwb){
-          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
           cache->replace_write(ai, s, w, false);
         }
       }
@@ -563,7 +563,7 @@ public:
       data = cache->data_copy_buffer();
       std::tie(probe_hit, probe_writeback) = inner->probe_req(addr, meta, data, sync.second, delay);
       if(probe_writeback){
-        cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
+        cache->hook_write(addr, ai, s, w, true, meta, data, delay);
         cache->replace_write(ai, s, w, false);
       }
     }
@@ -617,7 +617,7 @@ public:
           data = cache->data_copy_buffer();
           std::tie(probe_hit, probe_writeback) = inner->probe_req(addr, meta, data, sync.second, delay);
           if(probe_writeback){
-            cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
+            cache->hook_write(addr, ai, s, w, true, meta, data, delay);
             cache->replace_write(ai, s, w, false);
           }
         }
