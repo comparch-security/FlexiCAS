@@ -112,7 +112,7 @@ public:
     auto [p, s, w] = cache->size();
     uint32_t P, nset, nway;
     std::tie(P, nset, nway) = std::make_tuple(static_cast<uint32_t>(p), static_cast<uint32_t>(s), static_cast<uint32_t>(w));
-    cache->monitors->pause();
+    // cache->monitors->pause();
     static_cast<CT *>(cache)->remap_start();
     for(uint32_t ai = 0; ai < P; ai++){
       for(uint32_t idx = 0; idx < nset; idx++){
@@ -123,7 +123,7 @@ public:
       }
     }
     static_cast<CT *>(cache)->remap_end();
-    cache->monitors->resume();
+    // cache->monitors->resume();
   }
   
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd){
@@ -141,10 +141,14 @@ protected:
     uint64_t m_addr = m_meta->addr(new_idx); 
     if (m_meta->is_valid()) {
       if (static_cast<MT *>(m_meta)->is_relocated()) this->evict(m_meta, m_data, new_ai, new_idx, new_way, nullptr);
-      else cache->hook_manage(m_addr, new_ai, new_idx, new_way, true, 1, false, m_meta, m_data, nullptr);
+      else{
+        // cache->hook_manage(m_addr, new_ai, new_idx, new_way, true, 1, false, m_meta, m_data, nullptr);
+        cache->replace_manage(new_ai, new_idx, new_way, true, 1);
+      }
     }
     static_cast<CT *>(cache)->swap(m_addr, c_addr, m_meta, c_meta, m_data, c_data);
-    cache->hook_read(c_addr, new_ai, new_idx, new_way, false, false, m_meta, m_data, nullptr);
+    // cache->hook_read(c_addr, new_ai, new_idx, new_way, false, false, m_meta, m_data, nullptr);
+    cache->replace_read(new_ai, new_idx, new_way, false);
     static_cast<MT *>(m_meta)->to_relocated();
     c_addr = m_addr;
   }
@@ -157,7 +161,8 @@ protected:
     auto c_data = data ? cache->data_copy_buffer() : nullptr;
     static_cast<CT *>(cache)->relocate(c_addr, meta, c_meta, data, c_data);
     static_cast<MT *>(meta)->to_relocated();
-    cache->hook_manage(c_addr, ai, idx, way, true, 1, false, c_meta, c_data, nullptr);
+    // cache->hook_manage(c_addr, ai, idx, way, true, 1, false, c_meta, c_data, nullptr);
+    cache->replace_manage(ai, idx, way, true, 1);
 
     while(c_meta->is_valid()){
       relocation(c_meta, c_data, c_addr);

@@ -1237,6 +1237,8 @@ l2         evict 0000fa4efe47a000 00 0009 01   [IcR] df2c433ed877cb6c
 mem        read  000066e78b358f00 -1 -001 -1 1 [McW] 9d96c52a7d69d60e
 l2         read  000066e78b358f00 00 0009 01 0 [ScW] 9d96c52a7d69d60e
 l1d-0      read  000066e78b358f00 00 0012 02 0 [ScR] 9d96c52a7d69d60e
+mem        write 0000a6f9f0803d80 -1 -001 -1 1 [MdW] c0f82e8e69025d47
+l2         evict 0000a6f9f0803d80 00 0030 04   [IcR] c0f82e8e69025d47
 l2         write 0000ced5eac0d680 00 0022 05 1 [MdW] 286cd5e99abee408
 l1d-0      evict 0000ced5eac0d680 00 0010 00   [IcR] 286cd5e99abee408
 mem        read  00007121fd387e80 -1 -001 -1 1 [McW] 0000000000000000

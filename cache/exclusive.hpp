@@ -129,34 +129,49 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if(w >= NW) ext_replacer[ai].access(s, w-NW, true, prefetch);
-      else        replacer[ai].access(s, w, true, prefetch);
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
     } else {
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
+  virtual void replace_read(uint32_t ai, uint32_t s, uint32_t w, bool prefetch, bool genre = false) override {
+    if(ai < P) {
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, true, prefetch);
+      else        replacer[ai].access(s, w, true, prefetch);
+    }
+  }
+
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if(w >= NW) ext_replacer[ai].access(s, w-NW, demand_acc, false);
-      else        replacer[ai].access(s, w, demand_acc, false);
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
     } else {
       if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
+  virtual void replace_write(uint32_t ai, uint32_t s, uint32_t w, bool demand_acc, bool genre = false) override {
+    if(ai < P) {
+      if(w >= NW) ext_replacer[ai].access(s, w-NW, demand_acc, false);
+      else        replacer[ai].access(s, w, demand_acc, false);
+    } 
+  }
+
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
+    if(ai < P){
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+    } else {
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
+    }
+  }
+
+  virtual void replace_manage(uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool genre = false) override {
     if(ai < P){
       if(hit && evict) {
         if(w >= NW) ext_replacer[ai].invalid(s, w-NW);
         else        replacer[ai].invalid(s, w, evict == 2);
       }
-      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
-    } else {
-      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
-    }
+    } 
   }
 };
 
@@ -185,6 +200,7 @@ public:
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
+    cache->replace_read(ai, s, w, act_as_prefetch);
 
     cache->meta_return_buffer(meta);
     cache->data_return_buffer(data);
@@ -246,6 +262,7 @@ protected:
         mmeta->init(addr); mmeta->copy(meta); meta->to_invalid();
         if(mdata) mdata->copy(data);
         cache->hook_write(addr, mai, ms, mw, false, true, mmeta, mdata, delay); // a write occurred during the probe
+        cache->replace_write(mai, ms, mw, true);
         cache->meta_return_buffer(meta);
         cache->data_return_buffer(data);
         return std::make_tuple(mmeta, mdata, mai, ms, mw, hit);
@@ -290,6 +307,7 @@ protected:
       if(data_inner && data) data->copy(data_inner);
       meta->init(addr); Policy::meta_after_release(cmd, meta, meta_inner);
       cache->hook_write(addr, ai, s, w, false, true, meta, data, delay);
+      cache->replace_write(ai, s, w, true);
     }
   }
 
@@ -307,7 +325,10 @@ protected:
 
       if(probe) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
-        if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+        if(pwb){
+          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+          cache->replace_write(ai, s, w, false);
+        }
       }
 
       auto writeback = Policy::writeback_need_writeback(meta);
@@ -315,6 +336,7 @@ protected:
 
       Policy::meta_after_flush(cmd, meta, cache);
       cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0), writeback.first, meta, data, delay);
+      cache->replace_manage(ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0));
 
       if(!hit) {
         cache->meta_return_buffer(meta);
@@ -353,6 +375,7 @@ public:
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
     cache->hook_read(addr, ai, s, w, hit, act_as_prefetch, meta, data, delay);
+    cache->replace_read(ai, s, w, act_as_prefetch);
 
     // difficult to know when data is borrowed from buffer, just return it.
     cache->data_return_buffer(data);
@@ -450,6 +473,7 @@ protected:
       if(meta->is_extend()) outer->writeback_req(addr, meta, data, coh::cmd_for_release_writeback(), delay); // writeback if dirty
       assert(meta_inner); // assume meta_inner is valid for all writebacks
       cache->hook_write(addr, ai, s, w, hit, true, meta, data, delay);
+      cache->replace_write(ai, s, w, true);
       cache->data_return_buffer(data); // return it anyway
     } else {
       bool phit = false;
@@ -473,6 +497,7 @@ protected:
         if(data_inner && mdata) mdata->copy(data);
         Policy::meta_after_release(cmd, mmeta, meta_inner);
         cache->hook_write(addr, mai, ms, mw, true, true, mmeta, mdata, delay);
+        cache->replace_write(mai, ms, mw, true);
       }
       cache->data_return_buffer(data);
     }
@@ -490,7 +515,10 @@ protected:
 
       if(probe) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
-        if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+        if(pwb){
+          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+          cache->replace_write(ai, s, w, false);
+        }
       }
 
       auto writeback = Policy::writeback_need_writeback(meta);
@@ -498,6 +526,7 @@ protected:
 
       Policy::meta_after_flush(cmd, meta, cache);
       cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0), writeback.first, meta, data, delay);
+      cache->replace_manage(ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0));
 
       if(meta->is_extend()) cache->data_return_buffer(data);
     }
@@ -533,7 +562,10 @@ public:
       meta = cache->meta_copy_buffer(); meta->init(addr); meta->get_outer_meta()->to_invalid();
       data = cache->data_copy_buffer();
       std::tie(probe_hit, probe_writeback) = inner->probe_req(addr, meta, data, sync.second, delay);
-      if(probe_writeback) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
+      if(probe_writeback){
+        cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
+        cache->replace_write(ai, s, w, false);
+      }
     }
 
     if(hit || probe_writeback) {
@@ -543,6 +575,7 @@ public:
 
     Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
     cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
+    cache->replace_manage(ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0));
 
     if(!hit) {
       cache->meta_return_buffer(meta);
@@ -583,7 +616,10 @@ public:
         if(sync.first) {
           data = cache->data_copy_buffer();
           std::tie(probe_hit, probe_writeback) = inner->probe_req(addr, meta, data, sync.second, delay);
-          if(probe_writeback) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
+          if(probe_writeback){
+            cache->hook_write(addr, ai, s, w, true, false, meta, data, delay);
+            cache->replace_write(ai, s, w, false);
+          }
         }
       }
 
@@ -593,6 +629,7 @@ public:
 
     Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback);
     cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
+    cache->replace_manage(ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0));
 
     if(hit && meta->is_extend()) {
       cache->data_return_buffer(data);

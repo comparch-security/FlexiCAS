@@ -164,28 +164,28 @@ public:
     return std::make_pair(d_s, d_w);
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P) {
+  virtual void replace_read(uint32_t ai, uint32_t s, uint32_t w, bool prefetch, bool genre = false) override {
+    if(!genre && ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
       d_replacer.access(ds, dw, true, prefetch);
     }
-    CacheT::hook_read(addr, ai, s, w, hit, prefetch, meta, data, delay);
+    CacheT::replace_read(ai, s, w, prefetch);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P) {
+  virtual void replace_write(uint32_t ai, uint32_t s, uint32_t w, bool demand_acc, bool genre = false) override {
+    if(!genre && ai < P) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
       d_replacer.access(ds, dw, demand_acc, false);
     }
-    CacheT::hook_write(addr, ai, s, w, hit, demand_acc, meta, data, delay);
+    CacheT::replace_write(ai, s, w, demand_acc);
   }
 
-  virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P && hit && evict) {
+  virtual void replace_manage(uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool genre = false) override {
+    if(!genre && ai < P && hit && evict) {
       auto [ds, dw] = static_cast<MT *>(this->access(ai, s, w))->pointer();
       d_replacer.invalid(ds, dw);
     }
-    CacheT::hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+    CacheT::replace_manage(ai, s, w, hit, evict);
   }
 
   void relocate_invalidate(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) {
@@ -235,7 +235,8 @@ protected:
       auto buf_meta = cache->meta_copy_buffer();
       auto addr = meta->addr(s);
       cache->relocate(addr, meta, buf_meta);
-      cache->relocate_invalidate(addr, ai, s, w, true, 1, false, nullptr, nullptr, delay);
+      // cache->hook_manage(addr, ai, s, w, true, 1, false, nullptr, nullptr, delay);
+      cache->replace_manage(ai, s, w, true, 1, true);
       while(buf_meta->is_valid()){
         relocation++;
         cache->replace(addr, &m_ai, &m_s, &m_w, XactPrio::acquire, replace_for_relocate);
@@ -245,11 +246,13 @@ protected:
           if (relocation >= MaxRelocN || cache->pre_finish_reloc(m_addr, ai, s, m_ai)){
             global_evict(m_meta, cache->get_data_data(static_cast<MT *>(m_meta)), m_ai, m_s, w, delay); // associative eviction!
           }
-          else cache->relocate_invalidate(m_addr, m_ai, m_s, m_w, true, 1, false, nullptr, nullptr, delay);
+          // else cache->hook_manage(m_addr, m_ai, m_s, m_w, true, 1, false, nullptr, nullptr, delay);
+          else cache->replace_manage(m_ai, m_s, m_w, true, 1, true);
         }
         cache->swap(m_addr, addr, m_meta, buf_meta, nullptr, nullptr);
         cache->get_data_meta(static_cast<MT *>(m_meta))->bind(m_ai, m_s, m_w);
-        cache->hook_read(addr, m_ai, m_s, m_w, false, false, nullptr, nullptr, delay);
+        // cache->hook_read(addr, m_ai, m_s, m_w, false, false, nullptr, nullptr, delay);
+        cache->replace_read(m_ai, m_s, m_w, false, true);
         addr = m_addr;
       }
       cache->meta_return_buffer(buf_meta);
@@ -273,7 +276,10 @@ protected:
       auto sync = Policy::access_need_sync(cmd, meta);
       if(sync.first) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
-        if(pwb) cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+        if(pwb){
+          cache->hook_write(addr, ai, s, w, true, false, meta, data, delay); // a write occurred during the probe
+          cache->replace_write(ai, s, w, false);
+        }
       }
       auto [promote, promote_local, promote_cmd] = Policy::access_need_promote(cmd, meta);
       if(promote) { outer->acquire_req(addr, meta, data, promote_cmd, delay); hit = false; } // promote permission if needed
