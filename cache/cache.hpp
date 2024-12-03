@@ -191,6 +191,10 @@ public:
   // access both meta and data in one function call
   virtual std::pair<CMMetadataBase *, CMDataBase *> access_line(uint32_t ai, uint32_t s, uint32_t w) = 0;
 
+  virtual void replace_read(uint32_t ai, uint32_t s, uint32_t w, bool prefetch, bool genre = false) = 0;
+  virtual void replace_write(uint32_t ai, uint32_t s, uint32_t w, bool demand_acc, bool genre = false) = 0;
+  virtual void replace_manage(uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool genre = false) = 0;
+
   virtual bool query_coloc(uint64_t addrA, uint64_t addrB) = 0;
   virtual LocInfo query_loc(uint64_t addr) { return LocInfo(id, this, addr); }
   virtual void query_fill_loc(LocInfo *loc, uint64_t addr) = 0;
@@ -330,19 +334,28 @@ public:
     data_return_buffer(buffer_data);
   }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if(ai < P) replacer[ai].access(s, w, true, prefetch);
-    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, (ai < P ? replacer[ai].eviction_rank(s, w) : -1), hit, meta, data, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void replace_read(uint32_t ai, uint32_t s, uint32_t w, bool prefetch, bool genre = false) override {
+    if(ai < P) replacer[ai].access(s, w, true, prefetch);
+  }
+
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, (ai < P ? replacer[ai].eviction_rank(s, w) : -1), hit, meta, data, delay);
+  }
+
+  virtual void replace_write(uint32_t ai, uint32_t s, uint32_t w, bool demand_acc, bool genre = false) override {
     if(ai < P) replacer[ai].access(s, w, demand_acc, false);
-    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, (ai < P ? replacer[ai].eviction_rank(s, w) : -1), hit, evict, writeback, meta, data, delay);
+  }
+
+  virtual void replace_manage(uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool genre = false) override {
     if(ai < P && hit && evict) replacer[ai].invalid(s, w, evict == 2);
-    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
   }
 
   virtual CMDataBase *data_copy_buffer() override {

@@ -1,3 +1,6 @@
 [submodule "cryptopp"]
 	path = cryptopp
 	url = https://github.com/weidai11/cryptopp
+[submodule "regression"]
+	path = regression
+	url = ../flexicas-regression.git
