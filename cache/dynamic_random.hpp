@@ -5,7 +5,8 @@
 #include "util/monitor.hpp"
 #include <numeric>
 
-#define MAGIC_ID_REMAP 2024091300ul
+#define MAGIC_ID_REMAP_ASK  2024091300ul
+#define MAGIC_ID_REMAP_END  2024102700ul
 
 struct RemapHelper {
   static const unsigned int replace_for_relocate = 2408200ul;
@@ -127,9 +128,12 @@ public:
   }
   
   virtual void finish_resp(uint64_t addr, coh_cmd_t outer_cmd){
-    cache->monitors->magic_func(addr, MAGIC_ID_REMAP, &remap_flag);
-    if(remap_flag) remap();
-    remap_flag = false;
+    cache->monitors->magic_func(addr, MAGIC_ID_REMAP_ASK, &remap_flag);
+    if(remap_flag){
+      remap();
+      cache->monitors->magic_func(addr, MAGIC_ID_REMAP_END, nullptr);
+      remap_flag = false;
+    }
     InnerT::finish_resp(addr, outer_cmd);
   }
 
@@ -182,15 +186,17 @@ protected:
 public:
   RemapperBase(bool remap_enable = true) : SimpleAccMonitor(true), remap_enable(remap_enable) {}
 
-  virtual void reset() override {
-    remap = false;
-    SimpleAccMonitor::reset();
-  }
-
   virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) override {
-    if (magic_id == MAGIC_ID_REMAP) {
-      if(remap_enable) *static_cast<bool*>(magic_data) |= remap;
+    if (magic_id == MAGIC_ID_REMAP_ASK) {
+      if(remap_enable){
+        *static_cast<bool*>(magic_data) |= remap;
+        if(remap) active = false;
+      }
+      return true;
+    }
+    if (magic_id == MAGIC_ID_REMAP_END) {
       remap = false;
+      active = true;
       return true;
     }
     return false;
@@ -264,15 +270,12 @@ public:
   }
   virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
-    cnt_access++; cnt_write++;
-    if(!hit) {  cnt_miss++; cnt_write_miss++;}
-    if(access_period != 0 && (cnt_access % access_period) == 0) {
-      if(Z_Score_detect()) {
-        remap = true;
-      }
-      evicts.fill(0);
+    cnt_write++;
+    if(!hit) {
+      cnt_write_miss++;
     }
   }
+
   virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_invalid++;
@@ -283,10 +286,22 @@ public:
     }
   }
 
-  virtual void reset() override {
-    evicts.fill(0);
-    set_evict_history.fill(0.0);
-    RemapperBase::reset();
+  virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) override {
+    if (magic_id == MAGIC_ID_REMAP_ASK) {
+      if(remap_enable){
+        *static_cast<bool*>(magic_data) |= remap;
+        if(remap) active = false;
+      }
+      return true;
+    }
+    if (magic_id == MAGIC_ID_REMAP_END) {
+      remap = false;
+      active = true;
+      cnt_access = 0; cnt_miss = 0; cnt_write = 0;  cnt_write_miss = 0; cnt_invalid = 0;
+      evicts.fill(0); set_evict_history.fill(0.0);
+      return true;
+    }
+    return false;
   }
 };
 
