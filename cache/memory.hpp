@@ -131,11 +131,11 @@ public:
   void detach_monitor() { monitors->detach_monitor(); }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
-    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, -1, hit, meta, data, delay);
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
-    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, -1, hit, meta, data, delay);
   }
 
 private:

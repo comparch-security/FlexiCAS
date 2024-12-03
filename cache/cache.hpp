@@ -335,7 +335,7 @@ public:
   }
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, (ai < P ? replacer[ai].eviction_rank(s, w) : -1), hit, meta, data, delay);
   }
 
   virtual void replace_read(uint32_t ai, uint32_t s, uint32_t w, bool prefetch, bool genre = false) override {
@@ -343,7 +343,7 @@ public:
   }
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, (ai < P ? replacer[ai].eviction_rank(s, w) : -1), hit, meta, data, delay);
   }
 
   virtual void replace_write(uint32_t ai, uint32_t s, uint32_t w, bool demand_acc, bool genre = false) override {
@@ -351,7 +351,7 @@ public:
   }
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase * meta, const CMDataBase *data, uint64_t *delay) override {
-    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+    if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, (ai < P ? replacer[ai].eviction_rank(s, w) : -1), hit, evict, writeback, meta, data, delay);
   }
 
   virtual void replace_manage(uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool genre = false) override {
