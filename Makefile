@@ -95,7 +95,7 @@ clean-regression:
 	-rm $(PARALLEL_REGRESSION_TESTS_EXE) $(PARALLEL_REGRESSION_TESTS_RST)
 	-rm $(REPLAYER_REGRESSION_TESTS_EXE) $(REPLAYER_REGRESSION_TESTS_RST)
 
-PERFORMANCE_TESTS = multi-l2-msi multi-l3-msi replay
+PERFORMANCE_TESTS = multi-l2-msi multi-l3-msi replay replay_st
  
 PERFORMANCE_TESTS_EXE = $(patsubst %, performance/%, $(PERFORMANCE_TESTS))
 PERFORMANCE_TESTS_RST = $(patsubst %, performance/%.out, $(PERFORMANCE_TESTS))
@@ -109,6 +109,18 @@ performance: $(PERFORMANCE_TESTS_EXE)
 
 clean-performance:
 	-rm $(PERFORMANCE_TESTS_EXE) $(PERFORMANCE_TESTS_RST)
+
+TEMPLATE_TESTS = replay_two_level replay_two_level_st replay_three_level replay_three_level_st
+TEMPLATE_TESTS_EXE = $(patsubst %, performance/%, $(TEMPLATE_TESTS))
+
+$(TEMPLATE_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS) $(REPLAYER_HEADERS) $(UTIL_HEADERS)
+	$(CXX) $(CXXFLAGS_MULTI) -DNThread=$(NThread) -DNCore=$(NCore) $< $(UTIL_OBJS) $(CRYPTO_LIB) $(REGRESS_LD_FLAGS) -o $@ -lz
+
+template: $(TEMPLATE_TESTS_EXE)
+
+make clean-template:
+	-rm $(TEMPLATE_TESTS_EXE)
+
 
 libflexicas.a: $(UTIL_OBJS) $(CRYPTO_LIB)
 	ar rvs $@ $(UTIL_OBJS) $(CRYPTO_LIB)

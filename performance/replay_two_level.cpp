@@ -6,19 +6,16 @@
 #include "cache/metadata.hpp"
 #include "cache/msi.hpp"
 
-#define L1IW 4
-#define L1WN 4
+#define L1IW 6
+#define L1WN 8
 
-#define L2IW 5
-#define L2WN 8
-
-#define NThread 2
-#define NCore 2
+#define L2IW 10
+#define L2WN 16
 
 int main(int argc, char* argv[]) {
 
   if (argc != 2) {
-    std::cerr << "Usage replay <trace_dir>" << std::endl;
+    std::cerr << "Usage replay_two_level <trace_dir>" << std::endl;
     return 0;
   }
 
@@ -55,7 +52,7 @@ int main(int argc, char* argv[]) {
       filtered_time_points.push_back(pair.second);
     }
   }
-
+ 
   auto max_it = std::max_element(filtered_time_points.begin(), filtered_time_points.end());
   TimePoint max_value = *max_it;
   filtered_time_points.erase(max_it);
@@ -63,6 +60,15 @@ int main(int argc, char* argv[]) {
   auto se_max_it = std::max_element(filtered_time_points.begin(), filtered_time_points.end());
   TimePoint se_max_value = *se_max_it;
 
+  auto min_it = std::min_element(filtered_time_points.begin(), filtered_time_points.end());
+  TimePoint min_value = *min_it;
+
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(max_value-se_max_value);
-  std::cout << "time cost: " << duration.count() << " ms" << std::endl;
+
+  auto all_duration = std::chrono::duration_cast<std::chrono::milliseconds>(max_value - min_value);
+
+  std::cout << "replay_two_level: " << NThread << " " << NCore << std::endl;
+  std::cout << "directory: " << dir << std::endl;
+  std::cout << "from all thread starts to end time cost: " << duration.count() << " ms" << std::endl;
+  std::cout << "all thread time cost: " << all_duration.count() << " ms" << std::endl;
 }

@@ -5,20 +5,19 @@
 #include "cache/memory.hpp"
 #include "cache/metadata.hpp"
 #include "cache/msi.hpp"
+#include <algorithm>
+#include <bits/chrono.h>
 
-#define L1IW 4
-#define L1WN 4
+#define L1IW 6
+#define L1WN 8
 
-#define L2IW 5
-#define L2WN 8
-
-#define NThread 2
-#define NCore 2
+#define L2IW 10
+#define L2WN 16
 
 int main(int argc, char* argv[]) {
 
   if (argc != 2) {
-    std::cerr << "Usage replay <trace_dir>" << std::endl;
+    std::cerr << "Usage replay_two_level <trace_dir>" << std::endl;
     return 0;
   }
 
@@ -37,13 +36,13 @@ int main(int argc, char* argv[]) {
   auto l2 = cache_gen_inc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceLRU, MSIPolicy, policy_l2, true, DelayCoherentCache<2, 3, 4>, true, true>(1, "l2")[0];
   auto mem = new SimpleMemoryModel<void, DelayMemory<10>, true, true>("mem");
   
-  for(int i=0; i<NCore; i++) {
+  for(int i = 0; i< NCore; i++) {
     l1i[i]->outer->connect(l2->inner);
     l1d[i]->outer->connect(l2->inner);
   }
   l2->outer->connect(mem);
 
-  SynchroTraceReplayer<NThread, NCore> replayer(dir, 1.0, 2.0, 1, 1, 300, core_data);
+  SynchroTraceReplayerST<NThread, NCore> replayer(dir, 1.0, 2.0, 1, 1, 300, core_data);
   replayer.init();
   replayer.start();
 
@@ -63,6 +62,15 @@ int main(int argc, char* argv[]) {
   auto se_max_it = std::max_element(filtered_time_points.begin(), filtered_time_points.end());
   TimePoint se_max_value = *se_max_it;
 
+  auto min_it = std::min_element(filtered_time_points.begin(), filtered_time_points.end());
+  TimePoint min_value = *min_it;
+
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(max_value-se_max_value);
-  std::cout << "time cost: " << duration.count() << " ms" << std::endl;
+
+  auto all_duration = std::chrono::duration_cast<std::chrono::milliseconds>(max_value - min_value);
+
+  std::cout << "replay_two_level_st: " << NThread << " " << NCore << std::endl;
+  std::cout << "directory: " << dir << std::endl;
+  std::cout << "from all thread starts to end time cost: " << duration.count() << " ms" << std::endl;
+  std::cout << "all thread time cost: " << all_duration.count() << " ms" << std::endl;
 }

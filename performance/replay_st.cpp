@@ -12,13 +12,13 @@
 #define L2IW 5
 #define L2WN 8
 
-#define NThread 2
-#define NCore 2
+#define NThread 4
+#define NCore 4
 
 int main(int argc, char* argv[]) {
 
   if (argc != 2) {
-    std::cerr << "Usage replay <trace_dir>" << std::endl;
+    std::cerr << "Usage replay_st <trace_dir>" << std::endl;
     return 0;
   }
 
@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
   }
   l2->outer->connect(mem);
 
-  SynchroTraceReplayer<NThread, NCore> replayer(dir, 1.0, 2.0, 1, 1, 300, core_data);
+  SynchroTraceReplayerST<NThread, NCore> replayer(dir, 1.0, 2.0, 1, 1, 300, core_data);
   replayer.init();
   replayer.start();
 
