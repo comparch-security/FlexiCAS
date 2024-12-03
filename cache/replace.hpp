@@ -326,7 +326,7 @@ public:
   }
 
   virtual uint32_t eviction_rank(uint32_t s, uint32_t w) const {
-    return (*loc_random)() % NW;
+    return NW/2;
   }
 };
 

@@ -101,7 +101,7 @@ public:
       data_inner->write(mem_addr);
     }
     if(meta_inner) meta_inner->to_modified(-1);
-    hook_read(addr, 0, 0, 0, true, false, meta_inner, data_inner, delay);
+    hook_read(addr, 0, 0, 0, true, meta_inner, data_inner, delay);
 #ifdef CHECK_MULTI
     if constexpr (EnMT) active_addr_remove(addr);
 #endif
@@ -119,7 +119,7 @@ public:
       uint64_t *mem_addr = reinterpret_cast<uint64_t *>(page + offset);
       for(int i=0; i<8; i++) mem_addr[i] = data_inner->read(i);
     }
-    hook_write(addr, 0, 0, 0, true, true, meta_inner, data_inner, delay);
+    hook_write(addr, 0, 0, 0, true, meta_inner, data_inner, delay);
 #ifdef CHECK_MULTI
     if constexpr (EnMT) active_addr_remove(addr);
 #endif
@@ -130,11 +130,11 @@ public:
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors->detach_monitor(); }
 
-  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool prefetch, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
   }
 
-  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, bool demand_acc, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
+  virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
   }
 

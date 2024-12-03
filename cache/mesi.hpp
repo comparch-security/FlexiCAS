@@ -19,7 +19,7 @@ struct MESIPolicy : public MSIPolicy<false, uncached, Outer>
 {
   static __always_inline void meta_after_grant(coh_cmd_t cmd, CMMetadataBase *meta, CMMetadataBase *meta_inner) {
     int32_t id = cmd.id;
-    if(coh::is_fetch_read(cmd)) {
+    if(coh::is_fetch_read(cmd) || coh::is_prefetch(cmd)) {
       meta->to_shared(id);
       if(static_cast<MetadataDirectoryBase *>(meta)->is_exclusive_sharer(id)) { // add the support for exclusive
         meta->to_exclusive(id);
