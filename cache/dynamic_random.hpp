@@ -208,7 +208,7 @@ protected:
 public:
   SimpleEVRemapper(uint64_t period) : period(period) {}
 
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_invalid++;
     if(cnt_invalid !=0 && (cnt_invalid % period) == 0) {

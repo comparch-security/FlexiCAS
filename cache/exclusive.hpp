@@ -129,9 +129,11 @@ public:
 
   virtual void hook_read(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, ai, s, w,
+                                                               (w >= NW ? ext_replacer[ai].eviction_rank(s, w-NW) : replacer[ai].eviction_rank(s, w)),
+                                                               hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_read(addr, -1, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
@@ -144,9 +146,11 @@ public:
 
   virtual void hook_write(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P) {
-      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, ai, s, w,
+                                                                (w >= NW ? ext_replacer[ai].eviction_rank(s, w-NW) : replacer[ai].eviction_rank(s, w)),
+                                                                hit, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, hit, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_write(addr, -1, -1, -1, -1, hit, meta, data, delay);
     }
   }
 
@@ -159,9 +163,11 @@ public:
 
   virtual void hook_manage(uint64_t addr, uint32_t ai, uint32_t s, uint32_t w, bool hit, uint32_t evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay) override {
     if(ai < P){
-      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, ai, s, w,
+                                                                (w >= NW ? ext_replacer[ai].eviction_rank(s, w-NW) : replacer[ai].eviction_rank(s, w)),
+                                                                hit, evict, writeback, meta, data, delay);
     } else {
-      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, -1, -1, -1, hit, evict, writeback, meta, data, delay);
+      if constexpr (EnMon || !C_VOID<DLY>) monitors->hook_manage(addr, -1, -1, -1, -1, hit, evict, writeback, meta, data, delay);
     }
   }
 

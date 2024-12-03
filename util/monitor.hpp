@@ -25,9 +25,9 @@ public:
 
   // standard functions to supprt a type of monitoring
   virtual bool attach(uint64_t cache_id) = 0; // decide whether to attach the mointor to this cache
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) = 0;
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data) = 0;
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, const CMMetadataBase *meta, const CMDataBase *data) = 0;
   virtual bool magic_func(uint64_t cache_id, uint64_t addr, uint64_t magic_id, void *magic_data) { return false; } // a special function to log non-standard information to a special monitor
 
   // control
@@ -56,9 +56,9 @@ public:
   // support run-time assign/reassign mointors
   void detach_monitor() { monitors.clear(); }
 
-  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
-  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
-  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
+  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) = 0;
   virtual void magic_func(uint64_t addr, uint64_t magic_id, void *magic_data) = 0; // an interface for special communication with a specific monitor if attached
   virtual void pause() = 0;
   virtual void resume() = 0;
@@ -103,19 +103,19 @@ public:
     }
   }
 
-  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
-    if constexpr (EnMon) for(auto m:monitors) m->read(id, addr, ai, s, w, hit, meta, data);
+  virtual void hook_read(uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
+    if constexpr (EnMon) for(auto m:monitors) m->read(id, addr, ai, s, w, ev_rank, hit, meta, data);
     if constexpr (!C_VOID<DLY>) timer->read(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
-    if constexpr (EnMon) for(auto m:monitors) m->write(id, addr, ai, s, w, hit, meta, data);
+  virtual void hook_write(uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
+    if constexpr (EnMon) for(auto m:monitors) m->write(id, addr, ai, s, w, ev_rank, hit, meta, data);
     if constexpr (!C_VOID<DLY>) timer->write(addr, ai, s, w, hit, delay);
   }
 
-  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
+  virtual void hook_manage(uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, bool evict, bool writeback, const CMMetadataBase *meta, const CMDataBase *data, uint64_t *delay, unsigned int genre = 0) override {
     if(hit && evict) {
-      if constexpr (EnMon) for(auto m:monitors) m->invalid(id, addr, ai, s, w, meta, data);
+      if constexpr (EnMon) for(auto m:monitors) m->invalid(id, addr, ai, s, w, ev_rank, meta, data);
     }
     if constexpr (!C_VOID<DLY>) timer->manage(addr, ai, s, w, hit, evict, writeback, delay);
   }
@@ -153,13 +153,13 @@ public:
 
   virtual bool attach(uint64_t cache_id) override { return true; }
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  override {
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  override {
     if(!active) return;
     cnt_access++;
     if(!hit) cnt_miss++;
   }
 
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_access++;
     cnt_write++;
@@ -169,7 +169,7 @@ public:
     }
   }
 
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_invalid++;
   }
@@ -210,10 +210,10 @@ public:
 
   virtual bool attach(uint64_t cache_id) { return true; }
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     std::string msg;  msg.reserve(100);
-    msg += (boost::format("%-10s read  %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+    msg += (boost::format("%-10s read  %016x %02d %04d %02d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % ev_rank % hit).str();
 
     if(meta)
       msg.append(" [").append(meta->to_string()).append("]");
@@ -225,10 +225,10 @@ public:
 
     print(msg);
   }
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     std::string msg;  msg.reserve(100);
-    msg += (boost::format("%-10s write %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+    msg += (boost::format("%-10s write %016x %02d %04d %02d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % ev_rank % hit).str();
 
     if(meta)
       msg.append(" [").append(meta->to_string()).append("]");
@@ -240,10 +240,10 @@ public:
 
     print(msg);
   }
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     std::string msg;  msg.reserve(100);
-    msg += (boost::format("%-10s evict %016x %02d %04d %02d  ") % UniqueID::name(cache_id) % addr % ai % s % w).str() ;
+    msg += (boost::format("%-10s evict %016x %02d %04d %02d %02d  ") % UniqueID::name(cache_id) % addr % ai % s % w % ev_rank).str() ;
 
     if(meta)
       msg.append(" [").append(meta->to_string()).append("]");
@@ -297,10 +297,10 @@ public:
 
   virtual bool attach(uint64_t cache_id) override { return true; }
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  override {
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  override {
     if(!active || addr != target) return;
     std::string msg;  msg.reserve(100);
-    msg += (boost::format("%-10s read  %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+    msg += (boost::format("%-10s read  %016x %02d %04d %02d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % ev_rank % hit).str();
 
     if(meta)
       msg.append(" [").append(meta->to_string()).append("]");
@@ -313,10 +313,10 @@ public:
     print(msg);
   }
 
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active || target != addr) return;
     std::string msg;  msg.reserve(100);
-    msg += (boost::format("%-10s write %016x %02d %04d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % hit).str();
+    msg += (boost::format("%-10s write %016x %02d %04d %02d %02d %1x") % UniqueID::name(cache_id) % addr % ai % s % w % ev_rank % hit).str();
 
     if(meta)
       msg.append(" [").append(meta->to_string()).append("]");
@@ -329,10 +329,10 @@ public:
     print(msg);
   }
 
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active || target != addr) return;
     std::string msg;  msg.reserve(100);
-    msg += (boost::format("%-10s evict %016x %02d %04d %02d  ") % UniqueID::name(cache_id) % addr % ai % s % w).str() ;
+    msg += (boost::format("%-10s evict %016x %02d %04d %02d %02d  ") % UniqueID::name(cache_id) % addr % ai % s % w % ev_rank).str() ;
 
     if(meta)
       msg.append(" [").append(meta->to_string()).append("]");
