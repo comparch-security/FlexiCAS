@@ -185,8 +185,8 @@ public:
       if(sync.first) {
         auto [phit, pwb] = OuterCohPortBase::inner->probe_req(addr, meta, data, sync.second, delay);
         if(pwb) {
-          cache->hook_write(addr, ai, s, w, true, meta, data, delay);
           cache->replace_write(ai, s, w, false);
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay);
         }
       }
 
@@ -194,14 +194,14 @@ public:
       if constexpr (EnMT) {assert(meta->match(addr)); meta_outer->lock(); }
       if((writeback = Policy::probe_need_writeback(outer_cmd, meta))) { if(data_outer) data_outer->copy(data); } // writeback if dirty
       Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
       cache->replace_manage(ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0));
+      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
       if constexpr (EnMT) { meta_outer->unlock(); meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::probe); }
     } else {
       if constexpr (EnMT) meta_outer->lock();
       Policy::meta_after_probe(outer_cmd, meta, meta_outer, coh_id, writeback); // alway update meta
-      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
       cache->replace_manage(ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0));
+      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(outer_cmd) ? 1 : 0), writeback, meta, data, delay);
       if constexpr (EnMT) meta_outer->unlock();
     }
     return std::make_pair(hit, writeback);
@@ -227,8 +227,8 @@ public:
 
     if (data_inner && data) data_inner->copy(data);
     Policy::meta_after_grant(cmd, meta, meta_inner);
-    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     if(!act_as_prefetch || !hit) cache->replace_read(ai, s, w, act_as_prefetch);
+    cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     finish_record(addr, coh::cmd_for_finish(cmd.id), !hit, meta, ai, s);
     if(cmd.id == -1) finish_resp(addr, coh::cmd_for_finish(cmd.id));
   }
@@ -255,16 +255,16 @@ protected:
       if constexpr (EnMT && Policy::sync_need_lock()) cache->set_mt_state(ai, s, XactPrio::sync);
       auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
       if(pwb){
-        cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
         cache->replace_write(ai, s, w, false);
+        cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
       }
       if constexpr (EnMT && Policy::sync_need_lock()) cache->reset_mt_state(ai, s, XactPrio::sync);
     }
     auto writeback = Policy::writeback_need_writeback(meta);
     if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
     Policy::meta_after_evict(meta);
-    cache->hook_manage(addr, ai, s, w, true, 1, writeback.first, meta, data, delay);
     cache->replace_manage(ai, s, w, true, 1);
+    cache->hook_manage(addr, ai, s, w, true, 1, writeback.first, meta, data, delay);
   }
 
   virtual std::tuple<bool, CMMetadataBase *, CMDataBase *, uint32_t, uint32_t, uint32_t>
@@ -315,8 +315,8 @@ protected:
         if constexpr (EnMT && Policy::sync_need_lock()) { assert(prio < XactPrio::sync); cache->set_mt_state(ai, s, XactPrio::sync);}
         auto [phit, pwb] = probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb){
-          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
           cache->replace_write(ai, s, w, false);
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
         }
         if constexpr (EnMT && Policy::sync_need_lock()) cache->reset_mt_state(ai, s, XactPrio::sync);
       }
@@ -336,8 +336,8 @@ protected:
     if(data_inner) data->copy(data_inner);
     Policy::meta_after_release(cmd, meta, meta_inner);
     assert(meta_inner); // assume meta_inner is valid for all writebacks
-    cache->hook_write(addr, ai, s, w, hit, meta, data, delay);
     cache->replace_write(ai, s, w, false);
+    cache->hook_write(addr, ai, s, w, hit, meta, data, delay);
     if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::release); }
   }
 
@@ -353,8 +353,8 @@ protected:
         if constexpr (EnMT && Policy::sync_need_lock()) cache->set_mt_state(ai, s, XactPrio::sync);
         auto [phit, pwb] = probe_req(addr, meta, data, probe_cmd, delay); // sync if necessary
         if(pwb){
-          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
           cache->replace_write(ai, s, w, false); // a write occurred during the probe
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
         }
         if constexpr (EnMT && Policy::sync_need_lock()) cache->reset_mt_state(ai, s, XactPrio::sync);
       }
@@ -363,8 +363,8 @@ protected:
       if(writeback.first) outer->writeback_req(addr, meta, data, writeback.second, delay); // writeback if dirty
 
       Policy::meta_after_flush(cmd, meta, cache);
-      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0), writeback.first, meta, data, delay); // identify flush to hook_manager
       cache->replace_manage(ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0)); // identify flush to hook_manager
+      cache->hook_manage(addr, ai, s, w, hit, (coh::is_evict(cmd) ? 2 : 0), writeback.first, meta, data, delay); // identify flush to hook_manager
 
       if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::flush); }
     }
@@ -455,12 +455,12 @@ class CoreInterface : public InnerCohPortUncached<Policy, EnMT>, public CoreInte
     if(coh::is_write(cmd)) {
       meta->to_dirty();
       if(data) data->copy(m_data);
-      cache->hook_write(addr, ai, s, w, hit, meta, data, delay);
       cache->replace_write(ai, s, w, true);
+      cache->hook_write(addr, ai, s, w, hit, meta, data, delay);
     } else {
       bool act_as_prefetch = coh::is_prefetch(cmd) && Policy::is_uncached(); // only tweak replace priority at the LLC accoridng to [Guo2022-MICRO]
-      cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
       if(!act_as_prefetch || !hit) cache->replace_read(ai, s, w, act_as_prefetch);
+      cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
     }
     if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire);}
     if(!hit) outer->finish_req(addr);

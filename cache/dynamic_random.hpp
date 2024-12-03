@@ -144,14 +144,12 @@ protected:
     auto[m_meta, m_data] = cache->access_line(new_ai, new_idx, new_way);
     uint64_t m_addr = m_meta->addr(new_idx); 
     if (m_meta->is_valid()) {
-      if (static_cast<MT *>(m_meta)->is_relocated()) this->evict(m_meta, m_data, new_ai, new_idx, new_way, nullptr);
-      else{
-        // cache->hook_manage(m_addr, new_ai, new_idx, new_way, true, 1, false, m_meta, m_data, nullptr);
+      if (static_cast<MT *>(m_meta)->is_relocated())
+        this->evict(m_meta, m_data, new_ai, new_idx, new_way, nullptr);
+      else
         cache->replace_manage(new_ai, new_idx, new_way, true, 1);
-      }
     }
     static_cast<CT *>(cache)->swap(m_addr, c_addr, m_meta, c_meta, m_data, c_data);
-    // cache->hook_read(c_addr, new_ai, new_idx, new_way, false, m_meta, m_data, nullptr);
     cache->replace_read(new_ai, new_idx, new_way, false);
     static_cast<MT *>(m_meta)->to_relocated();
     c_addr = m_addr;
@@ -165,12 +163,10 @@ protected:
     auto c_data = data ? cache->data_copy_buffer() : nullptr;
     static_cast<CT *>(cache)->relocate(c_addr, meta, c_meta, data, c_data);
     static_cast<MT *>(meta)->to_relocated();
-    // cache->hook_manage(c_addr, ai, idx, way, true, 1, false, c_meta, c_data, nullptr);
     cache->replace_manage(ai, idx, way, true, 1);
 
-    while(c_meta->is_valid()){
-      relocation(c_meta, c_data, c_addr);
-    }
+    while(c_meta->is_valid()) relocation(c_meta, c_data, c_addr);
+
     cache->meta_return_buffer(c_meta);
     cache->data_return_buffer(c_data);
   }

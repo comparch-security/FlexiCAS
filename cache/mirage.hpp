@@ -231,7 +231,6 @@ protected:
       auto buf_meta = cache->meta_copy_buffer();
       auto addr = meta->addr(s);
       cache->relocate(addr, meta, buf_meta);
-      // cache->hook_manage(addr, ai, s, w, true, 1, false, nullptr, nullptr, delay);
       cache->replace_manage(ai, s, w, true, 1, true);
       while(buf_meta->is_valid()){
         relocation++;
@@ -239,15 +238,13 @@ protected:
         auto m_meta = static_cast<MT *>(cache->access(m_ai, m_s, m_w));
         auto m_addr = m_meta->addr(m_s);
         if (m_meta->is_valid()) {
-          if (relocation >= MaxRelocN || cache->pre_finish_reloc(m_addr, ai, s, m_ai)){
+          if (relocation >= MaxRelocN || cache->pre_finish_reloc(m_addr, ai, s, m_ai))
             global_evict(m_meta, cache->get_data_data(static_cast<MT *>(m_meta)), m_ai, m_s, w, delay); // associative eviction!
-          }
-          // else cache->hook_manage(m_addr, m_ai, m_s, m_w, true, 1, false, nullptr, nullptr, delay);
-          else cache->replace_manage(m_ai, m_s, m_w, true, 1, true);
+          else
+            cache->replace_manage(m_ai, m_s, m_w, true, 1, true);
         }
         cache->swap(m_addr, addr, m_meta, buf_meta, nullptr, nullptr);
         cache->get_data_meta(static_cast<MT *>(m_meta))->bind(m_ai, m_s, m_w);
-        // cache->hook_read(addr, m_ai, m_s, m_w, false, nullptr, nullptr, delay);
         cache->replace_read(m_ai, m_s, m_w, false, true);
         addr = m_addr;
       }
@@ -273,8 +270,8 @@ protected:
       if(sync.first) {
         auto [phit, pwb] = this->probe_req(addr, meta, data, sync.second, delay); // sync if necessary
         if(pwb){
-          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
           cache->replace_write(ai, s, w, false);
+          cache->hook_write(addr, ai, s, w, true, meta, data, delay); // a write occurred during the probe
         }
       }
       auto [promote, promote_local, promote_cmd] = Policy::access_need_promote(cmd, meta);
