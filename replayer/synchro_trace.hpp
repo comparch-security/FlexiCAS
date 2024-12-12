@@ -7,6 +7,7 @@
 #include "cache/coherence.hpp"
 #include "st_event.hpp"
 #include "thread.hpp"
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cstddef>
@@ -15,6 +16,8 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+
+#define MAX_MEMORY_NUM 2000000
 
 class SynchroTraceReplayerBase
 {
@@ -100,7 +103,7 @@ protected:
 
   ThreadScheduler<NT, NC> scheduler;
 
-
+  std::atomic<bool> flag{false};
   /**
     * For a communication event, check to see if the producer has reached
     * the dependent event. This function also handles the case of a system
@@ -467,7 +470,8 @@ protected:
   }
 
   void replay(CoreID coreId) {
-    while(true) {
+    uint64_t count = 0;
+    while(!flag.load()) {
       if (std::all_of(threadContexts.cbegin(), threadContexts.cend(),
                       [this, coreId](const ThreadContext& tcxt)
                       { return (this->scheduler.threadIdToCoreId(tcxt.threadId) != coreId) ||
@@ -492,6 +496,7 @@ protected:
           case ThreadStatus::WAIT_COMM:
             if (scheduler.curClock(coreId) == tcxt.wakeupClock) {
               tcxt.status = ThreadStatus::ACTIVE;
+              count++;
             }
             break;
           case ThreadStatus::ACTIVE:
@@ -521,11 +526,13 @@ protected:
 
       if (scheduler.nextClock(coreId) % 1000000 == 0) {
         wakeupDebugLog(coreId);
-      } 
+      }
+
+      if (count == MAX_MEMORY_NUM) flag.store(true); 
     }
 
     outputMtx.lock();
-    std::cout << "All threads on Core " << coreId << " completed at " << scheduler.curClock(coreId) << ".\n" << std::endl;
+    std::cout << "flag value: " << flag.load() << ", All threads on Core " << coreId << " completed at " << scheduler.curClock(coreId) << ".\n" << std::endl;
     outputMtx.unlock();
   }
 
@@ -574,6 +581,8 @@ public:
     }
 
     wakeuptime.push_back(std::make_pair(true, std::chrono::steady_clock::now()));
+
+    std::cout << "all event num is: " << scheduler.geteventNum() << std::endl; 
 
     std::cout << "Replay Completed!" << std::endl;
   }
@@ -886,10 +895,10 @@ protected:
   }
 
   virtual void wakeupDebugLog(){
-    // printf("clock:%ld\n", curClock());
-    // for(const auto & cxt : threadContexts){
-    //   printf("Thread<%d>:Event<%ld>:Status<%s>\n", cxt.threadId, cxt.currEventId, toString(cxt.status));
-    // }
+    printf("clock:%ld\n", curClock());
+    for(const auto & cxt : threadContexts){
+      printf("Thread<%d>:Event<%ld>:Status<%s>\n", cxt.threadId, cxt.currEventId, toString(cxt.status));
+    }
   }
 
   virtual bool mutexTryLock(ThreadContext& tcxt, CoreID coreId, uint64_t pthaddr) {}
@@ -931,7 +940,9 @@ public:
     wakeuptime[0] = std::make_pair(true, std::chrono::steady_clock::now());
   }
 
-  virtual void start(){
+  virtual void start() {
+    uint64_t count = 0;
+    uint32_t thread_num = threadContexts.size();
     while(true){
       if (std::all_of(threadContexts.cbegin(), threadContexts.cend(),
                       [](const ThreadContext& tcxt)
@@ -945,8 +956,9 @@ public:
           case ThreadStatus::WAIT_MEMORY:
           case ThreadStatus::WAIT_THREAD:
           case ThreadStatus::WAIT_COMM:
-            if(curClock() == tcxt.wakeupClock){
+            if(curClock() >= tcxt.wakeupClock){
               tcxt.status = ThreadStatus::ACTIVE;
+              count++;
             }
             break;
           case ThreadStatus::ACTIVE:
@@ -963,8 +975,12 @@ public:
         }
       }
       clock++;
-      if(clock % 10000 == 0) wakeupDebugLog();
+      if(clock % 100000 == 0) wakeupDebugLog();
+      if(count >= thread_num*MAX_MEMORY_NUM) break;
     }
+    StEventID event_num = 0;
+    for(auto& x : threadContexts) event_num += x.currEventId;
+    std::cout << "all event num is: " << event_num << std::endl; 
     wakeuptime.push_back(std::make_pair(true, std::chrono::steady_clock::now()));
   }
 

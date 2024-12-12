@@ -2,6 +2,7 @@
 #define CM_REPLAYER_THREAD_HPP
 
 #include "replayer/st_event.hpp"
+#include "st_event.hpp"
 #include "util/multithread.hpp"
 #include <cassert>
 #include <cstddef>
@@ -160,6 +161,12 @@ public:
 
   virtual ThreadID findActive(CoreID coreId) = 0;
   virtual bool checkOnCore(ThreadID threadId) = 0;
+
+  StEventID geteventNum() {
+    StEventID sum = 0;
+    for (auto x : curEvent) sum += x;
+    return sum;
+  }
 };
 
 // NT: num threads, NC: num cores

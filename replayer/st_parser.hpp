@@ -331,7 +331,7 @@ class StTracePthreadMetadata
       std::regex pattern(R"(\*\*(\d+),([0-9,]+))");
       std::smatch matches;
       if(std::regex_search(line, matches, pattern)){
-        pthAddr = std::stoi(matches[1]);
+        pthAddr = std::stoll(matches[1]);
         std::string sub_str = matches[2];
 
         std::regex npattern(R"(\d+)");
