@@ -229,6 +229,7 @@ public:
     Policy::meta_after_grant(cmd, meta, meta_inner);
     if(!act_as_prefetch || !hit) cache->replace_read(ai, s, w, act_as_prefetch);
     cache->hook_read(addr, ai, s, w, hit, meta, data, delay);
+    extra_operations(delay);
     finish_record(addr, coh::cmd_for_finish(cmd.id), !hit, meta, ai, s);
     if(cmd.id == -1) finish_resp(addr, coh::cmd_for_finish(cmd.id));
   }
@@ -246,6 +247,8 @@ public:
   }
 
 protected:
+  virtual void extra_operations(uint64_t *delay) {} // possible operations to do after meta updated, currently is not compatible with MT
+
   virtual void evict(CMMetadataBase *meta, CMDataBase *data, int32_t ai, uint32_t s, uint32_t w, uint64_t *delay) {
     // evict a block due to conflict
     auto addr = meta->addr(s);
@@ -377,6 +380,7 @@ class InnerCohPortT : public IPUC<Policy, EnMT, Extra...>
 {
 private:
   PendingXact<EnMT> pending_xact; // record the pending finish message from inner caches
+  typedef IPUC<Policy, EnMT, Extra...> IPUC_T;
 protected:
   using InnerCohPortBase::cache;
   using InnerCohPortBase::coh;
@@ -410,6 +414,7 @@ public:
       // do not unlock the cache line until a finish is received (only needed for coherent inner cache)
       if constexpr (EnMT) { meta->unlock(); cache->reset_mt_state(ai, s, XactPrio::acquire); }
       pending_xact.remove(addr, outer_cmd.id);
+      IPUC_T::finish_resp(addr, outer_cmd); // call the embedded uncahced port in case there are house keeping work
       if(forward) outer->finish_req(addr);
     }
   }

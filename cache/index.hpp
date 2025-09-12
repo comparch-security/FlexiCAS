@@ -48,6 +48,10 @@ public:
   void seed(std::vector<uint64_t>& seeds) {
     for(int i=0; i<P; i++) hashers[i].seed(seeds[i]);
   }
+
+  void reseed() {
+    for(int i=0; i<P; i++) hashers[i].seed(cm_get_random_uint64());
+  }
 };
 
 /////////////////////////////////

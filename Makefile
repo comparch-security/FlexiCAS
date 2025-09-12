@@ -28,9 +28,11 @@ endif
 
 UTIL_HEADERS  = $(wildcard util/*.hpp)
 CACHE_HEADERS = $(wildcard cache/*.hpp)
+RSA_HEADERS   = $(wildcard rsa/*.hpp)
 
 CRYPTO_LIB    = cryptopp/libcryptopp.a
 UTIL_OBJS     = util/random.o util/query.o util/statistics.o
+RSA_OBJS      = rsa/monitor.o
 
 all: libflexicas.a
 
@@ -42,6 +44,8 @@ $(CRYPTO_LIB):
 $(UTIL_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS)
 	$(CXX) $(CXXFLAGS_MULTI) -c $< -o $@
 
+$(RSA_OBJS) : %o:%cpp $(CACHE_HEADERS) $(UTIL_HEADERS) $(RSA_HEADERS)
+	$(CXX) $(CXXFLAGS_MULTI) -c $< -o $@
 
 REGRESSION_TESTS = \
 	c1-l1 \
@@ -73,20 +77,27 @@ $(PARALLEL_REGRESSION_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(CRYPTO_LIB) $(CACHE_HEA
 $(PARALLEL_REGRESSION_TESTS_RST): %.out: %
 	timeout 2m $< 2>$@
 
-regression: $(REGRESSION_TESTS_RST) $(PARALLEL_REGRESSION_TESTS_RST)
-
 clean-regression:
 	-rm $(REGRESSION_TESTS_LOG) $(REGRESSION_TESTS_EXE) $(REGRESSION_TESTS_RST)
 	-rm $(PARALLEL_REGRESSION_TESTS_EXE) $(PARALLEL_REGRESSION_TESTS_RST)
 
-libflexicas.a: $(UTIL_OBJS) $(CRYPTO_LIB)
-	ar rvs $@ $(UTIL_OBJS) $(CRYPTO_LIB)
+ALG_TESTS = \
+	ppp ct ctpp effective-cloc-acc empty-refill prime-probe prime-probe-prefetch
+
+ALG_TESTS_EXE = $(patsubst %, alg/%, $(ALG_TESTS))
+
+$(ALG_TESTS_EXE): %:%.cpp $(UTIL_OBJS) $(RSA_OBJS) $(CRYPTO_LIB) $(CACHE_HEADERS) $(RSA_HEADERS) alg/common.hpp
+	$(CXX) $(CXXFLAGS) $< $(UTIL_OBJS) $(RSA_OBJS) $(CRYPTO_LIB) -lboost_program_options -o $@
+
+alg-tests: $(ALG_TESTS_EXE)
+
+libflexicas.a: $(UTIL_OBJS) $(RSA_OBJS) $(CRYPTO_LIB)
+	ar rvs $@ $(UTIL_OBJS) $(RSA_OBJS) $(CRYPTO_LIB)
 
 .PHONY: regression
 
 clean:
-	-$(MAKE) clean-regression
-	-$(MAKE) clean-parallel-regression temp.log
-	-rm $(UTIL_OBJS)
+	-rm $(UTIL_OBJS) $(RSA_OBJS)
+	-rm $(ALG_TESTS_EXE)
 
 .PHONY: clean

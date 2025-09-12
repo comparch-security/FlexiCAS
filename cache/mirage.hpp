@@ -4,7 +4,7 @@
 #include <stack>
 #include "cache/coherence.hpp"
 #include "cache/msi.hpp"
-
+#include "rsa/monitor.hpp"
 class MirageDataMeta : public CMMetadataCommon
 {
 protected:
@@ -77,7 +77,7 @@ struct MirageHelper {
 // EnMon: whether to enable monitoring
 template<int IW, int NW, int EW, int P, typename MT, typename DT,
          typename DTMT, typename MIDX, typename DIDX, typename MRPC, typename DRPC, typename DLY, bool EnMon,
-         bool EnMT = false, int MSHR = 4>
+         bool DTEF = false, bool EnMT = false, int MSHR = 4>
   requires C_DERIVE<MT, MetadataBroadcastBase, MirageMetadataSupport> && C_DERIVE_OR_VOID<DT, CMDataBase> &&
            C_DERIVE<DTMT, MirageDataMeta>  && C_DERIVE<MIDX, IndexFuncBase>   && C_DERIVE<DIDX, IndexFuncBase> &&
            C_DERIVE_OR_VOID<DLY, DelayBase>
@@ -159,8 +159,20 @@ public:
 
   __always_inline std::pair<uint32_t, uint32_t> replace_data(uint64_t addr) {
     uint32_t d_s, d_w;
-    d_s =  (*loc_random)() % (1ul << IW);
-    d_replacer.replace(d_s, &d_w, false);
+    if constexpr (DTEF) {
+      std::vector<uint32_t> free_set;
+      for(uint64_t i = 0; i < 1ul<<IW; i++){
+        if(d_replacer.get_free_num(i))
+          free_set.push_back(i);
+      }
+      d_s = free_set.empty() ? 
+            (*loc_random)() % (1ul << IW) : 
+            free_set[(*loc_random)() % free_set.size()];
+      d_replacer.replace(d_s, &d_w);
+    } else{
+      d_s =  (*loc_random)() % (1ul << IW);
+      d_replacer.replace(d_s, &d_w, false);
+    }
     return std::make_pair(d_s, d_w);
   }
 
@@ -239,13 +251,14 @@ protected:
         auto m_addr = m_meta->addr(m_s);
         if (m_meta->is_valid()) {
           if (relocation >= MaxRelocN || cache->pre_finish_reloc(m_addr, ai, s, m_ai))
-            global_evict(m_meta, cache->get_data_data(static_cast<MT *>(m_meta)), m_ai, m_s, w, delay); // associative eviction!
+            global_evict(m_meta, cache->get_data_data(static_cast<MT *>(m_meta)), m_ai, m_s, m_w, delay); // associative eviction!
           else
             cache->replace_manage(m_ai, m_s, m_w, true, 1, true);
         }
         cache->swap(m_addr, addr, m_meta, buf_meta, nullptr, nullptr);
         cache->get_data_meta(static_cast<MT *>(m_meta))->bind(m_ai, m_s, m_w);
         cache->replace_read(m_ai, m_s, m_w, false, true);
+        cache->monitor_magic_func(addr, EvictDistRelocEvent, &m_s);
         addr = m_addr;
       }
       cache->meta_return_buffer(buf_meta);

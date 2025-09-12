@@ -7,6 +7,7 @@
 
 #define MAGIC_ID_REMAP_ASK  2024091300ul
 #define MAGIC_ID_REMAP_END  2024102700ul
+#define EvictDistRelocEvent 2024081000ull
 
 struct RemapHelper {
   static const unsigned int replace_for_relocate = 2408200ul;
@@ -151,6 +152,7 @@ protected:
     }
     static_cast<CT *>(cache)->swap(m_addr, c_addr, m_meta, c_meta, m_data, c_data);
     cache->replace_read(new_ai, new_idx, new_way, false);
+    cache->monitor_magic_func(c_addr, EvictDistRelocEvent, &new_idx);
     static_cast<MT *>(m_meta)->to_relocated();
     c_addr = m_addr;
   }
@@ -217,6 +219,25 @@ public:
   }
 };
 
+// ACC Remap Monitor
+class ACCRemapper : public RemapperBase
+{
+protected:
+  uint64_t period;
+
+public:
+  ACCRemapper(uint64_t period) : period(period) {}
+
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  override {
+    if(!active) return;
+    cnt_access++;
+    if(!hit) cnt_miss++;
+    if(cnt_access !=0 && (cnt_access % period) == 0) {
+      remap = true;
+    }
+  }
+};
+
 template<int IW>
 class ZSEVRemapper : public RemapperBase
 {
@@ -253,7 +274,7 @@ public:
     : RemapperBase(remap_enable), factor(factor), threshold(th),
       access_period(access_period), evict_period(evict_period){}
 
-  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void read(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data)  override {
     if(!active) return;
     cnt_access++;
     if(!hit) cnt_miss++;
@@ -264,7 +285,7 @@ public:
       evicts.fill(0);
     }
   }
-  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void write(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, bool hit, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_write++;
     if(!hit) {
@@ -272,7 +293,7 @@ public:
     }
   }
 
-  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, const CMMetadataBase *meta, const CMDataBase *data) override {
+  virtual void invalid(uint64_t cache_id, uint64_t addr, int32_t ai, int32_t s, int32_t w, int32_t ev_rank, const CMMetadataBase *meta, const CMDataBase *data) override {
     if(!active) return;
     cnt_invalid++;
     evicts[s]++;
