@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
 
   int evset_size = 1;
 
-  while(evset_size < (1 << L3IW)) {
+  while(evset_size < ((1ull * L3WN) << L3IW)) {
     int succ_vbuf = 0;
     int succ = 0;
     uint64_t target = cm_get_random_uint64() & addr_mask;
