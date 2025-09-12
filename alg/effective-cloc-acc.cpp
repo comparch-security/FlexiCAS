@@ -91,7 +91,9 @@ int main(int argc, char **argv) {
       if(prefetch_target)  mem_prefetch(target);
       else                 mem_access(target);
     }
-    std::cout << "evset size = " << evset_size << ": " << succ << "/" << succ_vbuf << "/" << samples << std::endl;
+    std::cout << "evset size = " << evset_size << ": " << succ << "/"
+	    //<< succ_vbuf << "/"
+	    << samples << std::endl;
     if(evset_size < 3) evset_size++;
     else evset_size *= 1.41422;
   }

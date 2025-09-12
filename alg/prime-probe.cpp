@@ -140,7 +140,7 @@ int main(int argc, char **argv) {
     auto TPv = succ_vbuf_pos; auto FPv = neg_num - succ_vbuf_neg; auto TNv = succ_vbuf_neg; auto FNv = pos_num - succ_vbuf_pos;
     std::cout << "evset size = " << evset_size << ": "
               << "[" << TP << "," << FN << "," << TN << "," << FP << "] F1=" << (2.0 * TP) / (2.0 * TP + FP + FN) << "; "
-              << "[" << TPv << "," << FNv << "," << TNv << "," << FPv << "] F1=" << (2.0 * TPv) / (2.0 * TPv + FPv + FNv) << "; "
+              //<< "[" << TPv << "," << FNv << "," << TNv << "," << FPv << "] F1=" << (2.0 * TPv) / (2.0 * TPv + FPv + FNv) << "; "
               << std::endl;
     if(evset_size < 6) evset_size++;
     else if(evset_size < 16) evset_size += 2;
