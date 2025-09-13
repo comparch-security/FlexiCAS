@@ -1,0 +1,37 @@
+diff --git a/alg/common.hpp b/alg/common.hpp
+index f465b20..b0d90c7 100644
+--- a/alg/common.hpp
++++ b/alg/common.hpp
+@@ -112,8 +112,8 @@ inline auto cache_hier_gen() {
+   core_inst = get_l1_core_interface(l1i);
+   auto l2 = cache_gen_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, ExclusiveMSIPolicy, policy_l2, false, void, true>(NC, "l2");
+ 
+-  auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
+-  tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++  //auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
++  //tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+   //using remap_gen = ct::remap::types<L3IW, L3WN, 1, void, ReplaceLRU, policy_memory, void, true>;  //sp2021
+   //auto l3 = remap_gen::cache_gen_remap(1, "l3");  // sp2021
+@@ -135,8 +135,8 @@ inline auto cache_hier_gen() {
+   //auto l3 = mirage_gen::cache_gen_mirage(1, "l3");  // mirage
+   //tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+-  //auto l3 = llc_gen_seqass(1, "l3"); // sequential associative
+-  //tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++  auto l3 = llc_gen_seqass(1, "l3"); // sequential associative
++  tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+   auto mem = new SimpleMemoryModel<void,void,true>("mem");
+   for(int i=0; i<NC; i++) {
+@@ -148,8 +148,8 @@ inline auto cache_hier_gen() {
+ 
+   //auto remapper = new ZSEVRemapper<L3IW>(1.0 / 32, (1ul << L3IW) * 4, (1ul << L3IW) * L3WN * 10, 10, true);  // zsev
+   //auto remapper = new ACCRemapper((1<<L3IW)*L3WN*100);  // ceaser-s
+-  //auto remapper = new SeqAssRemapMonitor((1<<L3IW)/4, 32);
+-  //l3[0]->attach_monitor(remapper); remapper->start();
++  auto remapper = new SeqAssRemapMonitor((1<<L3IW)/4, 32);
++  l3[0]->attach_monitor(remapper); remapper->start();
+ 
+   mem->attach_monitor(mem_pfc);
+   l3[0]->attach_monitor(tracer); tracer->start();

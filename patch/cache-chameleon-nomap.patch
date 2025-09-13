@@ -1,0 +1,28 @@
+diff --git a/alg/common.hpp b/alg/common.hpp
+index f465b20..623cc5e 100644
+--- a/alg/common.hpp
++++ b/alg/common.hpp
+@@ -112,8 +112,8 @@ inline auto cache_hier_gen() {
+   core_inst = get_l1_core_interface(l1i);
+   auto l2 = cache_gen_exc<L2IW, L2WN, void, MetadataBroadcastBase, ReplaceSRRIP, ExclusiveMSIPolicy, policy_l2, false, void, true>(NC, "l2");
+ 
+-  auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
+-  tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++  //auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
++  //tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+   //using remap_gen = ct::remap::types<L3IW, L3WN, 1, void, ReplaceLRU, policy_memory, void, true>;  //sp2021
+   //auto l3 = remap_gen::cache_gen_remap(1, "l3");  // sp2021
+@@ -123,9 +123,9 @@ inline auto cache_hier_gen() {
+   //auto l3 = remap_gen::cache_gen_remap(1, "l3");  // ceaser-s and zsev
+   //tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+-  //using chameleon_gen = ct::chameleon::types<L3IW, L3WN / L3P, L3VW, L3P, void, ReplaceLRU, policy_memory, void, true>;  // chameleon cache
+-  //auto l3 = chameleon_gen::cache_gen_chameleon(1, "l3");  // chameleon cache
+-  //tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++  using chameleon_gen = ct::chameleon::types<L3IW, L3WN / L3P, L3VW, L3P, void, ReplaceLRU, policy_memory, void, true>;  // chameleon cache
++  auto l3 = chameleon_gen::cache_gen_chameleon(1, "l3");  // chameleon cache
++  tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+   //using mirage_gen = ct::mirage::types<L3IW, L3WN / L3P, L3WN / 2 / L3P, L3P, 3, void, true, ReplaceRandom, ReplaceRandom, policy_memory, void, true, true>;  // mirage-50
+   //auto l3 = mirage_gen::cache_gen_mirage(1, "l3");  // mirage
