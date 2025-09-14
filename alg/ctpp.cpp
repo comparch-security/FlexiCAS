@@ -130,16 +130,18 @@ int main(int argc, char **argv) {
     
     
     std::cout << "test " << testN << ": " << succ << " use " << trial << " random addresses";
-    std::cout << ", collected " << evset_size << " cloc addrs in the final " << evset.size() << " addresses evset.";
-    std::cout << " [" << wall_clock - wall_clock_start
-              << ", " << simple_pfc->get_access() - llc_acc_start
-              << ", " << simple_pfc->get_invalid() - llc_evict_start
-              << "]" << std::endl;
+    std::cout << ", collected " << evset_size << " cloc addrs" << std::endl;
+    //std::cout << " [" << wall_clock - wall_clock_start
+    //          << ", " << simple_pfc->get_access() - llc_acc_start
+    //          << ", " << simple_pfc->get_invalid() - llc_evict_start
+    //          << "]" << std::endl;
   }
 
-  std::cout << "memory accesses: " << get_mean_mean(stat_acc) << ", +/-" << get_mean_error(stat_acc) <<  ", +/-" << get_mean_variance(stat_acc) << std::endl;
-  std::cout << "llc accesses: "  << get_mean_mean(stat_llc_acc) << ", +/-" << get_mean_error(stat_llc_acc) <<  ", +/-" << get_mean_variance(stat_llc_acc) << std::endl;
-  std::cout << "llc evictions: " << get_mean_mean(stat_llc_evict) << ", +/-" << get_mean_error(stat_llc_evict) <<  ", +/-" << get_mean_variance(stat_llc_evict) << std::endl;
+  std::cout << "success rate: " << succ / (float)(samples) << " using " << get_mean_mean(stat_llc_evict) << " evictions." << std::endl;
+
+  //std::cout << "memory accesses: " << get_mean_mean(stat_acc) << ", +/-" << get_mean_error(stat_acc) <<  ", +/-" << get_mean_variance(stat_acc) << std::endl;
+  //std::cout << "llc accesses: "  << get_mean_mean(stat_llc_acc) << ", +/-" << get_mean_error(stat_llc_acc) <<  ", +/-" << get_mean_variance(stat_llc_acc) << std::endl;
+  //std::cout << "llc evictions: " << get_mean_mean(stat_llc_evict) << ", +/-" << get_mean_error(stat_llc_evict) <<  ", +/-" << get_mean_variance(stat_llc_evict) << std::endl;
 
   return 0;
 }
