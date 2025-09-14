@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
 
   int evset_size = 1;
 
-  while(evset_size < (1 << L3IW)) {
+  while(evset_size <= (prefetch_cloc_addr ? 128 : 512)) {
     int succ_vbuf_pos = 0;
     int succ_pos = 0;
     int succ_vbuf_neg = 0;
