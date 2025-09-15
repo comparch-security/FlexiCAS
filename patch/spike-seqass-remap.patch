@@ -1,0 +1,37 @@
+diff --git a/spike-cache.cc b/spike-cache.cc
+index d4808b7..41d6bfc 100644
+--- a/spike-cache.cc
++++ b/spike-cache.cc
+@@ -263,8 +263,8 @@ namespace flexicas {
+     auto mem = new SimpleMemoryModel<void,void,true>("mem");
+     auto mem_pfc = new SimpleAccMonitor;
+ 
+-    auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
+-    tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++    //auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
++    //tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+     //using remap_gen = ct::remap::types<L3IW, L3WN, 1, void, ReplaceLRU, policy_memory, void, true>;  //sp2021
+     //auto l3 = remap_gen::cache_gen_remap(1, "l3");  // sp2021
+@@ -286,8 +286,8 @@ namespace flexicas {
+     //auto l3 = mirage_gen::cache_gen_mirage(1, "l3");  // mirage
+     //tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+-    //auto l3 = llc_gen_seqass(1, "l3"); // sequential associative
+-    //tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++    auto l3 = llc_gen_seqass(1, "l3"); // sequential associative
++    tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+     if(prefix) tracer->set_prefix(std::string(prefix));
+ 
+@@ -305,8 +305,8 @@ namespace flexicas {
+ 
+     //auto remapper = new ZSEVRemapper<L3IW>(1.0 / 32, (1ul << L3IW) * 4, (1ul << L3IW) * L3WN * 10, 10, true);  // zsev
+     //auto remapper = new ACCRemapper((1<<L3IW)*L3WN*100);  // ceaser-s
+-    //auto remapper = new SeqAssRemapMonitor((1<<L3IW)/4, 32);
+-    //l3[0]->attach_monitor(remapper); remapper->start();
++    auto remapper = new SeqAssRemapMonitor((1<<L3IW)/4, 32);
++    l3[0]->attach_monitor(remapper); remapper->start();
+ 
+ 
+ #ifdef ENABLE_FLEXICAS_THREAD

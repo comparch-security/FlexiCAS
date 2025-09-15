@@ -1,0 +1,38 @@
+diff --git a/spike-cache.cc b/spike-cache.cc
+index d4808b7..3e25d2f 100644
+--- a/spike-cache.cc
++++ b/spike-cache.cc
+@@ -263,16 +263,16 @@ namespace flexicas {
+     auto mem = new SimpleMemoryModel<void,void,true>("mem");
+     auto mem_pfc = new SimpleAccMonitor;
+ 
+-    auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
+-    tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++    //auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
++    //tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+     //using remap_gen = ct::remap::types<L3IW, L3WN, 1, void, ReplaceLRU, policy_memory, void, true>;  //sp2021
+     //auto l3 = remap_gen::cache_gen_remap(1, "l3");  // sp2021
+     //tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+-    //using remap_gen = ct::remap::types<L3IW, L3WN / L3P, L3P, void, ReplaceSRRIP, policy_memory, void, true>;  //ceaser-s
+-    //auto l3 = remap_gen::cache_gen_remap(1, "l3");  // ceaser-s and zsev
+-    //tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++    using remap_gen = ct::remap::types<L3IW, L3WN / L3P, L3P, void, ReplaceSRRIP, policy_memory, void, true>;  //ceaser-s
++    auto l3 = remap_gen::cache_gen_remap(1, "l3");  // ceaser-s and zsev
++    tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+     //using chameleon_gen = ct::chameleon::types<L3IW, L3WN / L3P, L3VW, L3P, void, ReplaceLRU, policy_memory, void, true>;  // chameleon cache
+     //auto l3 = chameleon_gen::cache_gen_chameleon(1, "l3");  // chameleon cache
+@@ -304,9 +304,9 @@ namespace flexicas {
+     mem->attach_monitor(mem_pfc);
+ 
+     //auto remapper = new ZSEVRemapper<L3IW>(1.0 / 32, (1ul << L3IW) * 4, (1ul << L3IW) * L3WN * 10, 10, true);  // zsev
+-    //auto remapper = new ACCRemapper((1<<L3IW)*L3WN*100);  // ceaser-s
++    auto remapper = new ACCRemapper((1<<L3IW)*L3WN*100);  // ceaser-s
+     //auto remapper = new SeqAssRemapMonitor((1<<L3IW)/4, 32);
+-    //l3[0]->attach_monitor(remapper); remapper->start();
++    l3[0]->attach_monitor(remapper); remapper->start();
+ 
+ 
+ #ifdef ENABLE_FLEXICAS_THREAD

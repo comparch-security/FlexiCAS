@@ -1,0 +1,28 @@
+diff --git a/spike-cache.cc b/spike-cache.cc
+index d4808b7..5b0f087 100644
+--- a/spike-cache.cc
++++ b/spike-cache.cc
+@@ -263,8 +263,8 @@ namespace flexicas {
+     auto mem = new SimpleMemoryModel<void,void,true>("mem");
+     auto mem_pfc = new SimpleAccMonitor;
+ 
+-    auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
+-    tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++    //auto l3 = cache_gen_inc<L3IW, L3WN, void, MetadataDirectoryBase, ReplaceLRU, MESIPolicy, policy_l3, true, void, true>(1, "l3");
++    //tracer = new EvictDistMonitor(1, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+     //using remap_gen = ct::remap::types<L3IW, L3WN, 1, void, ReplaceLRU, policy_memory, void, true>;  //sp2021
+     //auto l3 = remap_gen::cache_gen_remap(1, "l3");  // sp2021
+@@ -274,9 +274,9 @@ namespace flexicas {
+     //auto l3 = remap_gen::cache_gen_remap(1, "l3");  // ceaser-s and zsev
+     //tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+-    //using chameleon_gen = ct::chameleon::types<L3IW, L3WN / L3P, L3VW, L3P, void, ReplaceLRU, policy_memory, void, true>;  // chameleon cache
+-    //auto l3 = chameleon_gen::cache_gen_chameleon(1, "l3");  // chameleon cache
+-    //tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
++    using chameleon_gen = ct::chameleon::types<L3IW, L3WN / L3P, L3VW, L3P, void, ReplaceLRU, policy_memory, void, true>;  // chameleon cache
++    auto l3 = chameleon_gen::cache_gen_chameleon(1, "l3");  // chameleon cache
++    tracer = new EvictDistMonitor(2, L3IW, L3WN*64, (1<<L3IW)*L3WN, &wall_clock, &core_cycle, mem_pfc); // period is set to ACC1
+ 
+     //using mirage_gen = ct::mirage::types<L3IW, L3WN / L3P, L3WN / 2 / L3P, L3P, 3, void, true, ReplaceRandom, ReplaceRandom, policy_memory, void, true, true>;  // mirage-50
+     //auto l3 = mirage_gen::cache_gen_mirage(1, "l3");  // mirage
